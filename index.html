@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Solitaire HighNoon – v2.2 (Fix: Render + Connect)</title>
+  <title>Solitaire HighNoon – v2.6 (Fix: Render + Connect)</title>
   <style>
     :root { --bg:#0b1020; --felt:#0f5132; --card:#fff; --ink:#0b1020; --muted:#9aa3b2; --radius:10px; }
     html, body { height:100%; }
@@ -55,7 +55,7 @@
 </head>
 <body>
   <header>
-    <h1>Solitaire HighNoon <span class="badge" id="ver">v2.2</span></h1>
+    <h1>Solitaire HighNoon <span class="badge" id="ver">v2.6</span></h1>
     <div class="controls">
       <input id="room" placeholder="Room-ID" title="Room/Match ID" />
       <input id="seed" placeholder="Seed (optional)" title="Deterministische Mischung" />
@@ -317,27 +317,97 @@
   function checkWin(){const total=state.foundations.reduce((a,f)=>a+f.cards.length,0);if(total===208){state.over=true;showToast('Alle Karten abgetragen!');}}
 
   // ---------- WS ----------
-  const peers=new Map();let clientId=Math.random().toString(36).slice(2);let ws=null,pingTimer=null;
+const peers=new Map();
+let clientId=Math.random().toString(36).slice(2);
+let ws=null, pingTimer=null, lastMsgAt=0, latencyMs=null;
+
+function setText(id,txt){ const n=document.getElementById(id); if(n) n.textContent=txt; }
+function updateOverlay(){
+  const online = ws && ws.readyState===1;
+  const dot=document.getElementById('dot');
+  const ovSync=document.getElementById('ov-sync');
+  if(dot) dot.classList.toggle('ok', !!online);
+  if(ovSync) ovSync.textContent = online ? 'online' : 'offline';
+  setText('ov-room', state.room||'—');
+  setText('ov-seed', state.seed||'—');
+  setText('ov-peers', String(peers.size));
+  setText('ov-latency', latencyMs!=null ? `${Math.max(0,Math.round(latencyMs))} ms` : '—');
+  if(lastMsgAt>0){
+    const sec=Math.floor((Date.now()-lastMsgAt)/1000);
+    setText('ov-last', sec===0? 'just now' : `${sec}s ago`);
+  } else {
+    setText('ov-last','—');
+  }
+}
+// alle 1s Peers prunen + Overlay aktualisieren
+setInterval(()=>{
+  const now=Date.now();
+  for(const [id,ts] of peers){ if(now-ts>15000) peers.delete(id); }
+  updateOverlay();
+}, 1000);
+
   function sendSys(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify({sys:o,from:clientId}));}
   function send(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify({move:m,from:clientId}));}
   function connectWS(){
     const room=state.room.trim();if(!room){showToast('Room-ID fehlt');return;}
     const wsUrl='ws://127.0.0.1:3001/ws?room='+encodeURIComponent(room);
     ws=new WebSocket(wsUrl);
-    ws.onopen=()=>{showToast('Verbunden');sendSys({type:'hello'});pingTimer=setInterval(()=>sendSys({type:'ping'}),5000);};
-    ws.onclose=()=>{showToast('Getrennt');clearInterval(pingTimer);};
-    ws.onmessage=(ev)=>{try{const msg=JSON.parse(ev.data);
-      if(msg.sys){
-        if(msg.sys.type==='hello'&&msg.from){
-          const iAmY=clientId.localeCompare(msg.from)<0;const desired=iAmY?'Y':'O';
-          if(localOwner!==desired){localOwner=desired;[state.you,state.opp]=[state.opp,state.you];renderAll();showToast('Perspektive: '+localOwner);}
-          sendSys({type:'hello'});
+    ws.onopen=()=>{
+  showToast('Verbunden');
+  sendSys({type:'hello'});
+  updateOverlay();
+  // Ping mit Timestamp
+  pingTimer=setInterval(()=>{
+    if(ws && ws.readyState===1){
+      const ts=Date.now();
+      sendSys({type:'ping', ts});
+    }
+  }, 5000);
+    };
+ ws.onclose=()=>{
+  showToast('Getrennt');
+  clearInterval(pingTimer);
+  updateOverlay();
+    };
+ws.onmessage=(ev)=>{
+  lastMsgAt=Date.now();
+  try{
+    const msg=JSON.parse(ev.data);
+    if(msg.from) peers.set(msg.from, Date.now());
+
+    if(msg.sys){
+      // Hello: Rollen festlegen + zurückgrüßen
+      if(msg.sys.type==='hello' && msg.from){
+        const iAmY = clientId.localeCompare(msg.from) < 0;
+        const desired = iAmY ? 'Y' : 'O';
+        if(localOwner!==desired){
+          localOwner=desired;
+          [state.you, state.opp] = [state.opp, state.you];
+          renderAll();
+          showToast('Perspektive: '+localOwner);
         }
-        return;
+        sendSys({type:'hello'});
       }
-      if(msg.move)applyMove(msg.move,false);
-    }catch(e){console.error('WS-Error',e);}};
+      // Ping/Pong mit Latenz
+      else if(msg.sys.type==='ping' && typeof msg.sys.ts==='number'){
+        sendSys({type:'pong', ts: msg.sys.ts});
+      }
+      else if(msg.sys.type==='pong' && typeof msg.sys.ts==='number'){
+        latencyMs = Date.now() - msg.sys.ts;
+      }
+      updateOverlay();
+      return;
+    }
+
+    if(msg.move) applyMove(msg.move, false);
+    updateOverlay();
+  }catch(e){
+    console.error('WS-Error', e);
   }
+  };
+  }
+
+
 
   // ---------- Boot ----------
   function newGame(){
