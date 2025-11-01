@@ -3,77 +3,59 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Solitaire HighNoon – Starter</title>
+  <title>Solitaire HighNoon – v2.2 (Fix: Render + Connect)</title>
   <style>
-    :root {
-      --bg: #0b1020;
-      --felt: #0f5132; /* deep green */
-      --card: #fff;
-      --ink: #0b1020;
-      --muted: #9aa3b2;
-      --accent: #f59e0b;
-      --danger: #ef4444;
-      --ok: #22c55e;
-      --radius: 10px;
-    }
-    html, body { height: 100%; }
-    body {
-      margin: 0; background: radial-gradient(1200px 800px at 50% 10%, #143b26, var(--felt));
-      color: #eef2ff; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial;
-      display: grid; grid-template-rows: auto 1fr; gap: 8px;
-    }
-    header { display:flex; align-items:center; gap:12px; padding: 10px 14px; background: #0b1222aa; backdrop-filter: blur(6px); border-bottom: 1px solid #ffffff12; }
-    header h1 { font-size: 18px; margin: 0; letter-spacing: .3px; }
-    header .controls { margin-left: auto; display:flex; gap:8px; flex-wrap: wrap; }
-    button, input, select { border-radius: 8px; border: 1px solid #ffffff22; background: #0b1222; color: #e5e7eb; padding: 8px 10px; }
-    button.primary { background: #1f2937; border-color:#ffffff33; }
-    button:disabled { opacity:.6; }
-    .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #ffffff14; border: 1px solid #ffffff22; }
+    :root { --bg:#0b1020; --felt:#0f5132; --card:#fff; --ink:#0b1020; --muted:#9aa3b2; --radius:10px; }
+    html, body { height:100%; }
+    body { margin:0; background: radial-gradient(1200px 800px at 50% 10%, #143b26, var(--felt)); color:#eef2ff; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; display:grid; grid-template-rows:auto 1fr; gap:8px; }
+    header { display:flex; align-items:center; gap:12px; padding:10px 14px; background:#0b1222aa; backdrop-filter: blur(6px); border-bottom:1px solid #ffffff12; position:relative; z-index:100; }
+    header h1 { font-size:18px; margin:0; letter-spacing:.3px; }
+    header .controls { margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; }
+    button, input { border-radius:8px; border:1px solid #ffffff22; background:#0b1222; color:#e5e7eb; padding:8px 10px; }
+    button.primary { background:#1f2937; border-color:#ffffff33; }
+    .badge { font-size:12px; padding:2px 8px; border-radius:999px; background:#ffffff14; border:1px solid #ffffff22; }
 
-    /* Board Layout */
-    .board { display:grid; grid-template-columns: 1fr minmax(260px, 520px) 1fr; gap: 14px; padding: 14px; }
-    .col { display:grid; grid-template-rows: auto 1fr; gap: 10px; }
-    .zone-title { font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+    .board { display:grid; grid-template-columns:1fr minmax(260px,520px) 1fr; gap:14px; padding:14px; position:relative; z-index:1; }
+    .col { display:grid; grid-template-rows:auto 1fr; gap:10px; }
+    .zone-title { font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:var(--muted); }
 
-    .row { display:flex; gap: 10px; align-items:flex-start; }
-    .stack, .pile, .foundation { width: 86px; height: 120px; border-radius: var(--radius); background: #00000022; border: 1px dashed #ffffff2a; position:relative; flex: 0 0 auto; }
-    .pile { height: 120px; min-width: 86px; }
+    .row { display:flex; gap:10px; align-items:flex-start; }
+    .stack, .pile, .foundation { width:86px; height:120px; border-radius:var(--radius); background:#00000022; border:1px dashed #ffffff2a; position:relative; flex:0 0 auto; }
+    .pile { min-width:86px; }
     .tableau { display:flex; gap:10px; }
 
-    /* Card */
-    .card { width: 86px; height: 120px; border-radius: var(--radius); background: var(--card); color: var(--ink); position:absolute; top:0; left:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size: 22px; user-select:none; box-shadow: 0 6px 14px #00000055; border: 1px solid #0b102022; }
-    .card.red { color: #b91c1c; }
-    .card.faceDown { background: linear-gradient(135deg, #172554, #1e293b); color: #e5e7eb; border-color: #0ea5e9; box-shadow: 0 6px 14px #0006 inset; }
-    .card.dragging { transform: scale(1.06) rotate(-2deg); z-index: 9999; box-shadow: 0 14px 30px #00000088; }
+    .card { width:86px; height:120px; border-radius:var(--radius); background:var(--card); color:var(--ink); position:absolute; top:0; left:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:22px; user-select:none; box-shadow:0 6px 14px #00000055; border:1px solid #0b102022; z-index:5; }
+    .card.red { color:#b91c1c; }
+    .card.black { color:#0b1020; }
+    .card.red { color:#b91c1c; }
+    .card.faceDown { background: linear-gradient(135deg, #172554, #1e293b); color:#e5e7eb; border-color:#0ea5e9; box-shadow:0 6px 14px #0006 inset; }
+    .card.dragging { transform: scale(1.06) rotate(-2deg); z-index:999; box-shadow:0 14px 30px #00000088; }
 
-    /* Stacked tableau offset */
-    .pile .card { position:absolute; }
+    .foundations { display:grid; grid-template-columns: repeat(4, 86px); gap:10px; justify-content:center; }
+    .foundations .foundation::after { content: attr(data-suit); position:absolute; bottom:6px; right:8px; font-size:18px; opacity:.35; }
 
-    /* Center foundations */
-    .foundations { display:grid; grid-template-columns: repeat(4, 86px); gap: 10px; justify-content:center; }
-    .foundations .foundation::after { content: attr(data-suit); position:absolute; bottom:6px; right:8px; font-size: 18px; opacity: .35; }
-
-    .hint { font-size: 12px; color: #cbd5e1; opacity:.8; }
-    .toast { position:fixed; right: 14px; bottom: 14px; background:#0b1222; border: 1px solid #ffffff22; padding: 10px 12px; border-radius: 10px; opacity:0; transform: translateY(12px); transition: .25s ease; }
+    .hint { font-size:12px; color:#cbd5e1; opacity:.8; }
+    .toast { position:fixed; right:14px; bottom:14px; background:#0b1222; border:1px solid #ffffff22; padding:10px 12px; border-radius:10px; opacity:0; transform: translateY(12px); transition:.25s ease; }
     .toast.show { opacity:1; transform: translateY(0); }
+    .divider { height:1px; background:#ffffff15; margin:8px 0; }
+    .opponent { opacity:.92; }
+    .small { font-size:11px; color:#9aa3b2; }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#111827; padding:1px 6px; border-radius:6px; border:1px solid #ffffff22; }
 
-    .divider { height:1px; background:#ffffff15; margin: 8px 0; }
+    /* Status Overlay unten rechts, niedriger Z-Index damit UI klickbar bleibt */
+    .overlay { position:fixed; bottom:12px; right:12px; z-index:50; min-width:220px; background:#0b1222cc; border:1px solid #ffffff22; border-radius:12px; padding:10px 12px; box-shadow:0 6px 20px #0008; }
+    .overlay h3 { margin:0 0 6px; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:#cbd5e1; }
+    .overlay .kv { display:grid; grid-template-columns:110px 1fr; gap:6px 8px; font-size:12px; }
+    .dot { display:inline-block; width:8px; height:8px; border-radius:999px; background:#ef4444; vertical-align:middle; margin-right:6px; }
+    .dot.ok { background:#22c55e; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
-    /* Opponent mirroring */
-    .opponent { opacity: .92; }
-
-    .small { font-size: 11px; color: #9aa3b2; }
-    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#111827; padding: 1px 6px; border-radius: 6px; border:1px solid #ffffff22; }
-
-    /* Responsive */
-    @media (max-width: 1100px) {
-      .board { grid-template-columns: 1fr; }
-    }
+    @media (max-width:1100px){ .board { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
   <header>
-    <h1>Solitaire HighNoon <span class="badge" id="ver">Starter</span></h1>
+    <h1>Solitaire HighNoon <span class="badge" id="ver">v2.2</span></h1>
     <div class="controls">
       <input id="room" placeholder="Room-ID" title="Room/Match ID" />
       <input id="seed" placeholder="Seed (optional)" title="Deterministische Mischung" />
@@ -84,8 +66,19 @@
     </div>
   </header>
 
+  <div class="overlay" id="overlay">
+    <h3>Status</h3>
+    <div class="kv">
+      <div>Sync</div><div><span class="dot" id="dot"></span><span id="ov-sync">offline</span></div>
+      <div>Room</div><div class="mono" id="ov-room">—</div>
+      <div>Seed</div><div class="mono" id="ov-seed">—</div>
+      <div>Peers</div><div id="ov-peers">0</div>
+      <div>Latency</div><div id="ov-latency">—</div>
+      <div>Last msg</div><div id="ov-last">—</div>
+    </div>
+  </div>
+
   <main class="board" id="board">
-    <!-- Left: YOU -->
     <section class="col" id="youCol">
       <div class="row">
         <div>
@@ -102,16 +95,13 @@
       </div>
     </section>
 
-    <!-- Middle: Foundations (shared 8x) -->
     <section>
       <div class="zone-title" style="text-align:center">Gemeinsame Foundations (8 Stapel, 2×♥♦♣♠)</div>
       <div class="foundations" id="foundations"></div>
-      <div class="hint" style="text-align:center;margin-top:8px;">Ziehe Karten gemäss Klondike-Regeln. Mit zwei vollständigen Kartensätzen. Wer zuerst alle Karten abträgt, gewinnt.</div>
+      <div class="hint" style="text-align:center;margin-top:8px;">Sequenz‑Moves, Auto‑Move (Doppelklick), Recycle (Waste→Stock).</div>
       <div class="divider"></div>
-      <div class="hint" style="text-align:center;">Tipp: Starte zwei Browserfenster, gleiche <span class="kbd">Room-ID</span> & <span class="kbd">Seed</span> ➜ Echtzeit‑Duell.</div>
     </section>
 
-    <!-- Right: OPPONENT (mirrored locally if offline) -->
     <section class="col opponent" id="oppCol">
       <div class="row">
         <div>
@@ -131,381 +121,243 @@
 
   <div class="toast" id="toast"></div>
 
-  <dialog id="howto">
-    <form method="dialog" style="max-width: 720px;">
-      <h3>Wie funktioniert „HighNoon“?</h3>
-      <ol>
-        <li>Beide Spieler nutzen dieselbe <b>Room-ID</b> und optional denselben <b>Seed</b> (deterministische Mischung).</li>
-        <li>Es gibt <b>8 gemeinsame Foundations</b> (2 pro Farbe). Du darfst auch auf die Foundations des Gegners legen – Regeln bleiben Klondike‑konform.</li>
-        <li>Bewegung: Ziehe einzelne Karten per Drag‑&‑Drop. (Sequenz‑Moves folgen in späteren Iterationen.)</li>
-        <li>Klick auf deinen <b>Stock</b>: 1 Karte auf <b>Waste</b> drehen.</li>
-        <li><b>Gewinn</b>, wenn dein gesamter Doppel‑Satz vollständig auf Foundations liegt.</li>
-      </ol>
-      <p class="small">Dies ist eine lauffähige Starter‑Version mit einfacher Validierung & Realtime‑Sync (WebSocket, optional). Für Produktions‑Tempo: Chunked DOM, OffscreenCanvas/WebGL für Animationen, Worker für Regeln/Sync.</p>
-      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top: 10px;">
-        <button>Los geht’s</button>
-      </div>
-    </form>
-  </dialog>
-
   <script>
-    // -------------------------
-    // Utilities & Deterministic RNG
-    // -------------------------
-    function showToast(msg) {
-      const t = document.getElementById('toast');
-      t.textContent = msg; t.classList.add('show');
-      setTimeout(()=> t.classList.remove('show'), 2000);
-    }
-    const url = new URL(location.href);
+/* ============================================================
+   Solitaire HighNoon — v2.6 (Dual-Owner Sync-Fix)
+   Änderungen:
+   - Einführung von Owner ('Y'|'O') statt "you"/"opp" in Moves
+   - Perspektive wird beim ersten hello automatisch gespiegelt
+   - Kein remapForReceiver mehr nötig
+   - Korrektes Karten-Sync über globale IDs
+   - Stabiler Shared-Deck-Deal (abwechselnde Kartenverteilung)
+   ============================================================ */
+(function(){
+  // ---------- Helpers ----------
+  function showToast(msg){
+    const t=document.getElementById('toast');if(!t)return;
+    t.textContent=msg;t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'),1800);
+  }
+  const url=new URL(location.href);
 
-    function rng(seedStr = "highnoon") {
-      // xmur3 + mulberry32 combo for stable seed
-      function xmur3(str){ for(var i=0,h=1779033703^str.length;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;} return function(){ h=Math.imul(h^h>>>16,2246822507); h=Math.imul(h^h>>>13,3266489909); return (h^h>>>16)>>>0; } }
-      function mulberry32(a){ return function(){ var t = a += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; } }
-      const seed = xmur3(seedStr)();
-      const r = mulberry32(seed);
-      return { random: r };
-    }
+  // RNG
+  function rng(seedStr){
+    function xmur3(str){for(var i=0,h=1779033703^str.length;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;}return function(){h=Math.imul(h^h>>>16,2246822507);h=Math.imul(h^h>>>13,3266489909);return (h^h>>>16)>>>0;};}
+    function mulberry32(a){return function(){var t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296;};}
+    const seed=xmur3(seedStr||'')();return{random:mulberry32(seed)};
+  }
 
-    function shuffle(arr, random) {
-      const a = arr.slice();
-      for (let i=a.length-1; i>0; i--) {
-        const j = Math.floor(random()* (i+1));
-        [a[i], a[j]] = [a[j], a[i]];
-      }
-      return a;
-    }
-
-    // -------------------------
-    // Card Model (2 full decks)
-    // -------------------------
-    const SUITS = ["♠","♥","♦","♣"]; // two foundations per suit
-    const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
-
-    function newDoubleDeck() {
-      const deck = [];
-      for (let d=0; d<2; d++) {
-        for (const s of SUITS) {
-          for (let r=0; r<RANKS.length; r++) deck.push({suit:s, rank:r, up:false, id:`${d}-${s}-${r}-${crypto.getRandomValues(new Uint32Array(1))[0]}`});
+  // Cards
+  const SUITS=["♠","♥","♦","♣"];
+  const RANKS=["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+  function newDoubleDeck(tag){
+    const deck=[];
+    for(let d=0;d<2;d++){
+      for(const s of SUITS){
+        for(let r=0;r<RANKS.length;r++){
+          deck.push({suit:s,rank:r,up:false,id:`${tag}-${d}-${s}-${r}`});
         }
       }
-      return deck;
     }
+    return deck;
+  }
+  function shuffle(a,r){const arr=a.slice();for(let i=arr.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}return arr;}
+  function rankStr(i){return RANKS[i];}
+  function isRed(s){return s==="♥"||s==="♦";}
+  function cardLabel(c){return `${rankStr(c.rank)}${c.suit}`;}
 
-    function rankStr(idx){ return RANKS[idx]; }
-    function cardLabel(c){ return `${rankStr(c.rank)}${c.suit}`; }
-    function isRed(s){ return s=="♥" || s=="♦"; }
+  // ---------- State ----------
+  const state={
+    seed:url.searchParams.get('seed')||'',
+    room:url.searchParams.get('room')||'',
+    you:{stock:[],waste:[],tableau:[[],[],[],[],[],[],[]]},
+    opp:{stock:[],waste:[],tableau:[[],[],[],[],[],[],[]]},
+    foundations:Array.from({length:8},(_,i)=>({suit:SUITS[i%4],cards:[]})),
+    moves:0,over:false
+  };
 
-    // -------------------------
-    // Game State
-    // -------------------------
-    const state = {
-      seed: url.searchParams.get('seed') || '',
-      room: url.searchParams.get('room') || '',
-      you: { stock:[], waste:[], tableau:[[],[],[],[],[],[],[]] },
-      opp:  { stock:[], waste:[], tableau:[[],[],[],[],[],[],[]] },
-      foundations: Array.from({length:8}, (_,i)=>({ suit: SUITS[i%4], cards: [] })),
-      moves: 0,
-      over: false,
-    };
+  // ---------- Owner Handling ----------
+  let localOwner='Y';
+  function ownerToSide(owner){return owner===localOwner?'you':'opp';}
+  function otherOwner(){return localOwner==='Y'?'O':'Y';}
 
-    function serializeMove(move){ return JSON.stringify({v:1, t: Date.now(), move}); }
-    function applyRemoteMove(move){
-      // For now just reuse applyMove; set a flag to avoid echo
-      applyMove(move, false);
+  // ---------- Deal (Shared deck alternating) ----------
+  function deal(seedStr){
+    const r=rng(seedStr||'');
+    const base=shuffle(newDoubleDeck('B'),r.random);
+    const deckYou=[],deckOpp=[];
+    for(let i=0;i<base.length;i++){
+      const c={...base[i]};
+      if(i%2===0){c.id=`Y-${i}-${c.suit}-${c.rank}`;deckYou.push(c);}
+      else{c.id=`O-${i}-${c.suit}-${c.rank}`;deckOpp.push(c);}
     }
+    let i=0;
+    for(let p=0;p<7;p++){for(let k=0;k<=p;k++){const c=deckYou[i++];c.up=(k===p);state.you.tableau[p].push(c);}}
+    state.you.stock=deckYou.slice(i);
+    i=0;
+    for(let p=0;p<7;p++){for(let k=0;k<=p;k++){const c=deckOpp[i++];c.up=(k===p);state.opp.tableau[p].push(c);}}
+    state.opp.stock=deckOpp.slice(i);
+  }
 
-    // -------------------------
-    // Init / Deal like Klondike for each player
-    // -------------------------
-    function deal(seedStr){
-      const r = rng(seedStr || '');
-      const deck1 = shuffle(newDoubleDeck(), r.random);
-      const deck2 = shuffle(newDoubleDeck(), r.random); // opponent uses same seed ➜ identical order, but separate deck instance
-      // Deal you
-      let i=0;
-      for (let p=0; p<7; p++) {
-        for (let k=0; k<=p; k++) {
-          const c = deck1[i++]; c.up = (k===p); state.you.tableau[p].push(c);
-        }
-      }
-      state.you.stock = deck1.slice(i);
-      // Deal opp
-      i=0;
-      for (let p=0; p<7; p++) {
-        for (let k=0; k<=p; k++) {
-          const c = deck2[i++]; c.up = (k===p); state.opp.tableau[p].push(c);
-        }
-      }
-      state.opp.stock = deck2.slice(i);
-    }
-
-    // -------------------------
-    // DOM helpers
-    // -------------------------
-    const el = sel => document.querySelector(sel);
-    const mk = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
-
-    function renderAll(){
-      // counters
-      el('#moves').textContent = String(state.moves);
-      // clear
-      el('#you-tableau').innerHTML = ''; el('#opp-tableau').innerHTML='';
-      el('#you-stock').innerHTML = ''; el('#you-waste').innerHTML='';
-      el('#opp-stock').innerHTML = ''; el('#opp-waste').innerHTML='';
-      el('#foundations').innerHTML = '';
-
-      // foundations
-      state.foundations.forEach(f => {
-        const slot = mk('div', 'foundation'); slot.dataset.suit = f.suit; slot.dataset.zone = 'found'; slot.dataset.suitKey = f.suit;
-        el('#foundations').appendChild(slot);
-        f.cards.forEach((c,idx)=>{
-          const card = renderCard(c);
-          card.style.top = `${Math.min(idx*2, 20)}px`;
-          card.style.left = `${Math.min(idx*1, 10)}px`;
-          slot.appendChild(card);
-        });
-      });
-
-      // stocks & waste
-      renderStack('you'); renderStack('opp');
-
-      // tableaux
-      ['you','opp'].forEach(side=>{
-        const cont = el(`#${side}-tableau`);
-        for (let p=0; p<7; p++) {
-          const pileEl = mk('div', 'pile'); pileEl.dataset.zone = `${side}-pile-${p}`;
-          cont.appendChild(pileEl);
-          const pile = state[side].tableau[p];
-          pile.forEach((c,idx)=>{
-            const card = renderCard(c);
-            card.style.top = `${idx*24}px`;
-            pileEl.appendChild(card);
-          });
-        }
-      });
-    }
-
-    function renderStack(side){
-      const stockEl = el(`#${side}-stock`);
-      const wasteEl = el(`#${side}-waste`);
-      // stock top only face-down stack look
-      const num = state[side].stock.length;
-      if (num>0) {
-        const top = state[side].stock[num-1];
-        const phantom = renderCard({...top, up:false});
-        phantom.style.top = '0px'; phantom.style.left = '0px';
-        stockEl.appendChild(phantom);
-      }
-      // waste fan
-      state[side].waste.slice(-3).forEach((c, i)=>{
-        const card = renderCard(c);
-        card.style.left = `${i*16}px`;
-        wasteEl.appendChild(card);
-      });
-    }
-
-    function renderCard(c){
-      const e = mk('div', 'card');
-      if (!c.up) e.classList.add('faceDown');
-      const red = isRed(c.suit);
-      if (red && c.up) e.classList.add('red');
-      e.textContent = c.up ? cardLabel(c) : '';
-      e.draggable = c.up ? true : false;
-      e.dataset.cardId = c.id;
-      e.addEventListener('dragstart', onDragStart);
-      e.addEventListener('dragend', onDragEnd);
-      return e;
-    }
-
-    // -------------------------
-    // Basic Rules (single-card moves)
-    // -------------------------
-    function canPlaceOnTableau(under, card){
-      if (!under) return card.rank === 12; // empty tableau needs a King (12)
-      const altColor = isRed(under.suit) !== isRed(card.suit);
-      return under.rank === card.rank + 1 && altColor;
-    }
-    function canPlaceOnFoundation(foundation, card){
-      if (foundation.cards.length===0) return card.rank === 0; // Ace
-      const top = foundation.cards[foundation.cards.length-1];
-      return top.suit === card.suit && card.rank === top.rank + 1;
-    }
-
-    // Find & mutate helpers
-    function findCard(cardId){
-      function findSide(side){
-        // waste
-        const wIdx = state[side].waste.findIndex(x=>x.id===cardId);
-        if (wIdx>-1) return { zone:`${side}-waste`, type:'waste', side, idx:wIdx };
-        // tableau
-        for (let p=0; p<7; p++){
-          const pile = state[side].tableau[p];
-          const idx = pile.findIndex(x=>x.id===cardId);
-          if (idx>-1) return { zone:`${side}-pile-${p}`, type:'pile', side, pile:p, idx };
-        }
-        return null;
-      }
-      return findSide('you') || findSide('opp') || (function(){
-        // foundations
-        for (let i=0; i<state.foundations.length; i++){
-          const idx = state.foundations[i].cards.findIndex(x=>x.id===cardId);
-          if (idx>-1) return { zone:`found-${i}`, type:'found', f:i, idx };
-        }
-        return null;
-      })();
-    }
-
-    function applyMove(move, announce=true){
-      // move = { cardId, to: {kind:'pile'|'found', side?, pile?, f?} }
-      // Remove card from its current zone
-      const loc = findCard(move.cardId);
-      if (!loc) return;
-      let card;
-      if (loc.type==='waste') card = state[loc.side].waste.pop();
-      else if (loc.type==='pile') card = state[loc.side].tableau[loc.pile].pop();
-      else if (loc.type==='found') card = state.foundations[loc.f].cards.pop();
-      if (!card) return;
-
-      if (move.to.kind==='pile') {
-        state[move.to.side].tableau[move.to.pile].push(card);
-        // flip next card if needed
-        const pile = state[loc.side]?.tableau?.[loc.pile];
-        if (pile && pile.length>0) pile[pile.length-1].up = true;
-      } else if (move.to.kind==='found') {
-        state.foundations[move.to.f].cards.push(card);
-        // flip next card if needed
-        const pile = state[loc.side]?.tableau?.[loc.pile];
-        if (pile && pile.length>0) pile[pile.length-1].up = true;
-      }
-      if (announce) state.moves++;
-      renderAll();
-      if (announce && ws && ws.readyState===1) {
-        ws.send(serializeMove(move));
-      }
-      checkWin();
-    }
-
-    function checkWin(){
-      const totalFound = state.foundations.reduce((a,f)=> a + f.cards.length, 0);
-      // 2 decks per player, 104 per side → overall 208 cards to move to foundations
-      if (totalFound === 208) {
-        state.over = true;
-        showToast('Alle Karten abgetragen! HighNoon vorbei.');
-      }
-    }
-
-    // -------------------------
-    // Drag & Drop
-    // -------------------------
-    let dragOrigin = null;
-    function onDragStart(e){
-      const id = e.target.dataset.cardId;
-      const loc = findCard(id);
-      dragOrigin = loc;
-      e.dataTransfer.setData('text/plain', id);
-      e.target.classList.add('dragging');
-    }
-    function onDragEnd(e){ e.target.classList.remove('dragging'); }
-
-    // drop handlers for all zones
-    function setupDrops(){
-      // foundations
-      document.querySelectorAll('.foundation').forEach((slot, fIdx)=>{
-        slot.addEventListener('dragover', ev=> ev.preventDefault());
-        slot.addEventListener('drop', ev=>{
-          ev.preventDefault();
-          const id = ev.dataTransfer.getData('text/plain');
-          const loc = findCard(id); if (!loc) return;
-          // card object
-          const card = (loc.type==='waste') ? state[loc.side].waste[loc.idx] : (loc.type==='pile' ? state[loc.side].tableau[loc.pile][loc.idx] : state.foundations[loc.f].cards[loc.idx]);
-          const f = state.foundations[fIdx];
-          if (canPlaceOnFoundation(f, card)) {
-            applyMove({ cardId:id, to:{ kind:'found', f:fIdx } });
-          } else {
-            showToast('Ungültig für Foundation');
-          }
-        });
-      });
-
-      // tableau piles (you + opp)
-      ['you','opp'].forEach(side=>{
-        for (let p=0; p<7; p++){
-          const pileEl = document.querySelector(`[data-zone="${side}-pile-${p}"]`);
-          pileEl.addEventListener('dragover', ev=> ev.preventDefault());
-          pileEl.addEventListener('drop', ev=>{
-            ev.preventDefault();
-            const id = ev.dataTransfer.getData('text/plain');
-            const loc = findCard(id); if (!loc) return;
-            // Only single card moves in this starter
-            const destPile = state[side].tableau[p];
-            const under = destPile[destPile.length-1];
-            const card = (loc.type==='waste') ? state[loc.side].waste[loc.idx] : (loc.type==='pile' ? state[loc.side].tableau[loc.pile][loc.idx] : state.foundations[loc.f].cards[loc.idx]);
-            if (!card.up) return;
-            if (canPlaceOnTableau(under, card)) {
-              applyMove({ cardId:id, to:{ kind:'pile', side, pile:p } });
-            } else {
-              showToast('Ungültiger Tableau‑Move');
-            }
-          });
-        }
-      });
-
-      // Stock click → flip to waste (you only)
-      el('#you-stock').addEventListener('click', ()=>{
-        const s = state.you.stock; if (s.length===0) return;
-        const c = s.pop(); c.up = true; state.you.waste.push(c); state.moves++; renderAll();
-        if (ws && ws.readyState===1) ws.send(serializeMove({kind:'flip', side:'you'}));
-      });
-      // Opponent stock click is disabled (you cannot flip their stock)
-    }
-
-    // -------------------------
-    // Realtime (optional WebSocket relay)
-    // -------------------------
-    let ws = null;
-    function connectWS(){
-      const room = state.room.trim(); if (!room) { showToast('Room-ID fehlt'); return; }
-      const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.hostname || 'localhost') + ':3001' + '/ws?room=' + encodeURIComponent(room);
-      ws = new WebSocket(url);
-      ws.onopen = ()=> { el('#syncState').textContent = 'online'; showToast('Verbunden'); };
-      ws.onclose = ()=> { el('#syncState').textContent = 'offline'; showToast('Getrennt'); };
-      ws.onmessage = (ev)=>{
-        try {
-          const msg = JSON.parse(ev.data);
-          if (msg?.move?.kind==='flip' && msg?.move?.side==='you') {
-            // Remote flipped their stock ➜ mirror for opponent side
-            const s = state.opp.stock; if (s.length>0){ const c = s.pop(); c.up = true; state.opp.waste.push(c); renderAll(); }
-            return;
-          }
-          if (msg?.move?.cardId) applyRemoteMove(msg.move);
-        } catch(e){/* ignore */}
-      }
-    }
-
-    // -------------------------
-    // Boot
-    // -------------------------
-    function newGame(){
-      // reset
-      state.you = { stock:[], waste:[], tableau:[[],[],[],[],[],[],[]] };
-      state.opp = { stock:[], waste:[], tableau:[[],[],[],[],[],[],[]] };
-      state.foundations = Array.from({length:8}, (_,i)=>({ suit: SUITS[i%4], cards: [] }));
-      state.moves = 0; state.over = false;
-      deal(state.seed || '');
-      renderAll();
-      setupDrops();
-    }
-
-    window.addEventListener('DOMContentLoaded', ()=>{
-      // UI bind
-      el('#seed').value = state.seed; el('#room').value = state.room;
-      el('#newGame').addEventListener('click', ()=>{ state.seed = el('#seed').value.trim(); url.searchParams.set('seed', state.seed); history.replaceState({}, '', url); newGame(); });
-      el('#connect').addEventListener('click', ()=>{ state.room = el('#room').value.trim(); url.searchParams.set('room', state.room); history.replaceState({}, '', url); connectWS(); });
-      newGame();
-      document.getElementById('howto').showModal();
+  // ---------- DOM ----------
+  const el=s=>document.querySelector(s);
+  const mk=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e;};
+  function renderAll(){
+    el('#moves').textContent=String(state.moves);
+    ['you','opp'].forEach(side=>{
+      el(`#${side}-tableau`).innerHTML='';
+      el(`#${side}-stock`).innerHTML='';
+      el(`#${side}-waste`).innerHTML='';
     });
-  </script>
+    el('#foundations').innerHTML='';
+    state.foundations.forEach((f,i)=>{
+      const slot=mk('div','foundation');slot.dataset.f=i;el('#foundations').appendChild(slot);
+      f.cards.forEach((c,idx)=>{const card=renderCard(c);card.style.top=`${idx*2}px`;slot.appendChild(card);});
+    });
+    renderStack('you');renderStack('opp');
+    ['you','opp'].forEach(side=>{
+      const cont=el(`#${side}-tableau`);
+      for(let p=0;p<7;p++){
+        const pileEl=mk('div','pile');pileEl.dataset.zone=`${side}-pile-${p}`;cont.appendChild(pileEl);
+        const pile=state[side].tableau[p];
+        pile.forEach((c,idx)=>{const card=renderCard(c);card.style.top=`${idx*24}px`;pileEl.appendChild(card);});
+      }
+    });
+    setupDrops();
+  }
+  function renderStack(side){
+    const stockEl=el(`#${side}-stock`);const wasteEl=el(`#${side}-waste`);
+    const s=state[side].stock;if(s.length){const top=s[s.length-1];const back=renderCard({...top,up:false});stockEl.appendChild(back);}
+    state[side].waste.slice(-3).forEach((c,i)=>{const card=renderCard(c);card.style.left=`${i*16}px`;wasteEl.appendChild(card);});
+  }
+  function renderCard(c){
+    const e=mk('div','card');if(!c.up)e.classList.add('faceDown');else{e.classList.add(isRed(c.suit)?'red':'black');e.textContent=cardLabel(c);}
+    e.draggable=!!c.up;e.dataset.cardId=c.id;
+    e.addEventListener('dragstart',onDragStart);e.addEventListener('dragend',onDragEnd);
+    e.addEventListener('dblclick',onDoubleClickAutoMove);return e;
+  }
+
+  // ---------- Rules ----------
+  function canPlaceOnTableau(under,card){if(!under)return card.rank===12;const alt=isRed(under.suit)!==isRed(card.suit);return under.rank===card.rank+1&&alt;}
+  function canPlaceOnFoundation(f,card){if(f.cards.length===0)return card.rank===0;const top=f.cards[f.cards.length-1];return top.suit===card.suit&&card.rank===top.rank+1;}
+  function locOfCard(id){
+    for(const side of ['you','opp']){
+      const w=state[side].waste.findIndex(c=>c.id===id);if(w>-1)return{type:'waste',side,idx:w};
+      for(let p=0;p<7;p++){const idx=state[side].tableau[p].findIndex(c=>c.id===id);if(idx>-1)return{type:'pile',side,pile:p,idx};}
+    }
+    for(let f=0;f<state.foundations.length;f++){const idx=state.foundations[f].cards.findIndex(c=>c.id===id);if(idx>-1)return{type:'found',f,idx};}
+    return null;
+  }
+  function isFaceUpSequence(side,pileIndex,startIdx){
+    const pile=state[side].tableau[pileIndex];
+    for(let i=startIdx;i<pile.length-1;i++){const a=pile[i],b=pile[i+1];if(!a.up||!b.up)return false;if(isRed(a.suit)===isRed(b.suit))return false;if(a.rank!==b.rank+1)return false;}
+    return pile[startIdx]?.up===true;
+  }
+
+  // ---------- Drag & Drop ----------
+  let drag={origin:null,count:1};
+  function onDragStart(e){const id=e.target.dataset.cardId;const loc=locOfCard(id);drag.origin=loc;drag.count=1;e.dataTransfer.setData('text/plain',id);e.target.classList.add('dragging');if(loc?.type==='pile'){const pile=state[loc.side].tableau[loc.pile];if(isFaceUpSequence(loc.side,loc.pile,loc.idx))drag.count=pile.length-loc.idx;}}
+  function onDragEnd(e){e.target.classList.remove('dragging');}
+  function onDoubleClickAutoMove(e){
+    const id=e.currentTarget.dataset.cardId;const loc=locOfCard(id);if(!loc)return;
+    let card;if(loc.type==='pile'){const pile=state[loc.side].tableau[loc.pile];if(loc.idx!==pile.length-1)return;card=pile[loc.idx];}
+    else if(loc.type==='waste'){card=state[loc.side].waste[loc.idx];if(loc.idx!==state[loc.side].waste.length-1)return;}
+    else return;
+    const t=state.foundations.findIndex(f=>canPlaceOnFoundation(f,card));if(t>-1)applyMove({owner:localOwner,kind:'toFound',cardId:id,count:1,to:{kind:'found',f:t}},true);
+  }
+
+  function setupDrops(){
+    document.querySelectorAll('.foundation').forEach(slot=>{
+      slot.addEventListener('dragover',ev=>ev.preventDefault());
+      slot.addEventListener('drop',ev=>{
+        ev.preventDefault();const id=ev.dataTransfer.getData('text/plain');const loc=locOfCard(id);if(!loc)return;
+        const fIdx=Number(slot.dataset.f);const f=state.foundations[fIdx];
+        const card=(loc.type==='waste')?state[loc.side].waste[loc.idx]:(loc.type==='pile'?state[loc.side].tableau[loc.pile][loc.idx]:state.foundations[loc.f].cards[loc.idx]);
+        if(card&&canPlaceOnFoundation(f,card)){applyMove({owner:localOwner,kind:'toFound',cardId:id,count:1,to:{kind:'found',f:fIdx}},true);}
+      });
+    });
+    ['you','opp'].forEach(side=>{
+      for(let p=0;p<7;p++){
+        const pileEl=document.querySelector(`[data-zone="${side}-pile-${p}"]`);
+        pileEl.addEventListener('dragover',ev=>ev.preventDefault());
+        pileEl.addEventListener('drop',ev=>{
+          ev.preventDefault();const id=ev.dataTransfer.getData('text/plain');const loc=locOfCard(id);if(!loc)return;
+          const destPile=state[side].tableau[p];const under=destPile[destPile.length-1];
+          const srcTop=(loc.type==='waste')?state[loc.side].waste[loc.idx]:state[loc.side].tableau[loc.pile][loc.idx];
+          if(!srcTop?.up)return;
+          if(canPlaceOnTableau(under,srcTop)){
+            const count=(loc.type==='pile'&&isFaceUpSequence(loc.side,loc.pile,loc.idx))?state[loc.side].tableau[loc.pile].length-loc.idx:1;
+            const owner=(loc.side==='you'?localOwner:otherOwner());
+            applyMove({owner,kind:'toPile',cardId:id,count,to:{kind:'pile',side,pile:p}},true);
+          }
+        });
+      }
+    });
+    el('#you-stock').onclick=()=>{const s=state[ownerToSide(localOwner)].stock;if(s.length)applyMove({owner:localOwner,kind:'flip'},true);};
+    el('#you-waste').ondblclick=()=>{const side=ownerToSide(localOwner);if(state[side].stock.length===0&&state[side].waste.length>0)applyMove({owner:localOwner,kind:'recycle'},true);};
+  }
+
+  // ---------- Moves ----------
+  function applyMove(move,announce=true){
+    try{
+      const side=ownerToSide(move.owner);
+      if(move.kind==='flip'){const s=state[side].stock;if(s.length){const c=s.pop();c.up=true;state[side].waste.push(c);}if(announce)state.moves++;renderAll();if(announce)send(move);return;}
+      if(move.kind==='recycle'){if(state[side].stock.length===0&&state[side].waste.length>0){const rev=state[side].waste.reverse();rev.forEach(c=>c.up=false);state[side].stock=rev.splice(0);state[side].waste=[];}if(announce)state.moves++;renderAll();if(announce)send(move);return;}
+      const loc=move.cardId?locOfCard(move.cardId):null;if(!loc)return;
+      let cards=[];
+      if(loc.type==='waste'){if(loc.idx!==state[loc.side].waste.length-1)return;cards.push(state[loc.side].waste.pop());}
+      else if(loc.type==='pile'){const pile=state[loc.side].tableau[loc.pile];const count=move.count||1;cards=pile.splice(loc.idx,count);if(pile.length>0)pile[pile.length-1].up=true;}
+      else if(loc.type==='found'){if(loc.idx!==state.foundations[loc.f].cards.length-1)return;cards.push(state.foundations[loc.f].cards.pop());}
+      if(cards.length===0)return;
+      if(move.to&&move.to.kind==='found'){state.foundations[move.to.f].cards.push(cards[0]);}
+      else if(move.to&&move.to.kind==='pile'){state[move.to.side].tableau[move.to.pile].push(...cards);}
+      if(announce)state.moves++;renderAll();if(announce)send(move);checkWin();
+    }catch(err){console.error('applyMove error',err);showToast('Move-Fehler: '+err.message);}
+  }
+  function checkWin(){const total=state.foundations.reduce((a,f)=>a+f.cards.length,0);if(total===208){state.over=true;showToast('Alle Karten abgetragen!');}}
+
+  // ---------- WS ----------
+  const peers=new Map();let clientId=Math.random().toString(36).slice(2);let ws=null,pingTimer=null;
+  function sendSys(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify({sys:o,from:clientId}));}
+  function send(m){if(ws&&ws.readyState===1)ws.send(JSON.stringify({move:m,from:clientId}));}
+  function connectWS(){
+    const room=state.room.trim();if(!room){showToast('Room-ID fehlt');return;}
+    const wsUrl='ws://127.0.0.1:3001/ws?room='+encodeURIComponent(room);
+    ws=new WebSocket(wsUrl);
+    ws.onopen=()=>{showToast('Verbunden');sendSys({type:'hello'});pingTimer=setInterval(()=>sendSys({type:'ping'}),5000);};
+    ws.onclose=()=>{showToast('Getrennt');clearInterval(pingTimer);};
+    ws.onmessage=(ev)=>{try{const msg=JSON.parse(ev.data);
+      if(msg.sys){
+        if(msg.sys.type==='hello'&&msg.from){
+          const iAmY=clientId.localeCompare(msg.from)<0;const desired=iAmY?'Y':'O';
+          if(localOwner!==desired){localOwner=desired;[state.you,state.opp]=[state.opp,state.you];renderAll();showToast('Perspektive: '+localOwner);}
+          sendSys({type:'hello'});
+        }
+        return;
+      }
+      if(msg.move)applyMove(msg.move,false);
+    }catch(e){console.error('WS-Error',e);}};
+  }
+
+  // ---------- Boot ----------
+  function newGame(){
+    state.you={stock:[],waste:[],tableau:[[],[],[],[],[],[],[]]};
+    state.opp={stock:[],waste:[],tableau:[[],[],[],[],[],[],[]]};
+    state.foundations=Array.from({length:8},(_,i)=>({suit:SUITS[i%4],cards:[]}));
+    state.moves=0;state.over=false;
+    deal(state.seed||'');renderAll();
+  }
+  window.addEventListener('DOMContentLoaded',()=>{
+    const seedIn=el('#seed'),roomIn=el('#room');
+    if(seedIn)seedIn.value=state.seed;if(roomIn)roomIn.value=state.room;
+    el('#newGame').onclick=()=>{state.seed=(seedIn?.value||'').trim();url.searchParams.set('seed',state.seed);history.replaceState({},'',url);newGame();};
+    el('#connect').onclick=()=>{state.room=(roomIn?.value||'').trim();url.searchParams.set('room',state.room);history.replaceState({},'',url);connectWS();};
+    newGame();
+  });
+})();
+</script>
+
+
+
 </body>
 </html>
