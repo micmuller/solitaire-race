@@ -127,22 +127,22 @@
 
 <script>
 /* ============================================================
-   Solitaire HighNoon — v2.7.5
-   - FIX: deterministische Spiegelung über Ziel-Seite (you/opp), nicht via owner==localOwner
-   - FIX: Perspektive (you/opp) wird nur einmal gesetzt (race-safe hello)
-   - Beibehalt: owner-relatives Protokoll (to/from), opp-Rendering gespiegelt,
-                Auto-Reconnect, Ping/Pong, Shortcuts, dyn. Version
+   Solitaire HighNoon — v2.7.8
+   - Spiegelung entfernt: beide Seiten identische UI-Order (0→6)
+   - Fächer (Waste) bei beiden nach rechts (gleiches Layout)
+   - Netzwerk-Moves senden/verwenden uiIndex (visueller Slot)
+   - Owner-sicher (Y/O), Reconnect, Ping/Pong, dyn. Version
    ============================================================ */
 (function(){
-  const VERSION = '2.7.5';
+  const VERSION = '2.7.8';
 
   // ---------- Helpers ----------
+  const url=new URL(location.href);
   function showToast(msg){
     const t=document.getElementById('toast'); if(!t) return;
     t.textContent=msg; t.classList.add('show');
     setTimeout(()=>t.classList.remove('show'),1800);
   }
-  const url=new URL(location.href);
 
   // RNG
   function rng(seedStr){
@@ -166,9 +166,8 @@
     return deck;
   }
   function shuffle(a,r){const arr=a.slice();for(let i=arr.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}return arr;}
-  function rankStr(i){return RANKS[i];}
   function isRed(s){return s==="♥"||s==="♦";}
-  function cardLabel(c){return `${rankStr(c.rank)}${c.suit}`;}
+  function cardLabel(c){return `${RANKS[c.rank]}${c.suit}`;}
 
   // ---------- State ----------
   const state={
@@ -180,17 +179,11 @@
     moves:0,over:false
   };
 
-  // ---------- Owner & Mapping ----------
+  // ---------- Owner ----------
   let localOwner='Y';
-  let hasSetPerspective=false; // NEU: verhindert Doppel-Swap
+  let hasSetPerspective=false;
   function ownerToSide(owner){return owner===localOwner?'you':'opp';}
   const PILES=7;
-  function mapOwnerPileToLocal(p, ownerRef){
-    // Mappe owner-relativen Pile p auf die lokale Datenstruktur,
-    // abhängig davon, ob der ownerRef bei mir 'you' oder 'opp' ist.
-    const side = ownerToSide(ownerRef); // 'you' oder 'opp'
-    return side==='you' ? p : (PILES-1-p);
-  }
 
   // ---------- Deal ----------
   function deal(seedStr){
@@ -217,7 +210,6 @@
   function renderAll(){
     const mv=document.getElementById('moves'); if(mv) mv.textContent=String(state.moves);
 
-    // clear
     ['you','opp'].forEach(side=>{
       el(`#${side}-tableau`)?.replaceChildren();
       el(`#${side}-stock`)?.replaceChildren();
@@ -225,24 +217,20 @@
     });
     el('#foundations')?.replaceChildren();
 
-    // foundations
+    // Foundations
     state.foundations.forEach((f,i)=>{
       const slot=mk('div','foundation'); slot.dataset.f=i; el('#foundations')?.appendChild(slot);
       f.cards.forEach((c,idx)=>{const card=renderCard(c);card.style.top=`${idx*2}px`;slot.appendChild(card);});
     });
 
-    // stacks
+    // Stacks
     renderStack('you'); renderStack('opp');
 
-    // tableaux (Gegner gespiegelt)
+    // Tableaux: **beide Seiten identisch 0→6**
     ['you','opp'].forEach(side=>{
       const cont=el(`#${side}-tableau`); if(!cont) return;
-      const indices = side==='opp' ? [...Array(PILES).keys()].reverse()
-                                   : [...Array(PILES).keys()];
-      for(const p of indices){
-        const pileEl=mk('div','pile');
-        pileEl.dataset.zone=`${side}-pile-${p}`;
-        cont.appendChild(pileEl);
+      for(let p=0;p<PILES;p++){
+        const pileEl=mk('div','pile'); pileEl.dataset.zone=`${side}-pile-${p}`; cont.appendChild(pileEl);
         const pile=state[side].tableau[p];
         pile.forEach((c,idx)=>{const card=renderCard(c);card.style.top=`${idx*24}px`;pileEl.appendChild(card);});
       }
@@ -256,9 +244,13 @@
     const stockEl=el(`#${side}-stock`); const wasteEl=el(`#${side}-waste`);
     const s=state[side].stock;
     if(stockEl && s.length){const top=s[s.length-1]; const back=renderCard({...top,up:false}); stockEl.appendChild(back);}
-    if(wasteEl){
-      state[side].waste.slice(-3).forEach((c,i)=>{const card=renderCard(c);card.style.left=`${i*16}px`;wasteEl.appendChild(card);});
-    }
+    if(!wasteEl) return;
+    // **Waste-Fächer nach rechts** (beide Seiten gleich)
+    state[side].waste.slice(-3).forEach((c,i)=>{
+      const card=renderCard(c);
+      card.style.left=`${i*16}px`;
+      wasteEl.appendChild(card);
+    });
   }
 
   function renderCard(c){
@@ -342,28 +334,29 @@
       });
     });
 
-    // Nur eigene Piles droppbar
+    // Nur eigene Piles droppbar — UI-Slots 0..6
     const mySide = ownerToSide(localOwner);
-    for(let p=0;p<7;p++){
-      const pileEl=document.querySelector(`[data-zone="${mySide}-pile-${p}"]`);
+    for(let ui=0; ui<7; ui++){
+      const pileEl=document.querySelector(`[data-zone="${mySide}-pile-${ui}"]`);
       if(!pileEl) continue;
       pileEl.addEventListener('dragover',ev=>ev.preventDefault());
       pileEl.addEventListener('drop',ev=>{
         ev.preventDefault();
         const id=ev.dataTransfer.getData('text/plain'); const loc=locOfCard(id); if(!loc||!isMine(loc)) return;
-        const destPile=state[mySide].tableau[p];
+        const destPile=state[mySide].tableau[ui];
         const under=destPile[destPile.length-1];
         const srcTop=(loc.type==='waste')?state[loc.side].waste[loc.idx]:state[loc.side].tableau[loc.pile][loc.idx];
         if(!srcTop?.up) return;
         if(canPlaceOnTableau(under,srcTop)){
           const count=(loc.type==='pile'&&isFaceUpSequence(loc.side,loc.pile,loc.idx))?state[loc.side].tableau[loc.pile].length-loc.idx:1;
+          // Senden mit uiIndex (visueller Slot)
           applyMove({
             owner: localOwner,
             kind: 'toPile',
             cardId: id,
             count,
-            from: { kind:'pile', sideOwner: localOwner, pile: loc.pile }, // owner-relativ
-            to:   { kind:'pile', sideOwner: localOwner, pile: p }         // owner-relativ
+            from: { kind:'pile', sideOwner: localOwner, uiIndex: loc.pile },
+            to:   { kind:'pile', sideOwner: localOwner, uiIndex: ui }
           }, true);
         }
       });
@@ -430,19 +423,12 @@
       if(move.to && move.to.kind==='found'){
         state.foundations[move.to.f].cards.push(cards[0]);
       } else if(move.to && move.to.kind==='pile'){
+        // UI-Slot ohne Spiegelung
         const ownerRef = move.to.sideOwner || move.owner; // 'Y'|'O'
         const targetSide = ownerToSide(ownerRef);          // 'you'|'opp'
-        const targetPile = mapOwnerPileToLocal(move.to.pile, ownerRef); // p oder 6-p
-        // optional: Plausibilitätslog der Quelle
-        if(move.from && move.from.kind==='pile'){
-          const fromOwner=move.from.sideOwner||move.owner;
-          const expectedFromSide = ownerToSide(fromOwner);
-          const expectedFromPile = mapOwnerPileToLocal(move.from.pile, fromOwner);
-          if(loc.side!==expectedFromSide || loc.type!=='pile' || loc.pile!==expectedFromPile){
-            console.debug('[NET] source mismatch (non-fatal)', {loc, expectedFromSide, expectedFromPile});
-          }
-        }
-        state[targetSide].tableau[targetPile].push(...cards);
+        const uiIndex = (move.to.uiIndex!=null) ? move.to.uiIndex
+                      : (move.to.pile!=null ? move.to.pile : 0);
+        state[targetSide].tableau[uiIndex].push(...cards);
       }
       if(announce) state.moves++;
       renderAll(); if(announce) send(move);
@@ -526,7 +512,6 @@
 
         if(msg.sys){
           if(msg.sys.type==='hello' && msg.from){
-            // stabile Zuordnung nur einmal
             if(!hasSetPerspective){
               const iAmY = clientId.localeCompare(msg.from) < 0;
               const desired = iAmY ? 'Y' : 'O';
