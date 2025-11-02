@@ -125,15 +125,16 @@
   <div class="toast" id="toast"></div>
 
 
- <script>
+<script>
 /* ============================================================
-   Solitaire HighNoon — v2.7.3
-   - FIX: Gegner-Tableau wird beim RENDERN gespiegelt (rechts→links)
-   - Beibehalt: Owner-relatives Ziel (sideOwner:'Y'|'O') + Pile-Mapping
-   - Auto-Reconnect, Ping/Pong, Owner-Guard, Shortcuts, dyn. Version
+   Solitaire HighNoon — v2.7.5
+   - FIX: deterministische Spiegelung über Ziel-Seite (you/opp), nicht via owner==localOwner
+   - FIX: Perspektive (you/opp) wird nur einmal gesetzt (race-safe hello)
+   - Beibehalt: owner-relatives Protokoll (to/from), opp-Rendering gespiegelt,
+                Auto-Reconnect, Ping/Pong, Shortcuts, dyn. Version
    ============================================================ */
 (function(){
-  const VERSION = '2.7.3';
+  const VERSION = '2.7.5';
 
   // ---------- Helpers ----------
   function showToast(msg){
@@ -179,17 +180,19 @@
     moves:0,over:false
   };
 
-  // ---------- Owner Handling ----------
+  // ---------- Owner & Mapping ----------
   let localOwner='Y';
+  let hasSetPerspective=false; // NEU: verhindert Doppel-Swap
   function ownerToSide(owner){return owner===localOwner?'you':'opp';}
-  function otherOwner(){return localOwner==='Y'?'O':'Y';}
   const PILES=7;
-  function mapPileOwnerToLocal(p, owner){
-    // p ist owner-relativ (0 links beim Owner). Lokal spiegeln, falls das nicht unser Owner ist.
-    return owner===localOwner ? p : (PILES-1-p);
+  function mapOwnerPileToLocal(p, ownerRef){
+    // Mappe owner-relativen Pile p auf die lokale Datenstruktur,
+    // abhängig davon, ob der ownerRef bei mir 'you' oder 'opp' ist.
+    const side = ownerToSide(ownerRef); // 'you' oder 'opp'
+    return side==='you' ? p : (PILES-1-p);
   }
 
-  // ---------- Deal (Shared deck alternating) ----------
+  // ---------- Deal ----------
   function deal(seedStr){
     const r=rng(seedStr||'');
     const base=shuffle(newDoubleDeck('B'),r.random);
@@ -231,26 +234,21 @@
     // stacks
     renderStack('you'); renderStack('opp');
 
-    // tableaux (WICHTIG: Gegner gespiegelt)
+    // tableaux (Gegner gespiegelt)
     ['you','opp'].forEach(side=>{
       const cont=el(`#${side}-tableau`); if(!cont) return;
-
-      // Reihenfolge je Seite
       const indices = side==='opp' ? [...Array(PILES).keys()].reverse()
                                    : [...Array(PILES).keys()];
-
       for(const p of indices){
         const pileEl=mk('div','pile');
-        // dataset.zone nutzt den "logischen" Index (nicht kritisch für 'opp', da wir dort keine Drops erlauben)
         pileEl.dataset.zone=`${side}-pile-${p}`;
         cont.appendChild(pileEl);
-
         const pile=state[side].tableau[p];
         pile.forEach((c,idx)=>{const card=renderCard(c);card.style.top=`${idx*24}px`;pileEl.appendChild(card);});
       }
     });
 
-    setupDrops(); // hängt nur auf deinem 'you'-Bereich
+    setupDrops();
     updateOverlay();
   }
 
@@ -276,7 +274,7 @@
 
   // ---------- Rules ----------
   function canPlaceOnTableau(under,card){ if(!under) return card.rank===12; const alt=isRed(under.suit)!==isRed(card.suit); return under.rank===card.rank+1&&alt; }
-  function canPlaceOnFoundation(f,card){ if(f.cards.length===0) return card.rank===0; const top=f.cards[f.length-1]??f.cards[f.cards.length-1]; return top && top.suit===card.suit && card.rank===top.rank+1; }
+  function canPlaceOnFoundation(f,card){ if(f.cards.length===0) return card.rank===0; const top=f.cards[f.cards.length-1]; return top && top.suit===card.suit && card.rank===top.rank+1; }
   function locOfCard(id){
     for(const side of ['you','opp']){
       const w=state[side].waste.findIndex(c=>c.id===id); if(w>-1) return {type:'waste',side,idx:w};
@@ -344,7 +342,7 @@
       });
     });
 
-    // Nur eigene Piles droppbar (UI-Index normal 0..6 nach links->rechts)
+    // Nur eigene Piles droppbar
     const mySide = ownerToSide(localOwner);
     for(let p=0;p<7;p++){
       const pileEl=document.querySelector(`[data-zone="${mySide}-pile-${p}"]`);
@@ -364,7 +362,8 @@
             kind: 'toPile',
             cardId: id,
             count,
-            to: { kind:'pile', sideOwner: localOwner, pile: p } // owner-relativ
+            from: { kind:'pile', sideOwner: localOwner, pile: loc.pile }, // owner-relativ
+            to:   { kind:'pile', sideOwner: localOwner, pile: p }         // owner-relativ
           }, true);
         }
       });
@@ -384,7 +383,7 @@
       else if(ev.key==='f' || ev.key==='F'){
         const w=state[side].waste; if(!w.length) return;
         const card=w[w.length-1];
-        const t=state.foundations.findIndex(f=>canPlaceOnFoundation(f,card));
+        const t=state[side].foundations.findIndex(f=>canPlaceOnFoundation(f,card));
         if(t>-1) applyMove({owner:localOwner,kind:'toFound',cardId:card.id,count:1,to:{kind:'found',f:t}},true);
       }
     };
@@ -412,6 +411,8 @@
       const loc=move.cardId?locOfCard(move.cardId):null; if(!loc) return;
       if(announce && loc.side !== ownerToSide(move.owner)) return;
 
+      if(!announce) console.debug('[NET] move', move);
+
       let cards=[];
       if(loc.type==='waste'){
         if(loc.idx!==state[loc.side].waste.length-1) return;
@@ -430,8 +431,17 @@
         state.foundations[move.to.f].cards.push(cards[0]);
       } else if(move.to && move.to.kind==='pile'){
         const ownerRef = move.to.sideOwner || move.owner; // 'Y'|'O'
-        const targetSide = ownerToSide(ownerRef);
-        const targetPile = mapPileOwnerToLocal(move.to.pile, ownerRef); // hier spiegeln
+        const targetSide = ownerToSide(ownerRef);          // 'you'|'opp'
+        const targetPile = mapOwnerPileToLocal(move.to.pile, ownerRef); // p oder 6-p
+        // optional: Plausibilitätslog der Quelle
+        if(move.from && move.from.kind==='pile'){
+          const fromOwner=move.from.sideOwner||move.owner;
+          const expectedFromSide = ownerToSide(fromOwner);
+          const expectedFromPile = mapOwnerPileToLocal(move.from.pile, fromOwner);
+          if(loc.side!==expectedFromSide || loc.type!=='pile' || loc.pile!==expectedFromPile){
+            console.debug('[NET] source mismatch (non-fatal)', {loc, expectedFromSide, expectedFromPile});
+          }
+        }
         state[targetSide].tableau[targetPile].push(...cards);
       }
       if(announce) state.moves++;
@@ -516,13 +526,19 @@
 
         if(msg.sys){
           if(msg.sys.type==='hello' && msg.from){
-            const iAmY = clientId.localeCompare(msg.from) < 0;
-            const desired = iAmY ? 'Y' : 'O';
-            if(localOwner!==desired){
-              localOwner=desired;
-              [state.you, state.opp] = [state.opp, state.you];
-              renderAll();
-              showToast('Perspektive: '+localOwner);
+            // stabile Zuordnung nur einmal
+            if(!hasSetPerspective){
+              const iAmY = clientId.localeCompare(msg.from) < 0;
+              const desired = iAmY ? 'Y' : 'O';
+              if(localOwner!==desired){
+                localOwner=desired;
+                [state.you, state.opp] = [state.opp, state.you];
+                renderAll();
+                showToast('Perspektive: '+localOwner);
+              }else{
+                localOwner=desired;
+              }
+              hasSetPerspective=true;
             }
             if(msg.from !== clientId){ sendSys({type:'hello-ack', from: clientId}); }
           } else if(msg.sys.type==='ping' && typeof msg.sys.ts==='number'){
