@@ -127,17 +127,25 @@
 
 <script>
 /* ============================================================
-   Solitaire HighNoon — v2.7.8
-   - Spiegelung entfernt: beide Seiten identische UI-Order (0→6)
-   - Fächer (Waste) bei beiden nach rechts (gleiches Layout)
-   - Netzwerk-Moves senden/verwenden uiIndex (visueller Slot)
-   - Owner-sicher (Y/O), Reconnect, Ping/Pong, dyn. Version
+   Solitaire HighNoon — v2.7.8-stable
+   - Stable Baseline (keine visuellen Mirror-Effekte, keine Transform/Flex-Änderungen)
+   - NEU: mirror-Param wird standardmässig auf 1 gesetzt
+   - NEU: Overlay zeigt Mirror-Status (mirror:on/off)
    ============================================================ */
 (function(){
-  const VERSION = '2.7.8';
+  const VERSION = '2.7.8-stable';
+
+  // ---------- URL / Mirror-Flag (nur Status/Default, keine Logikänderung) ----------
+  const url = new URL(location.href);
+  // Standard: mirror=1, kann per URL auf 0 gesetzt werden (?mirror=0)
+  if(!url.searchParams.has('mirror')) {
+    url.searchParams.set('mirror','1');
+    history.replaceState({},'',url);
+  }
+  const MIRROR_PARAM = url.searchParams.get('mirror');
+  const MIRROR_ON = MIRROR_PARAM === '1';
 
   // ---------- Helpers ----------
-  const url=new URL(location.href);
   function showToast(msg){
     const t=document.getElementById('toast'); if(!t) return;
     t.textContent=msg; t.classList.add('show');
@@ -210,6 +218,7 @@
   function renderAll(){
     const mv=document.getElementById('moves'); if(mv) mv.textContent=String(state.moves);
 
+    // clear
     ['you','opp'].forEach(side=>{
       el(`#${side}-tableau`)?.replaceChildren();
       el(`#${side}-stock`)?.replaceChildren();
@@ -217,20 +226,22 @@
     });
     el('#foundations')?.replaceChildren();
 
-    // Foundations
+    // foundations
     state.foundations.forEach((f,i)=>{
       const slot=mk('div','foundation'); slot.dataset.f=i; el('#foundations')?.appendChild(slot);
       f.cards.forEach((c,idx)=>{const card=renderCard(c);card.style.top=`${idx*2}px`;slot.appendChild(card);});
     });
 
-    // Stacks
+    // stacks
     renderStack('you'); renderStack('opp');
 
-    // Tableaux: **beide Seiten identisch 0→6**
+    // tableaux: beide Seiten identisch 0→6 (keine Spiegelung)
     ['you','opp'].forEach(side=>{
       const cont=el(`#${side}-tableau`); if(!cont) return;
       for(let p=0;p<PILES;p++){
-        const pileEl=mk('div','pile'); pileEl.dataset.zone=`${side}-pile-${p}`; cont.appendChild(pileEl);
+        const pileEl=mk('div','pile');
+        pileEl.dataset.zone=`${side}-pile-${p}`;
+        cont.appendChild(pileEl);
         const pile=state[side].tableau[p];
         pile.forEach((c,idx)=>{const card=renderCard(c);card.style.top=`${idx*24}px`;pileEl.appendChild(card);});
       }
@@ -244,13 +255,9 @@
     const stockEl=el(`#${side}-stock`); const wasteEl=el(`#${side}-waste`);
     const s=state[side].stock;
     if(stockEl && s.length){const top=s[s.length-1]; const back=renderCard({...top,up:false}); stockEl.appendChild(back);}
-    if(!wasteEl) return;
-    // **Waste-Fächer nach rechts** (beide Seiten gleich)
-    state[side].waste.slice(-3).forEach((c,i)=>{
-      const card=renderCard(c);
-      card.style.left=`${i*16}px`;
-      wasteEl.appendChild(card);
-    });
+    if(wasteEl){
+      state[side].waste.slice(-3).forEach((c,i)=>{const card=renderCard(c);card.style.left=`${i*16}px`;wasteEl.appendChild(card);});
+    }
   }
 
   function renderCard(c){
@@ -355,7 +362,7 @@
             kind: 'toPile',
             cardId: id,
             count,
-            from: { kind:'pile', sideOwner: localOwner, uiIndex: loc.pile },
+            from: { kind:'pile', sideOwner: localOwner, uiIndex: (loc.type==='pile'?loc.pile:-1) },
             to:   { kind:'pile', sideOwner: localOwner, uiIndex: ui }
           }, true);
         }
@@ -423,7 +430,6 @@
       if(move.to && move.to.kind==='found'){
         state.foundations[move.to.f].cards.push(cards[0]);
       } else if(move.to && move.to.kind==='pile'){
-        // UI-Slot ohne Spiegelung
         const ownerRef = move.to.sideOwner || move.owner; // 'Y'|'O'
         const targetSide = ownerToSide(ownerRef);          // 'you'|'opp'
         const uiIndex = (move.to.uiIndex!=null) ? move.to.uiIndex
@@ -448,7 +454,6 @@
   const peers=new Map();
   let clientId=Math.random().toString(36).slice(2);
   let ws=null, pingTimer=null, lastMsgAt=0, latencyMs=null;
-  let reconnectAttempts=0, reconnectTimer=null;
 
   function setText(id,txt){ const n=document.getElementById(id); if(n) n.textContent=txt; }
   function updateOverlay(){
@@ -462,9 +467,11 @@
     setText('ov-peers', String(peers.size));
     setText('ov-latency', latencyMs!=null ? `${Math.max(0,Math.round(latencyMs))} ms` : '—');
     setText('ov-last', lastMsgAt>0 ? (Math.floor((Date.now()-lastMsgAt)/1000)||0)+'s ago' : '—');
-    setText('ov-version', VERSION);
+    // NEU: Version + Mirror-Status
+    setText('ov-version', VERSION + (MIRROR_ON ? ' · mirror:on' : ' · mirror:off'));
   }
 
+  // alle 1s Peers prunen + Overlay aktualisieren
   setInterval(()=>{
     const now=Date.now();
     for(const [id,ts] of peers){ if(now-ts>15000) peers.delete(id); }
@@ -483,27 +490,28 @@
     return `${proto}//${host}:${wsPort}/ws?room=${encodeURIComponent(state.room.trim())}`;
   }
 
-  function clearWsTimers(){ if(pingTimer){clearInterval(pingTimer); pingTimer=null;} if(reconnectTimer){clearTimeout(reconnectTimer); reconnectTimer=null;} }
-  function scheduleReconnect(){
-    clearWsTimers();
-    const base=5000,max=30000,delay=Math.min(max, base*Math.pow(1.7,reconnectAttempts++));
-    reconnectTimer=setTimeout(()=>{connectWS();},delay);
-  }
-
   function connectWS(){
     const room=state.room.trim(); if(!room){ showToast('Room-ID fehlt'); return; }
     const wsUrl=buildWsUrl();
-    try{ ws=new WebSocket(wsUrl); }catch(e){ console.error('WS open error',e); scheduleReconnect(); return; }
-
+    ws=new WebSocket(wsUrl);
     ws.onopen=()=>{
-      showToast('Verbunden'); reconnectAttempts=0;
+      showToast('Verbunden');
       sendSys({type:'hello'});
-      updateOverlay(); clearWsTimers();
-      pingTimer=setInterval(()=>{ if(ws&&ws.readyState===1){ const ts=Date.now(); sendSys({type:'ping', ts}); } },5000);
+      updateOverlay();
+      // Ping mit Timestamp
+      pingTimer=setInterval(()=>{
+        if(ws && ws.readyState===1){
+          const ts=Date.now();
+          sendSys({type:'ping', ts});
+        }
+      }, 5000);
     };
-    ws.onclose=()=>{ showToast('Getrennt'); clearWsTimers(); updateOverlay(); scheduleReconnect(); };
-    ws.onerror=(err)=>{ console.error('WS error',err); updateOverlay(); };
-
+    ws.onclose=()=>{
+      showToast('Getrennt');
+      clearInterval(pingTimer);
+      updateOverlay();
+    };
+    ws.onerror=(err)=>{ console.error('WS error',err); };
     ws.onmessage=(ev)=>{
       lastMsgAt=Date.now();
       try{
@@ -525,7 +533,7 @@
               }
               hasSetPerspective=true;
             }
-            if(msg.from !== clientId){ sendSys({type:'hello-ack', from: clientId}); }
+            sendSys({type:'hello-ack', from: clientId});
           } else if(msg.sys.type==='ping' && typeof msg.sys.ts==='number'){
             sendSys({type:'pong', ts: msg.sys.ts});
           } else if(msg.sys.type==='pong' && typeof msg.sys.ts==='number'){
@@ -537,7 +545,9 @@
 
         if(msg.move) applyMove(msg.move, false);
         updateOverlay();
-      }catch(e){ console.error('WS-Error', e); }
+      }catch(e){
+        console.error('WS-Error', e);
+      }
     };
   }
 
@@ -556,17 +566,21 @@
     if(roomIn) roomIn.value=state.room;
     el('#newGame')?.addEventListener('click',()=>{
       state.seed=(seedIn?.value||'').trim();
-      url.searchParams.set('seed',state.seed); history.replaceState({},'',url);
+      url.searchParams.set('seed',state.seed);
+      history.replaceState({},'',url);
       newGame();
     });
     el('#connect')?.addEventListener('click',()=>{
       state.room=(roomIn?.value||'').trim();
-      url.searchParams.set('room',state.room); history.replaceState({},'',url);
+      url.searchParams.set('room',state.room);
+      // Mirror bleibt standardmässig an – nicht überschreiben, nur aus URL übernehmen
+      history.replaceState({},'',url);
       connectWS();
     });
-    // Version in UI
+
+    // Version / Overlay initial
     const setText=(id,txt)=>{ const n=document.getElementById(id); if(n) n.textContent=txt; };
-    setText('ov-version', VERSION);
+    setText('ov-version', VERSION + (MIRROR_ON ? ' · mirror:on' : ' · mirror:off'));
     setText('ver', 'v'+VERSION);
     document.title = `Solitaire HighNoon — v${VERSION}`;
 
