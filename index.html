@@ -5,7 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Solitaire HighNoon</title>
   <style>
-    :root { --bg:#0b1020; --felt:#0f5132; --card:#fff; --ink:#0b1020; --muted:#9aa3b2; --radius:10px; }
+    :root {
+      --bg:#0b1020; --felt:#0f5132; --card:#fff; --ink:#0b1020; --muted:#9aa3b2; --radius:10px;
+      /* Karten-/Layout-Variablen */
+      --card-w: 86px;
+      --card-h: 120px;
+      --stack-yd: 24px;
+    }
     html, body { height:100%; }
     body { margin:0; background: radial-gradient(1200px 800px at 50% 10%, #143b26, var(--felt)); color:#eef2ff; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; display:grid; grid-template-rows:auto 1fr; gap:8px; }
     header { display:flex; align-items:center; gap:12px; padding:10px 14px; background:#0b1222aa; backdrop-filter: blur(6px); border-bottom:1px solid #ffffff12; position:relative; z-index:100; }
@@ -15,46 +21,40 @@
     button.primary { background:#1f2937; border-color:#ffffff33; }
     .badge { font-size:12px; padding:2px 8px; border-radius:999px; background:#ffffff14; border:1px solid #ffffff22; }
 
-    /* --- Board Wrapper scaled by scaling.js --- */
     .board-wrapper { width:1200px; height:900px; transform-origin: top center; margin:0 auto; position:relative; z-index:1; }
     @media (prefers-reduced-motion:no-preference){ .board-wrapper{ transition: transform .2s ease-out; } }
 
-    /* --- Vertical layout: Opponent (top) | Foundations (middle) | You (bottom) --- */
     .board { position:relative; z-index:2; display:grid; grid-template-rows: auto 1fr auto; gap:18px; padding:14px; height:100%; }
 
     .row-top, .row-mid, .row-bot { display:grid; align-content:start; }
 
-    /* Top/Bottom columns (stock/waste + tableau) */
     .player-zone { display:grid; grid-template-rows: auto 1fr; gap:12px; }
     .zone-title { font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:var(--muted); }
 
     .row { display:flex; gap:10px; align-items:flex-start; }
-    .stack, .pile, .foundation { width:86px; height:120px; border-radius:var(--radius); background:#00000022; border:1px dashed #ffffff2a; position:relative; flex:0 0 auto; }
-    .pile { min-width:86px; }
+    .stack, .pile, .foundation { width:var(--card-w); height:var(--card-h); border-radius:var(--radius); background:#00000022; border:1px dashed #ffffff2a; position:relative; flex:0 0 auto; }
+    .pile { min-width:var(--card-w); }
     .tableau { display:flex; gap:10px; }
 
-    .card { width:86px; height:120px; border-radius:var(--radius); background:var(--card); color:var(--ink); position:absolute; top:0; left:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:22px; user-select:none; box-shadow:0 6px 14px #00000055; border:1px solid #0b102022; z-index:5; }
+    .card { width:var(--card-w); height:var(--card-h); border-radius:var(--radius); background:var(--card); color:var(--ink); position:absolute; top:0; left:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:22px; user-select:none; box-shadow:0 6px 14px #00000055; border:1px solid #0b102022; z-index:5; }
     .card.red { color:#b91c1c; }
     .card.black { color:#0b1020; }
     .card.faceDown { background: linear-gradient(135deg, #172554, #1e293b); color:#e5e7eb; border-color:#0ea5e9; box-shadow:0 6px 14px #0006 inset; }
     .card.dragging { transform: scale(1.06) rotate(-2deg); z-index:999; box-shadow:0 14px 30px #00000088; }
 
-    /* Foundations centered in the middle row */
-    .row-mid { display:grid; grid-auto-rows: min-content; align-content:center; }
+    .row-mid { position:relative; z-index:10; display:grid; grid-auto-rows:min-content; align-content:center; }
     .foundations-wrap { display:grid; justify-content:center; }
-    .foundations { display:grid; grid-template-columns: repeat(4, 86px); gap:10px; justify-content:center; }
+    .foundations { display:grid; grid-template-columns: repeat(8, var(--card-w)); gap:10px; justify-content:center; }
     .foundations .foundation::after { content: attr(data-suit); position:absolute; bottom:6px; right:8px; font-size:18px; opacity:.35; }
 
     .hint { font-size:12px; color:#cbd5e1; opacity:.8; text-align:center; margin-top:8px; }
     .divider { height:1px; background:#ffffff15; margin:8px auto; width:70%; }
 
-    /* opponent visual dim */
+    .row-top, .row-bot { position:relative; z-index:1; }
     .opponent { opacity:.95; }
-
     .small { font-size:11px; color:#9aa3b2; }
     .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#111827; padding:1px 6px; border-radius:6px; border:1px solid #ffffff22; }
 
-    /* Status Overlay - non-blocking */
     .overlay { position:fixed; bottom:12px; right:12px; z-index:50; min-width:220px; background:#0b1222cc; border:1px solid #ffffff22; border-radius:12px; padding:10px 12px; box-shadow:0 6px 20px #0008; pointer-events:none; }
     .overlay * { pointer-events:auto; }
     .overlay h3 { margin:0 0 6px; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:#cbd5e1; }
@@ -66,10 +66,7 @@
 </head>
 <body>
   <header>
-    <h1>
-      Solitaire HighNoon
-      <span class="badge" id="ver">v?</span>
-    </h1>
+    <h1>Solitaire HighNoon <span class="badge" id="ver">v?</span></h1>
     <div class="controls">
       <input id="room" placeholder="Room-ID" title="Room/Match ID" />
       <input id="seed" placeholder="Seed (optional)" title="Deterministische Mischung" />
@@ -93,11 +90,9 @@
     </div>
   </div>
 
-  <!-- Scaled Board -->
   <main class="board-wrapper">
     <section class="board" id="board">
 
-      <!-- OPPONENT (TOP) -->
       <div class="row-top opponent">
         <div class="player-zone" id="oppCol">
           <div>
@@ -114,7 +109,6 @@
         </div>
       </div>
 
-      <!-- FOUNDATIONS (MIDDLE, SHARED) -->
       <div class="row-mid">
         <div class="zone-title" style="text-align:center">Gemeinsame Foundations (8 Stapel, 2×♥♦♣♠)</div>
         <div class="foundations-wrap">
@@ -124,7 +118,6 @@
         <div class="divider"></div>
       </div>
 
-      <!-- YOU (BOTTOM) -->
       <div class="row-bot">
         <div class="player-zone" id="youCol">
           <div>
@@ -146,7 +139,6 @@
 
   <div class="toast" id="toast"></div>
 
-  <!-- SCRIPTS -->
   <script src="./js/scaling.js" defer></script>
   <script src="./js/game.js" defer></script>
 </body>
