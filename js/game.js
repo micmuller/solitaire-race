@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Set VERSION here so scaling.js and UI can pick it up
-window.VERSION = window.VERSION || '2.9.2'; // <- hier anpassen
+window.VERSION = window.VERSION || '2.9.3'; // <- hier anpassen
 const VERSION = window.VERSION;
 
 /* ============================================================
@@ -9,7 +9,8 @@ const VERSION = window.VERSION;
    - Standard: mirror-Param wird auf 1 gesetzt (kann via ?mirror=0 deaktiviert werden)
    - Overlay zeigt Mirror-Status (mirror:on/off)
    - Kompatibel mit responsive Scaling (scaling.js)
-   - NEU: Auto-Höhe für Tableau-Piles, damit Foundations in der Mitte nie überdeckt werden
+   - Auto-Höhe für Tableau-Piles, damit Foundations in der Mitte nie überdeckt werden
+   - v2.9.3: Recycle-Fixes (robustere Trigger) + Hotkey-Foundation-Bugfix
    ============================================================ */
 (function(){
 
@@ -25,6 +26,12 @@ const VERSION = window.VERSION;
 
   // ---------- Helpers ----------
   function showToast(msg){ const t=document.getElementById('toast'); if(!t) return; t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); }
+  const el=s=>document.querySelector(s);
+  const mk=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e;};
+
+  function canRecycle(side){
+    return state[side].stock.length===0 && state[side].waste.length>0;
+  }
 
   // RNG
   function rng(seedStr){
@@ -74,10 +81,7 @@ const VERSION = window.VERSION;
     state.opp.stock=deckOpp.slice(i);
   }
 
-  // ---------- DOM ----------
-  const el=s=>document.querySelector(s);
-  const mk=(t,c)=>{const e=document.createElement(t);if(c)e.className=c;return e;};
-
+  // ---------- DOM / Render ----------
   function renderAll(){
     const mv=document.getElementById('moves'); if(mv) mv.textContent=String(state.moves);
 
@@ -110,7 +114,7 @@ const VERSION = window.VERSION;
       }
     });
 
-    // NEU: Auto-Höhe pro Pile an Kartenanzahl anpassen
+    // Auto-Höhe pro Pile an Kartenanzahl anpassen
     resizeTableauHeights();
 
     setupDrops();
@@ -132,7 +136,10 @@ const VERSION = window.VERSION;
   function renderStack(side){
     const stockEl=el(`#${side}-stock`); const wasteEl=el(`#${side}-waste`);
     const s=state[side].stock;
-    if(stockEl && s.length){const top=s[s.length-1]; const back=renderCard({...top,up:false}); stockEl.appendChild(back);} 
+    if(stockEl){
+      if(s.length){ const top=s[s.length-1]; const back=renderCard({...top,up:false}); stockEl.appendChild(back); }
+      // Auch wenn leer: Platzhalter bleibt für Klicks/DBL-Klicks erhalten (Handler sitzen auf Container)
+    }
     if(wasteEl){ state[side].waste.slice(-3).forEach((c,i)=>{const card=renderCard(c);card.style.left=`${i*16}px`;wasteEl.appendChild(card);}); }
   }
 
@@ -196,7 +203,7 @@ const VERSION = window.VERSION;
     } else if(loc.type==='waste'){
       if(loc.idx!==state[loc.side].waste.length-1) return; card=state[loc.side].waste[loc.idx];
     } else return;
-    const t=state.foundations.findIndex(f=>canPlaceOnFoundation(f,card));
+    const t=state.foundations.findIndex(f=>canPlaceOnFoundation(f,card)); // BUGFIX: nicht state[side].foundations
     if(t>-1) applyMove({owner:localOwner,kind:'toFound',cardId:id,count:1,to:{kind:'found',f:t}},true);
   }
 
@@ -219,6 +226,9 @@ const VERSION = window.VERSION;
 
     // Nur eigene Piles droppbar
     const mySide = ownerToSide(localOwner);
+    const myStock = el(`#${mySide}-stock`);
+    const myWaste = el(`#${mySide}-waste`);
+
     for(let ui=0; ui<7; ui++){
       const pileEl=document.querySelector(`[data-zone="${mySide}-pile-${ui}"]`);
       if(!pileEl) continue;
@@ -240,20 +250,34 @@ const VERSION = window.VERSION;
     }
 
     // Klick/Shortcuts
-    const myStock = el(`#${mySide}-stock`);
-    const myWaste = el(`#${mySide}-waste`);
-    if(myStock) myStock.onclick=()=>{ const s=state[mySide].stock; if(s.length) applyMove({owner:localOwner,kind:'flip'},true); };
-    if(myWaste) myWaste.ondblclick=()=>{ if(state[mySide].stock.length===0 && state[mySide].waste.length>0) applyMove({owner:localOwner,kind:'recycle'},true); };
+    if(myStock) {
+      // Klick auf Stock: Flip; Doppelklick auf leeren Stock: Recycle
+      myStock.onclick = ()=>{
+        const side=ownerToSide(localOwner);
+        const s=state[side].stock; if(s.length) { applyMove({owner:localOwner,kind:'flip'},true); }
+      };
+      myStock.ondblclick = ()=>{
+        const side=ownerToSide(localOwner);
+        if(canRecycle(side)) applyMove({owner:localOwner,kind:'recycle'},true);
+      };
+    }
+    if(myWaste){
+      // Doppelklick auf Waste: Recycle (falls Stock leer)
+      myWaste.ondblclick = ()=>{
+        const side=ownerToSide(localOwner);
+        if(canRecycle(side)) applyMove({owner:localOwner,kind:'recycle'},true);
+      };
+    }
 
     document.onkeydown=(ev)=>{
       if(state.over) return;
       const side=ownerToSide(localOwner);
       if(ev.key===' '){ ev.preventDefault(); const s=state[side].stock; if(s.length) applyMove({owner:localOwner,kind:'flip'},true); }
-      else if(ev.key==='r' || ev.key==='R'){ if(state[side].stock.length===0 && state[side].waste.length>0) applyMove({owner:localOwner,kind:'recycle'},true); }
+      else if(ev.key==='r' || ev.key==='R'){ if(canRecycle(side)) applyMove({owner:localOwner,kind:'recycle'},true); }
       else if(ev.key==='f' || ev.key==='F'){
         const w=state[side].waste; if(!w.length) return;
         const card=w[w.length-1];
-        const t=state[side].foundations.findIndex(f=>canPlaceOnFoundation(f,card));
+        const t=state.foundations.findIndex(f=>canPlaceOnFoundation(f,card)); // BUGFIX: nicht state[side].foundations
         if(t>-1) applyMove({owner:localOwner,kind:'toFound',cardId:card.id,count:1,to:{kind:'found',f:t}},true);
       }
     };
@@ -273,6 +297,8 @@ const VERSION = window.VERSION;
         if(state[side].stock.length===0 && state[side].waste.length>0){
           const rev=[...state[side].waste].reverse(); rev.forEach(c=>c.up=false);
           state[side].stock = rev; state[side].waste = [];
+        } else {
+          showToast('Nichts zu recyceln');
         }
         if(announce) state.moves++;
         renderAll(); if(announce) send(move); return;
