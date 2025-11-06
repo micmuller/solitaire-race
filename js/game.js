@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Set VERSION here so scaling.js and UI can pick it up
-window.VERSION = window.VERSION || '2.9.3'; // <- hier anpassen
+window.VERSION = window.VERSION || '2.9.10'; // <- hier anpassen
 const VERSION = window.VERSION;
 
 /* ============================================================
@@ -11,14 +11,15 @@ const VERSION = window.VERSION;
    - Kompatibel mit responsive Scaling (scaling.js)
    - Auto-Höhe für Tableau-Piles, damit Foundations in der Mitte nie überdeckt werden
    - v2.9.3: Recycle-Fixes (robustere Trigger) + Hotkey-Foundation-Bugfix
+   - v2.9.4: Mirror-Toggle (Button) + Auto-Mirror beim 2. Client
    ============================================================ */
 (function(){
 
-  // ---------- URL / Mirror-Flag (nur Status/Default, keine Logikänderung) ----------
+  // ---------- URL / Mirror-Flag ----------
   const url = new URL(location.href);
   if(!url.searchParams.has('mirror')) { url.searchParams.set('mirror','1'); history.replaceState({},'',url); }
   const MIRROR_PARAM = url.searchParams.get('mirror');
-  const MIRROR_ON = MIRROR_PARAM === '1';
+  let MIRROR_ON = MIRROR_PARAM === '1'; // mutabel für Toggle
 
   // ---------- Layout-Konstanten (müssen zu CSS-Variablen passen) ----------
   const CARD_H = 120;     // entspricht --card-h
@@ -31,6 +32,34 @@ const VERSION = window.VERSION;
 
   function canRecycle(side){
     return state[side].stock.length===0 && state[side].waste.length>0;
+  }
+
+  // Mirror UI/State
+  function updateMirrorUI(){
+    // Overlay: Version + Mirror-Kennzeichnung
+    const ov = document.getElementById('ov-version');
+    if (ov) ov.textContent = VERSION + (MIRROR_ON ? ' · mirror:on' : ' · mirror:off');
+    // Header-Badge bleibt Versionsanzeige
+    const badge = document.getElementById('ver');
+    if (badge) badge.textContent = (VERSION.startsWith('v')?'':'v') + VERSION;
+    // Button-Label
+    const btn = document.getElementById('toggleMirror');
+    if (btn) btn.textContent = MIRROR_ON ? 'Mirror: On' : 'Mirror: Off';
+    // Optionaler Body-Hook
+    document.body.classList.toggle('mirror', !!MIRROR_ON);
+  }
+  function setMirror(on, { persist=true } = {}){
+    MIRROR_ON = !!on;
+    try{
+      const u = new URL(location.href);
+      u.searchParams.set('mirror', MIRROR_ON ? '1' : '0');
+      if(persist) history.replaceState({}, '', u);
+    }catch{}
+    updateMirrorUI();
+  }
+  function toggleMirror(){
+    setMirror(!MIRROR_ON, { persist:true });
+    showToast(MIRROR_ON ? 'Mirror aktiviert' : 'Mirror deaktiviert');
   }
 
   // RNG
@@ -138,7 +167,7 @@ const VERSION = window.VERSION;
     const s=state[side].stock;
     if(stockEl){
       if(s.length){ const top=s[s.length-1]; const back=renderCard({...top,up:false}); stockEl.appendChild(back); }
-      // Auch wenn leer: Platzhalter bleibt für Klicks/DBL-Klicks erhalten (Handler sitzen auf Container)
+      // Auch wenn leer: Platzhalter bleibt für Klicks/DBL-Klicks erhalten
     }
     if(wasteEl){ state[side].waste.slice(-3).forEach((c,i)=>{const card=renderCard(c);card.style.left=`${i*16}px`;wasteEl.appendChild(card);}); }
   }
@@ -203,7 +232,7 @@ const VERSION = window.VERSION;
     } else if(loc.type==='waste'){
       if(loc.idx!==state[loc.side].waste.length-1) return; card=state[loc.side].waste[loc.idx];
     } else return;
-    const t=state.foundations.findIndex(f=>canPlaceOnFoundation(f,card)); // BUGFIX: nicht state[side].foundations
+    const t=state.foundations.findIndex(f=>canPlaceOnFoundation(f,card));
     if(t>-1) applyMove({owner:localOwner,kind:'toFound',cardId:id,count:1,to:{kind:'found',f:t}},true);
   }
 
@@ -251,7 +280,7 @@ const VERSION = window.VERSION;
 
     // Klick/Shortcuts
     if(myStock) {
-      // Klick auf Stock: Flip; Doppelklick auf leeren Stock: Recycle
+      // Klick auf Stock: Flip; Doppelklick auf leeren Stock: Recycle; Click auf Button in Header handled separat
       myStock.onclick = ()=>{
         const side=ownerToSide(localOwner);
         const s=state[side].stock; if(s.length) { applyMove({owner:localOwner,kind:'flip'},true); }
@@ -277,7 +306,7 @@ const VERSION = window.VERSION;
       else if(ev.key==='f' || ev.key==='F'){
         const w=state[side].waste; if(!w.length) return;
         const card=w[w.length-1];
-        const t=state.foundations.findIndex(f=>canPlaceOnFoundation(f,card)); // BUGFIX: nicht state[side].foundations
+        const t=state.foundations.findIndex(f=>canPlaceOnFoundation(f,card));
         if(t>-1) applyMove({owner:localOwner,kind:'toFound',cardId:card.id,count:1,to:{kind:'found',f:t}},true);
       }
     };
@@ -363,7 +392,23 @@ const VERSION = window.VERSION;
   function sendSys(o){ if(ws&&ws.readyState===1) ws.send(JSON.stringify({sys:o,from:clientId})); }
   function send(m){ if(ws&&ws.readyState===1) ws.send(JSON.stringify({move:m,from:clientId})); }
   function buildWsUrl(){ const override=url.searchParams.get('ws'); if(override) return override; const isHttps=location.protocol==='https:'; const proto=isHttps?'wss:':'ws:'; const host=location.hostname||'127.0.0.1'; const currentPort=(location.port?parseInt(location.port,10):(isHttps?443:80)); const wsPort=url.searchParams.get('ws_port') || (currentPort===3001?3001:(isHttps?443:3001)); return `${proto}//${host}:${wsPort}/ws?room=${encodeURIComponent(state.room.trim())}`; }
-  function connectWS(){ const room=state.room.trim(); if(!room){ showToast('Room-ID fehlt'); return; } const wsUrl=buildWsUrl(); ws=new WebSocket(wsUrl); ws.onopen=()=>{ showToast('Verbunden'); sendSys({type:'hello'}); updateOverlay(); pingTimer=setInterval(()=>{ if(ws && ws.readyState===1){ const ts=Date.now(); sendSys({type:'ping', ts}); } }, 5000); }; ws.onclose=()=>{ showToast('Getrennt'); clearInterval(pingTimer); updateOverlay(); }; ws.onerror=(err)=>{ console.error('WS error',err); }; ws.onmessage=(ev)=>{ lastMsgAt=Date.now(); try{ const msg=JSON.parse(ev.data); if(msg.from) peers.set(msg.from, Date.now()); if(msg.sys){ if(msg.sys.type==='hello' && msg.from){ if(!hasSetPerspective){ const iAmY = clientId.localeCompare(msg.from) < 0; const desired = iAmY ? 'Y' : 'O'; if(localOwner!==desired){ localOwner=desired; [state.you, state.opp] = [state.opp, state.you]; renderAll(); showToast('Perspektive: '+localOwner); } else { localOwner=desired; } hasSetPerspective=true; } sendSys({type:'hello-ack', from: clientId}); } else if(msg.sys.type==='ping' && typeof msg.sys.ts==='number'){ sendSys({type:'pong', ts: msg.sys.ts}); } else if(msg.sys.type==='pong' && typeof msg.sys.ts==='number'){ latencyMs = Date.now() - msg.sys.ts; } updateOverlay(); return; } if(msg.move) applyMove(msg.move, false); updateOverlay(); }catch(e){ console.error('WS-Error', e); } }; }
+  function connectWS(){ const room=state.room.trim(); if(!room){ showToast('Room-ID fehlt'); return; } const wsUrl=buildWsUrl(); ws=new WebSocket(wsUrl); ws.onopen=()=>{ showToast('Verbunden'); sendSys({type:'hello'}); updateOverlay(); pingTimer=setInterval(()=>{ if(ws && ws.readyState===1){ const ts=Date.now(); sendSys({type:'ping', ts}); } }, 5000); }; ws.onclose=()=>{ showToast('Getrennt'); clearInterval(pingTimer); updateOverlay(); }; ws.onerror=(err)=>{ console.error('WS error',err); }; ws.onmessage=(ev)=>{ lastMsgAt=Date.now(); try{ const msg=JSON.parse(ev.data); if(msg.from) peers.set(msg.from, Date.now()); if(msg.sys){ if(msg.sys.type==='hello' && msg.from){ if(!hasSetPerspective){ const iAmY = clientId.localeCompare(msg.from) < 0; const desired = iAmY ? 'Y' : 'O'; if(localOwner!==desired){ localOwner=desired; [state.you, state.opp] = [state.opp, state.you]; renderAll(); showToast('Perspektive: '+localOwner); } else { localOwner=desired; } hasSetPerspective=true; // Auto-Mirror aktivieren, sobald Peer vorhanden
+              if(!MIRROR_ON) setMirror(true, { persist:true });
+            }
+            sendSys({type:'hello-ack', from: clientId});
+          } else if(msg.sys.type==='ping' && typeof msg.sys.ts==='number'){
+            sendSys({type:'pong', ts: msg.sys.ts});
+          } else if(msg.sys.type==='pong' && typeof msg.sys.ts==='number'){
+            latencyMs = Date.now() - msg.sys.ts;
+          }
+          updateOverlay();
+          return;
+        }
+        if(msg.move) applyMove(msg.move, false);
+        updateOverlay();
+      }catch(e){ console.error('WS-Error', e); }
+    };
+  }
 
   // ---------- Boot ----------
   function newGame(){ state.you={stock:[],waste:[],tableau:[[],[],[],[],[],[],[]]}; state.opp={stock:[],waste:[],tableau:[[],[],[],[],[],[],[]]}; state.foundations=Array.from({length:8},(_,i)=>({suit:SUITS[i%4],cards:[]})); state.moves=0; state.over=false; deal(state.seed||''); renderAll(); }
@@ -374,11 +419,15 @@ const VERSION = window.VERSION;
     el('#newGame')?.addEventListener('click',()=>{ state.seed=(seedIn?.value||'').trim(); url.searchParams.set('seed',state.seed); history.replaceState({},'',url); newGame(); });
     el('#connect')?.addEventListener('click',()=>{ state.room=(roomIn?.value||'').trim(); url.searchParams.set('room',state.room); history.replaceState({},'',url); connectWS(); });
 
-    // Version / Overlay initial
+    // Mirror-Button (kommt aus HTML)
+    const mirrorBtn = document.getElementById('toggleMirror');
+    if(mirrorBtn){ mirrorBtn.addEventListener('click', toggleMirror); }
+
+    // Version / Overlay initial + Mirror-UI syncen
     const setText=(id,txt)=>{ const n=document.getElementById(id); if(n) n.textContent=txt; };
-    setText('ov-version', VERSION + (MIRROR_ON ? ' · mirror:on' : ' · mirror:off'));
     setText('ver', (VERSION.startsWith('v')?'':'v') + VERSION);
     document.title = `Solitaire HighNoon — v${VERSION}`;
+    updateMirrorUI();
 
     newGame();
   });

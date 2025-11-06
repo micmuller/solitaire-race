@@ -4,11 +4,11 @@
 
 (() => {
   const BASE_W = 1200; // must match CSS .board-wrapper width
-  const BASE_H = 800;  // must match CSS .board-wrapper height
+  const BASE_H = 900;  // <-- WAR 800, jetzt 900: muss zum CSS passen!
 
   const wrapper = document.querySelector('.board-wrapper');
   const verBadge = document.getElementById('ver');
-  // Intentionally NOT touching #ov-version here — game.js writes mirror status there
+  const root = document.documentElement;
 
   if (!wrapper) {
     console.warn('[HighNoon][scaling] .board-wrapper not found');
@@ -26,8 +26,16 @@
     const box = viewportBox();
     const sx = box.w / BASE_W;
     const sy = box.h / BASE_H;
-    const scale = Math.min(1, Math.min(sx, sy));
+
+    // scale inkl. weicher Untergrenze (fühlt sich auf 13" besser an)
+    const scale = Math.max(0.55, Math.min(1, Math.min(sx, sy)));
+
+    // Board skalieren
     wrapper.style.transform = `scale(${scale})`;
+
+    // NEU: UI (Header/Controls/Badge/Toast) proportional mitskalieren
+    // nutzt die CSS-Variablen, die ich dir gegeben habe (--ui-scale, etc.)
+    root.style.setProperty('--ui-scale', scale.toFixed(3));
   }
 
   function setHeaderVersion(){
@@ -40,7 +48,7 @@
   window.HighNoon.resize = {
     getScale: () => {
       const { w, h } = viewportBox();
-      return Math.min(1, Math.min(w / BASE_W, h / BASE_H));
+      return Math.max(0.55, Math.min(1, Math.min(w / BASE_W, h / BASE_H)));
     },
     apply: applyScale,
     base: { w: BASE_W, h: BASE_H }
@@ -54,5 +62,5 @@
   // Initial
   applyScale();
   setHeaderVersion();
-  console.info('[HighNoon][scaling] responsive scaling enabled');
+  console.info('[HighNoon][scaling] responsive scaling enabled (BASE 1200x900, UI linked)');
 })();
