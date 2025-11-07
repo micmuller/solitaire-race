@@ -1,35 +1,28 @@
 #!/usr/bin/env node
 // ================================================================
 //  Solitaire HighNoon - Realtime Game Server
-//  Version: 1.5.1  (2025-11-01)
+//  Version: 1.6.1  (2025-11-07)
 //  Author: micmuller & ChatGPT (GPT-5)
-//  ---------------------------------------------------------------
-//  Features:
-//  - WebSocket Server für Echtzeit-Solitaire-Duelle
-//  - Raumverwaltung & Broadcasts (keine Cross-Room-Nachrichten)
-//  - Logging throttled (Status alle 30s, Actions sofort)
-//  - CLI-Flags:
-//      -v / --version    Zeigt Server-Version und beendet
-//      -h / --help       Zeigt Hilfe und beendet
-//      -p <port>         Startet Server auf angegebenem Port
 // ================================================================
 
-const http = require('node:http');
+const http   = require('node:http');
+const https  = require('node:https');
+const fs     = require('node:fs');
+const path   = require('node:path');
+const os     = require('node:os');
 const { WebSocketServer } = require('ws');
-const { URL } = require('node:url'); // ✅ moderne WHATWG-URL-API (statt deprecated parse())
+const { URL } = require('node:url');
 
 // ---------- Version / CLI ----------
-const VERSION = '1.5.1';
+const VERSION = '1.6.1';
+let PORT = 3001;
 const HELP = `
-Solitaire HighNoon WebSocket Server v${VERSION}
-
-Syntax:
-  node server.js [options]
+Solitaire HighNoon Server v${VERSION}
 
 Options:
   -p, --port <num>     Port (default 3001)
-  -v, --version        Zeigt Version und beendet
-  -h, --help           Zeigt diese Hilfe
+  -v, --version        Zeigt Version
+  -h, --help           Zeigt Hilfe
 `;
 
 if (process.argv.includes('-v') || process.argv.includes('--version')) {
@@ -40,18 +33,45 @@ if (process.argv.includes('-h') || process.argv.includes('--help')) {
   console.log(HELP);
   process.exit(0);
 }
-
-let PORT = 3001;
 const portIdx = process.argv.findIndex(a => a === '-p' || a === '--port');
 if (portIdx > -1 && process.argv[portIdx + 1]) {
   const n = parseInt(process.argv[portIdx + 1], 10);
   if (!isNaN(n)) PORT = n;
 }
 
-// ---------- Core Setup ----------
-const server = http.createServer();
-const wss = new WebSocketServer({ noServer: true });
+// ================================================================
+//  HTTP REQUEST HANDLER (STATIC FILES)
+// ================================================================
+const PUBLIC_DIR = path.join(__dirname, 'public');
+function handleRequest(req, res) {
+  let filePath = path.join(PUBLIC_DIR, req.url === '/' ? 'index.html' : req.url);
+  if (!filePath.startsWith(PUBLIC_DIR)) {
+    res.writeHead(403); return res.end('Forbidden');
+  }
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      res.writeHead(404); return res.end('Not found');
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    const mime =
+      ext === '.js'   ? 'text/javascript' :
+      ext === '.css'  ? 'text/css' :
+      ext === '.json' ? 'application/json' :
+      ext === '.png'  ? 'image/png' :
+      ext === '.jpg'  ? 'image/jpeg' :
+      ext === '.ico'  ? 'image/x-icon' :
+      'text/html';
+    res.writeHead(200, { 'Content-Type': mime });
+    res.end(data);
+  });
+}
 
+const httpServer = http.createServer(handleRequest);
+
+// ================================================================
+//  WEBSOCKET SERVER
+// ================================================================
+const wss = new WebSocketServer({ noServer: true });
 const rooms = new Map();
 const STATUS_INTERVAL_MS = 30_000;
 const HELLO_SUPPRESS_MS  = 15_000;
@@ -60,7 +80,6 @@ const lastSysLogByRoom = new Map();
 const lastHelloTsByClient = new WeakMap();
 
 function isoNow() { return new Date().toISOString(); }
-
 function getRoomOf(ws) { return ws.__room || null; }
 function joinRoom(ws, room) {
   ws.__room = room;
@@ -90,7 +109,6 @@ function broadcastToRoom(room, data, excludeWs = null) {
     }
   }
 }
-
 function logStatus(roomHint = null) {
   const total = wss.clients.size;
   if (total === 0) return;
@@ -98,113 +116,111 @@ function logStatus(roomHint = null) {
   for (const [room, set] of rooms.entries()) {
     summary.push(`${room}:${set.size}`);
   }
-  const roomsStr = summary.length ? summary.join(', ') : '—';
-  console.log(`[STATUS] ${isoNow()} — Clients=${total}, Rooms=${rooms.size} [${roomsStr}]${roomHint ? ` (room="${roomHint}")` : ''}`);
+  console.log(`[STATUS] ${isoNow()} — Clients=${total}, Rooms=${rooms.size} [${summary.join(', ') || '—'}]${roomHint ? ` (room="${roomHint}")` : ''}`);
 }
 
-// ---------- Upgrade + Connection ----------
-server.on('upgrade', (req, socket, head) => {
-  try {
-    const fullUrl = new URL(req.url, `http://${req.headers.host}`);
-    const pathname = fullUrl.pathname;
-    const room = fullUrl.searchParams.get('room') || fullUrl.searchParams.get('r') || 'default';
-
-    if (!pathname || !pathname.startsWith('/ws')) {
+// --- Upgrade
+function attachUpgradeHandler(server) {
+  server.on('upgrade', (req, socket, head) => {
+    try {
+      const fullUrl = new URL(req.url, `http://${req.headers.host}`);
+      const pathname = fullUrl.pathname;
+      const room = fullUrl.searchParams.get('room') || 'default';
+      if (!pathname.startsWith('/ws')) return socket.destroy();
+      wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req, room));
+    } catch (err) {
+      console.error('[UPGRADE ERROR]', err);
       socket.destroy();
-      return;
     }
+  });
+}
+attachUpgradeHandler(httpServer);
 
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req, room);
-    });
-  } catch (err) {
-    console.error(`[ERROR] ${isoNow()} upgrade failed:`, err);
-    try { socket.destroy(); } catch {}
-  }
-});
-
+// --- Connection logic
 wss.on('connection', (ws, req, room) => {
   const ip = req.socket.remoteAddress || 'unknown';
   joinRoom(ws, room);
-
   const cid = Math.random().toString(36).slice(2);
   ws.__cid = cid;
-
   console.log(`[CONNECT] ${isoNow()} room="${room}" ip=${ip} cid=${cid} peers=${peersInRoom(room)}`);
   logStatus(room);
 
-  ws.on('message', (buf) => {
+  ws.on('message', buf => {
     const now = Date.now();
     const currentRoom = getRoomOf(ws);
     if (!currentRoom) return;
-
     try {
       const data = JSON.parse(buf.toString());
-
-      // ---- Logging ----
-      if (data?.move) {
-        const kind = data.move.kind || 'unknown';
-        const owner = data.move.owner || '—';
-        console.log(`[MOVE] ${isoNow()} room="${currentRoom}" owner=${owner} kind=${kind}`);
-      } else if (data?.sys) {
-        const type = data.sys.type || 'unknown';
-
-        // Hello-Dedupe pro Client
-        if (type === 'hello') {
-          const lastH = lastHelloTsByClient.get(ws) || 0;
-          if (now - lastH < HELLO_SUPPRESS_MS) return;
-          lastHelloTsByClient.set(ws, now);
-        }
-
-        // SYS-Logs max. alle 30s pro Raum
+      if (data?.move) console.log(`[MOVE] ${isoNow()} room="${currentRoom}" kind=${data.move.kind}`);
+      if (data?.sys) {
+        const lastH = lastHelloTsByClient.get(ws) || 0;
+        if (data.sys.type === 'hello' && now - lastH < HELLO_SUPPRESS_MS) return;
+        lastHelloTsByClient.set(ws, now);
         const lastSys = lastSysLogByRoom.get(currentRoom) || 0;
         if (now - lastSys >= STATUS_INTERVAL_MS) {
-          console.log(`[SYS] ${isoNow()} room="${currentRoom}" type=${type}`);
+          console.log(`[SYS] ${isoNow()} room="${currentRoom}" type=${data.sys.type}`);
           lastSysLogByRoom.set(currentRoom, now);
         }
       }
-
-      // ---- Broadcast ----
       broadcastToRoom(currentRoom, buf.toString(), ws);
-
-      // ---- Global Status (max. alle 30s) ----
-      if (wss.clients.size > 0 && (now - lastGlobalStatusLog >= STATUS_INTERVAL_MS)) {
-        logStatus();
-        lastGlobalStatusLog = now;
+      if (now - lastGlobalStatusLog >= STATUS_INTERVAL_MS) {
+        logStatus(); lastGlobalStatusLog = now;
       }
-
     } catch (err) {
-      console.error(`[ERROR] ${isoNow()} invalid JSON:`, err);
+      console.error('[WS ERROR]', err);
     }
   });
 
   ws.on('close', () => {
     const roomLeft = getRoomOf(ws);
     leaveRoom(ws);
-    console.log(`[DISCONNECT] ${isoNow()} room="${roomLeft}" cid=${cid} remainingPeers=${peersInRoom(roomLeft)}`);
+    console.log(`[DISCONNECT] ${isoNow()} room="${roomLeft}" cid=${cid}`);
     logStatus(roomLeft);
   });
-
-  ws.on('error', (err) => {
-    console.error(`[WS-ERROR] ${isoNow()} room="${getRoomOf(ws)}" cid=${cid} err=${err?.message || err}`);
-  });
 });
 
-// ---------- Periodic Status ----------
-setInterval(() => {
-  if (wss.clients.size > 0) {
-    const now = Date.now();
-    if (now - lastGlobalStatusLog >= STATUS_INTERVAL_MS) {
-      logStatus();
-      lastGlobalStatusLog = now;
+// ================================================================
+//  START SERVER (HTTP + optional HTTPS)
+// ================================================================
+function getLocalIPs() {
+  const nets = os.networkInterfaces();
+  const results = [];
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === 'IPv4' && !net.internal) results.push(net.address);
     }
   }
-}, 5000);
+  return results;
+}
+function startServer(server, label) {
+  const ips = getLocalIPs();
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n=== Solitaire HighNoon Server v${VERSION} (${label.toUpperCase()}) ===`);
+    console.log(`Startzeit: ${isoNow()}`);
+    console.log(`Serving from: ${PUBLIC_DIR}`);
+    console.log(`Listening on 0.0.0.0:${PORT}`);
+    if (ips.length) {
+      console.log('LAN erreichbar unter:');
+      ips.forEach(ip => console.log(`  →  ${label}://${ip}:${PORT}`));
+    }
+    console.log();
+  });
+}
 
-// ---------- Start ----------
-server.listen(PORT, () => {
-  console.log(`\n=== Solitaire HighNoon Server v${VERSION} ===`);
-  console.log(`Startzeit: ${isoNow()}`);
-  console.log(`Listening on port ${PORT}`);
-  console.log('Use  -h  for help or  -v  for version\n');
-});
+// ---- HTTPS optional ----
+const keyPath = path.join(__dirname, 'key.pem');
+const certPath = path.join(__dirname, 'cert.pem');
+if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+  try {
+    const options = { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
+    const httpsServer = https.createServer(options, handleRequest);
+    attachUpgradeHandler(httpsServer);
+    startServer(httpsServer, 'https');
+  } catch (err) {
+    console.error('[SSL ERROR]', err);
+    console.log('Fallback auf HTTP...');
+    startServer(httpServer, 'http');
+  }
+} else {
+  startServer(httpServer, 'http');
+}
