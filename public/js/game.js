@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.10.3';   // <– hier änderst du künftig die Version
+const VERSION = '2.10.4';   // <– hier änderst du künftig die Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -15,6 +15,7 @@ window.VERSION = VERSION;
    - v2.10.0: Touch-Support (Tap/Double-Tap/Drag) für Touch-Geräte
    - v2.10.1: Bugfixes Touch (kein Doppel-Flip, stabilere Drops)
    - v2.10.2: Tap→Tap Moves auf Touch (Auswahl + Zieltap), besseres iPad Verhalten
+   - v2.10.4: Mirror Robuster
    ============================================================ */
 (function(){
 
@@ -194,6 +195,11 @@ window.VERSION = VERSION;
   // ---------- Owner ----------
   let localOwner = 'Y';
   let hasSetPerspective = false;
+    function resetSessionPerspective() {
+    // Neue Session / neuer Room: Basis-Perspektive wieder auf 'Y'
+    localOwner = 'Y';
+    hasSetPerspective = false;
+  }
   function ownerToSide(owner) { return owner === localOwner ? 'you' : 'opp'; }
   const PILES = 7;
 
@@ -1094,12 +1100,23 @@ window.VERSION = VERSION;
     return `${proto}//${host}:${wsPort}/ws?room=${encodeURIComponent(state.room.trim())}`;
   }
 
-  function connectWS() {
+    function connectWS() {
     const room = state.room.trim();
     if (!room) {
       showToast('Room-ID fehlt');
       return;
     }
+
+    // Vorherige Verbindung sauber schließen
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.close(); } catch {}
+    }
+    ws = null;
+    peers.clear();
+    latencyMs = null;
+    lastMsgAt = 0;
+    updateOverlay();
+
     const wsUrl = buildWsUrl();
     ws = new WebSocket(wsUrl);
 
@@ -1117,7 +1134,10 @@ window.VERSION = VERSION;
 
     ws.onclose = () => {
       showToast('Getrennt');
-      clearInterval(pingTimer);
+      if (pingTimer) {
+        clearInterval(pingTimer);
+        pingTimer = null;
+      }
       updateOverlay();
     };
 
@@ -1146,6 +1166,7 @@ window.VERSION = VERSION;
               }
               hasSetPerspective = true;
 
+              // Multiplayer: Mirror automatisch einschalten, falls aus
               if (!MIRROR_ON) setMirror(true, { persist:true });
             }
             sendSys({ type:'hello-ack', from:clientId });
@@ -1195,6 +1216,11 @@ window.VERSION = VERSION;
       state.room = (roomIn?.value || '').trim();
       url.searchParams.set('room', state.room);
       history.replaceState({},'',url);
+
+      // Neue Multiplayer-Session: Perspektive + Mirror robust neu setzen
+      resetSessionPerspective();
+      setMirror(true, { persist:true });
+
       connectWS();
     });
 
