@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.10.1';   // <– hier änderst du künftig die Version
+const VERSION = '2.10.3';   // <– hier änderst du künftig die Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -13,7 +13,8 @@ window.VERSION = VERSION;
    - v2.9.3: Recycle-Fixes (robustere Trigger) + Hotkey-Foundation-Bugfix
    - v2.9.4: Mirror-Toggle (Button) + Auto-Mirror beim 2. Client
    - v2.10.0: Touch-Support (Tap/Double-Tap/Drag) für Touch-Geräte
-   - v2.10.1: Bugfixes Touch (kein Double-Tap-Zoom, kein Doppel-Flip, stabilere Drops)
+   - v2.10.1: Bugfixes Touch (kein Doppel-Flip, stabilere Drops)
+   - v2.10.2: Tap→Tap Moves auf Touch (Auswahl + Zieltap), besseres iPad Verhalten
    ============================================================ */
 (function(){
 
@@ -22,8 +23,36 @@ window.VERSION = VERSION;
     (navigator.maxTouchPoints > 0) ||
     (navigator.msMaxTouchPoints > 0);
 
-  // iOS Double-Tap-Zoom verhindern (global, nur auf Touch)
+  // iOS Zoom (Double-Tap & Pinch) global unterbinden
   if (IS_TOUCH_DEVICE) {
+    let lastTapTime = 0;
+    let lastTapX = 0;
+    let lastTapY = 0;
+
+    // Double-Tap früh abfangen (touchstart), bevor Safari zoomt
+    document.addEventListener('touchstart', function (e) {
+      // Mehrfinger-Geste (Pinch) direkt blocken
+      if (e.touches.length > 1) {
+        e.preventDefault();
+        return;
+      }
+
+      const t = e.touches[0];
+      const now = Date.now();
+      const dx = Math.abs(t.clientX - lastTapX);
+      const dy = Math.abs(t.clientY - lastTapY);
+
+      // Zweiter Tap kurz danach an fast gleicher Position => Browser-DblTap verhindern
+      if (now - lastTapTime <= 350 && dx < 40 && dy < 40) {
+        e.preventDefault();
+      }
+
+      lastTapTime = now;
+      lastTapX = t.clientX;
+      lastTapY = t.clientY;
+    }, { passive: false });
+
+    // Fallback: auch auf touchend noch einmal absichern
     let lastTouchEnd = 0;
     document.addEventListener('touchend', function (e) {
       const now = Date.now();
@@ -32,6 +61,13 @@ window.VERSION = VERSION;
       }
       lastTouchEnd = now;
     }, { passive: false });
+
+    // iOS-Pinch-Zoom komplett unterbinden
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(evt => {
+      document.addEventListener(evt, function (e) {
+        e.preventDefault();
+      }, { passive: false });
+    });
   }
 
   // ---------- URL / Mirror-Flag ----------
@@ -69,17 +105,17 @@ window.VERSION = VERSION;
   }
 
   // Mirror UI/State
-function updateMirrorUI() {
-  const versionText = `v${VERSION}`;
+  function updateMirrorUI() {
+    const versionText = `v${VERSION}`;
 
-  const ov = document.getElementById('ov-version');
-  if (ov) ov.textContent = versionText + (MIRROR_ON ? ' · mirror:on' : ' · mirror:off');
+    const ov = document.getElementById('ov-version');
+    if (ov) ov.textContent = versionText + (MIRROR_ON ? ' · mirror:on' : ' · mirror:off');
 
-  const badge = document.getElementById('ver');
-  if (badge) badge.textContent = versionText;
+    const badge = document.getElementById('ver');
+    if (badge) badge.textContent = versionText;
 
-  document.body.classList.toggle('mirror', !!MIRROR_ON);
-}
+    document.body.classList.toggle('mirror', !!MIRROR_ON);
+  }
   function setMirror(on, { persist = true } = {}) {
     MIRROR_ON = !!on;
     try {
@@ -400,6 +436,48 @@ function updateMirrorUI() {
     return null;
   }
 
+  // --- Touch-Auswahl (Tap → Tap Moves) ---
+  let touchSelection = null;
+
+  function clearTouchSelection() {
+    if (!touchSelection) return;
+    const ids = touchSelection.cardIds || [touchSelection.cardId];
+    ids.forEach(id => {
+      const el = document.querySelector(`.card[data-card-id="${id}"]`);
+      if (el) el.classList.remove('selected');
+    });
+    touchSelection = null;
+  }
+
+  function selectCardsForTouch(loc) {
+    const side = loc.side;
+    let cards = [];
+
+    if (loc.type === 'waste') {
+      const w = state[side].waste;
+      if (loc.idx !== w.length - 1) return; // nur oberste Karte
+      cards = [w[loc.idx]];
+    } else if (loc.type === 'pile') {
+      const pile = state[side].tableau[loc.pile];
+      if (!pile[loc.idx] || !pile[loc.idx].up) return;
+      if (isFaceUpSequence(side, loc.pile, loc.idx)) {
+        cards = pile.slice(loc.idx); // komplette Sequenz
+      } else {
+        cards = [pile[loc.idx]];
+      }
+    } else {
+      return;
+    }
+
+    clearTouchSelection();
+    const ids = cards.map(c => c.id);
+    ids.forEach(id => {
+      const el = document.querySelector(`.card[data-card-id="${id}"]`);
+      if (el) el.classList.add('selected');
+    });
+    touchSelection = { loc, cardId: cards[0].id, cardIds: ids };
+  }
+
   function setupTouchControls(boardEl) {
     if (!IS_TOUCH_DEVICE) return;
     if (!window.TouchInput || !boardEl) return;
@@ -421,35 +499,130 @@ function updateMirrorUI() {
     if (!pt) return;
 
     const targetEl = elementFromClientPoint(pt);
-    if (!targetEl) return;
+    if (!targetEl) {
+      clearTouchSelection();
+      return;
+    }
 
     const mySide = ownerToSide(localOwner);
     const myStock = document.getElementById(`${mySide}-stock`);
     const myWaste = document.getElementById(`${mySide}-waste`);
 
-    // Stock: Flip oder Recycle
+    // --- 1) Stock: Flip oder Recycle ---
     if (myStock && (targetEl === myStock || (targetEl.closest && targetEl.closest('#' + myStock.id)))) {
       const side = mySide;
       const s = state[side].stock;
       if (s.length) {
-        applyMove({ owner:localOwner, kind:'flip' }, true);
+        applyMove({ owner: localOwner, kind:'flip' }, true);
       } else if (canRecycle(side)) {
-        applyMove({ owner:localOwner, kind:'recycle' }, true);
+        applyMove({ owner: localOwner, kind:'recycle' }, true);
+      }
+      clearTouchSelection();
+      return;
+    }
+
+    // --- 2) Waste: ggf. Auto-Move zur Foundation oder als Auswahl ---
+    if (myWaste && (targetEl === myWaste || (targetEl.closest && targetEl.closest('#' + myWaste.id)))) {
+      const side = mySide;
+      const w = state[side].waste;
+      if (!w.length) { clearTouchSelection(); return; }
+      const card = w[w.length - 1];
+
+      // Auto-Move zur Foundation, falls möglich
+      const t = state.foundations.findIndex(f => canPlaceOnFoundation(f, card));
+      if (t > -1) {
+        applyMove({
+          owner: localOwner,
+          kind:'toFound',
+          cardId: card.id,
+          count: 1,
+          to: { kind:'found', f:t }
+        }, true);
+        clearTouchSelection();
+      } else {
+        const loc = locOfCard(card.id);
+        if (loc && isMine(loc)) selectCardsForTouch(loc);
       }
       return;
     }
 
-    // Tap auf Waste: Versuch Auto-Move zur Foundation
-    if (myWaste && (targetEl === myWaste || (targetEl.closest && targetEl.closest('#' + myWaste.id)))) {
-      const side = mySide;
-      const w = state[side].waste;
-      if (!w.length) return;
-      const card = w[w.length-1];
-      const t = state.foundations.findIndex(f => canPlaceOnFoundation(f, card));
-      if (t > -1) {
-        applyMove({ owner:localOwner, kind:'toFound', cardId:card.id, count:1, to:{ kind:'found', f:t } }, true);
+    // --- 3) Allgemein: Karten & Piles ---
+    const tappedCard = findCardAtPoint(pt);
+    const dropTarget = findDropTargetAtPoint(pt);
+
+    // 3a) Wenn bereits etwas ausgewählt ist → Move versuchen
+    if (touchSelection && dropTarget) {
+      const selLoc = locOfCard(touchSelection.cardId);
+      if (!selLoc || !isMine(selLoc)) { clearTouchSelection(); return; }
+
+      const selSide = selLoc.side;
+      let cards = [];
+
+      if (selLoc.type === 'waste') {
+        const w = state[selSide].waste;
+        if (selLoc.idx !== w.length - 1) { clearTouchSelection(); return; }
+        cards = [w[selLoc.idx]];
+      } else if (selLoc.type === 'pile') {
+        const pile = state[selSide].tableau[selLoc.pile];
+        if (!pile[selLoc.idx] || !pile[selLoc.idx].up) { clearTouchSelection(); return; }
+        cards = isFaceUpSequence(selSide, selLoc.pile, selLoc.idx)
+          ? pile.slice(selLoc.idx)
+          : [pile[selLoc.idx]];
       }
-      return;
+
+      if (!cards.length) { clearTouchSelection(); return; }
+
+      // → Ziel: Foundation
+      if (dropTarget.type === 'foundation') {
+        const card = cards[0];
+        const f = state.foundations[dropTarget.index];
+        if (canPlaceOnFoundation(f, card)) {
+          applyMove({
+            owner: localOwner,
+            kind:'toFound',
+            cardId: card.id,
+            count: 1,
+            to: { kind:'found', f: dropTarget.index }
+          }, true);
+          clearTouchSelection();
+          return;
+        }
+      }
+      // → Ziel: Tableau-Pile
+      else if (dropTarget.type === 'pile') {
+        const z = dropTarget.zone;        // z.B. "you-pile-3"
+        const parts = z.split('-');       // ["you","pile","3"]
+        const sideKey = parts[0];
+        const pileIdx = Number(parts[2] || 0);
+        const mySide2 = ownerToSide(localOwner);
+
+        if (sideKey === mySide2) {
+          const destPile = state[mySide2].tableau[pileIdx];
+          const under = destPile[destPile.length - 1];
+          const srcTop = cards[0];
+
+          if (srcTop.up && canPlaceOnTableau(under, srcTop)) {
+            const count = cards.length;
+            applyMove({
+              owner: localOwner,
+              kind:'toPile',
+              cardId: srcTop.id,
+              count,
+              from: { kind:'pile', sideOwner: localOwner, uiIndex:(selLoc.type==='pile'?selLoc.pile:-1) },
+              to:   { kind:'pile', sideOwner: localOwner, uiIndex:pileIdx }
+            }, true);
+            clearTouchSelection();
+            return;
+          }
+        }
+      }
+    }
+
+    // 3b) Keine (oder erfolglose) Auswahl → neue Auswahl setzen oder löschen
+    if (tappedCard && tappedCard.loc && isMine(tappedCard.loc)) {
+      selectCardsForTouch(tappedCard.loc);
+    } else {
+      clearTouchSelection();
     }
   }
 
@@ -892,7 +1065,7 @@ function updateMirrorUI() {
     setText('ov-peers', String(peers.size));
     setText('ov-latency', latencyMs != null ? `${Math.max(0,Math.round(latencyMs))} ms` : '—');
     setText('ov-last', lastMsgAt > 0 ? (Math.floor((Date.now()-lastMsgAt)/1000)||0)+'s ago' : '—');
-    setText('ov-version', VERSION + (MIRROR_ON ? ' · mirror:on' : ' · mirror:off'));
+    // ov-version wird primär von updateMirrorUI gesetzt
   }
 
   setInterval(() => {
