@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ================================================================
 //  Solitaire HighNoon - Realtime Game Server
-//  Version: 1.6.1  (2025-11-07)
+//  Version: 1.6.2  (2025-11-16)
 //  Author: micmuller & ChatGPT (GPT-5)
 // ================================================================
 
@@ -14,7 +14,7 @@ const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
 // ---------- Version / CLI ----------
-const VERSION = '1.6.1';
+const VERSION = '1.6.2';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -43,15 +43,40 @@ if (portIdx > -1 && process.argv[portIdx + 1]) {
 //  HTTP REQUEST HANDLER (STATIC FILES)
 // ================================================================
 const PUBLIC_DIR = path.join(__dirname, 'public');
+
 function handleRequest(req, res) {
-  let filePath = path.join(PUBLIC_DIR, req.url === '/' ? 'index.html' : req.url);
-  if (!filePath.startsWith(PUBLIC_DIR)) {
-    res.writeHead(403); return res.end('Forbidden');
+  let reqUrl;
+  try {
+    // WHATWG URL – Query-String wird getrennt
+    reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  } catch {
+    // Fallback, falls Host-Header komisch ist
+    reqUrl = { pathname: req.url || '/' };
   }
+
+  let pathname = reqUrl.pathname || '/';
+
+  // Root → index.html (gilt auch für /?mirror=1, /?foo=bar etc.)
+  if (pathname === '/' || pathname === '') {
+    pathname = '/index.html';
+  }
+
+  const filePath = path.join(PUBLIC_DIR, pathname);
+
+  // Security: Pfad darf nicht aus PUBLIC_DIR herausführen
+  if (!filePath.startsWith(PUBLIC_DIR)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    return res.end('Forbidden');
+  }
+
   fs.readFile(filePath, (err, data) => {
     if (err) {
-      res.writeHead(404); return res.end('Not found');
+      // Optional: kleines Logging für Debug
+      // console.warn(`[404] ${req.method} ${req.url} -> ${filePath}`);
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      return res.end('Not found');
     }
+
     const ext = path.extname(filePath).toLowerCase();
     const mime =
       ext === '.js'   ? 'text/javascript' :
@@ -59,9 +84,17 @@ function handleRequest(req, res) {
       ext === '.json' ? 'application/json' :
       ext === '.png'  ? 'image/png' :
       ext === '.jpg'  ? 'image/jpeg' :
+      ext === '.jpeg' ? 'image/jpeg' :
       ext === '.ico'  ? 'image/x-icon' :
       'text/html';
-    res.writeHead(200, { 'Content-Type': mime });
+
+    // DEV: Caching hart deaktivieren, damit Versionen & JS sofort neu geladen werden
+    res.writeHead(200, {
+      'Content-Type': mime,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
     res.end(data);
   });
 }
@@ -116,7 +149,11 @@ function logStatus(roomHint = null) {
   for (const [room, set] of rooms.entries()) {
     summary.push(`${room}:${set.size}`);
   }
-  console.log(`[STATUS] ${isoNow()} — Clients=${total}, Rooms=${rooms.size} [${summary.join(', ') || '—'}]${roomHint ? ` (room="${roomHint}")` : ''}`);
+  console.log(
+    `[STATUS] ${isoNow()} — Clients=${total}, Rooms=${rooms.size} ` +
+    `[${summary.join(', ') || '—'}]` +
+    (roomHint ? ` (room="${roomHint}")` : '')
+  );
 }
 
 // --- Upgrade
@@ -151,11 +188,14 @@ wss.on('connection', (ws, req, room) => {
     if (!currentRoom) return;
     try {
       const data = JSON.parse(buf.toString());
-      if (data?.move) console.log(`[MOVE] ${isoNow()} room="${currentRoom}" kind=${data.move.kind}`);
+      if (data?.move) {
+        console.log(`[MOVE] ${isoNow()} room="${currentRoom}" kind=${data.move.kind}`);
+      }
       if (data?.sys) {
         const lastH = lastHelloTsByClient.get(ws) || 0;
         if (data.sys.type === 'hello' && now - lastH < HELLO_SUPPRESS_MS) return;
         lastHelloTsByClient.set(ws, now);
+
         const lastSys = lastSysLogByRoom.get(currentRoom) || 0;
         if (now - lastSys >= STATUS_INTERVAL_MS) {
           console.log(`[SYS] ${isoNow()} room="${currentRoom}" type=${data.sys.type}`);
@@ -164,7 +204,8 @@ wss.on('connection', (ws, req, room) => {
       }
       broadcastToRoom(currentRoom, buf.toString(), ws);
       if (now - lastGlobalStatusLog >= STATUS_INTERVAL_MS) {
-        logStatus(); lastGlobalStatusLog = now;
+        logStatus();
+        lastGlobalStatusLog = now;
       }
     } catch (err) {
       console.error('[WS ERROR]', err);
