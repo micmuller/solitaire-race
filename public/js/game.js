@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.11.0';   // <– hier änderst du künftig die Version
+const VERSION = '2.11.1';   // <– hier änderst du künftig die Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -17,6 +17,7 @@ window.VERSION = VERSION;
    - v2.10.2: Tap→Tap Moves auf Touch (Auswahl + Zieltap), besseres iPad Verhalten
    - v2.10.4: Mirror Robuster
    - v2.11.0: Gegnerischer Move sichtbar als "Geisterkarte" (Ghost Card)
+   - v2.11.1: CSS angepasst auf neue Kartenlayouts (4 Ecken + Mitte)
    ============================================================ */
 (function(){
 
@@ -313,15 +314,46 @@ window.VERSION = VERSION;
     }
   }
 
-  function renderCard(c) {
-    const e = mk('div','card');
+    function renderCard(c) {
+    const e = mk('div', 'card');
+    e.dataset.cardId = c.id;
+
     if (!c.up) {
+      // Rückseite wie bisher
       e.classList.add('faceDown');
     } else {
+      // Vorderseite: rot/schwarz und Innenlayout
       e.classList.add(isRed(c.suit) ? 'red' : 'black');
-      e.textContent = cardLabel(c);
+
+      const label = cardLabel(c);      // z.B. "Q♠" oder "10♥"
+      const suit = label.slice(-1);    // letztes Zeichen = Suit
+      const rank = label.slice(0, -1); // Rest = Rank (inkl. "10")
+
+      e.innerHTML = `
+        <div class="card-inner">
+          <!-- 4 Ecken -->
+          <div class="card-corner tl">
+            <span class="card-rank">${rank}</span>
+            <span class="card-suit-small">${suit}</span>
+          </div>
+          <div class="card-corner tr">
+            <span class="card-rank">${rank}</span>
+            <span class="card-suit-small">${suit}</span>
+          </div>
+          <div class="card-corner bl">
+            <span class="card-rank">${rank}</span>
+            <span class="card-suit-small">${suit}</span>
+          </div>
+          <div class="card-corner br">
+            <span class="card-rank">${rank}</span>
+            <span class="card-suit-small">${suit}</span>
+          </div>
+
+          <!-- große Mitte: Rank + Suit kombiniert -->
+          <div class="card-center">${rank}${suit}</div>
+        </div>
+      `;
     }
-    e.dataset.cardId = c.id;
 
     // Maus/PC: HTML5 Drag & Double-Click behalten
     if (!IS_TOUCH_DEVICE) {
@@ -333,6 +365,7 @@ window.VERSION = VERSION;
       // Auf Touch: kein HTML5-Drag, keine dblclick-Handler
       e.draggable = false;
     }
+
     return e;
   }
 
