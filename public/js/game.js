@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.10.4';   // <– hier änderst du künftig die Version
+const VERSION = '2.11.0';   // <– hier änderst du künftig die Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -16,6 +16,7 @@ window.VERSION = VERSION;
    - v2.10.1: Bugfixes Touch (kein Doppel-Flip, stabilere Drops)
    - v2.10.2: Tap→Tap Moves auf Touch (Auswahl + Zieltap), besseres iPad Verhalten
    - v2.10.4: Mirror Robuster
+   - v2.11.0: Gegnerischer Move sichtbar als "Geisterkarte" (Ghost Card)
    ============================================================ */
 (function(){
 
@@ -964,6 +965,72 @@ window.VERSION = VERSION;
     }
   }
 
+    // ---------- Gegner-Ghost-Animation ----------
+    function spawnGhostMove(cardId, fromRect) {
+      try {
+        const board = document.getElementById('board');
+        if (!board || !fromRect) return;
+
+        const boardRect = board.getBoundingClientRect();
+
+        // Start relativ zum Board
+        const startX = fromRect.left - boardRect.left;
+        const startY = fromRect.top - boardRect.top;
+
+        // Zielkarte nach applyMove/renderAll
+        const target = document.querySelector(`.card[data-card-id="${cardId}"]`);
+        if (!target) return;
+        const tRect = target.getBoundingClientRect();
+        const endX = tRect.left - boardRect.left;
+        const endY = tRect.top - boardRect.top;
+
+        // Zeitparameter
+        const duration = 800;   // 0.8s Flug
+        const pause    = 200;   // kurze Pause am Ziel
+        const fadeOut  = 250;   // 0.25s ausblenden
+
+        // Ghost-Karte erzeugen
+        const ghost = target.cloneNode(true);
+        ghost.classList.add('card-ghost');
+        ghost.style.position = 'absolute';
+
+        // 👉 Wir animieren jetzt *top/left*, NICHT transform
+        ghost.style.left = startX + 'px';
+        ghost.style.top  = startY + 'px';
+
+        ghost.style.transition =
+          `top ${duration}ms ease-out, left ${duration}ms ease-out, opacity ${fadeOut}ms ease-out`;
+        ghost.style.pointerEvents = 'none';
+        ghost.style.opacity = '1';
+
+        board.appendChild(ghost);
+
+        // Animation: von Start → Ziel
+        requestAnimationFrame(() => {
+          ghost.style.left = endX + 'px';
+          ghost.style.top  = endY + 'px';
+
+          // kleine Pause am Ziel, dann ausblenden & entfernen
+          setTimeout(() => {
+            ghost.style.opacity = '0';
+            setTimeout(() => {
+              if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
+            }, fadeOut);
+          }, duration + pause);
+        });
+
+        // Zielkarte etwas länger highlighten
+        target.classList.add('selected');
+        setTimeout(
+          () => target.classList.remove('selected'),
+          duration + pause + fadeOut
+        );
+      } catch (e) {
+        console.warn('ghost move error', e);
+      }
+    }
+
+
   // ---------- Moves / applyMove ----------
   function applyMove(move, announce = true) {
     try {
@@ -1147,10 +1214,18 @@ window.VERSION = VERSION;
 
     ws.onmessage = (ev) => {
       lastMsgAt = Date.now();
+
       try {
         const msg = JSON.parse(ev.data);
-        if (msg.from) peers.set(msg.from, Date.now());
 
+        // Peer-Liste aktualisieren
+        if (msg.from) {
+          peers.set(msg.from, Date.now());
+        }
+
+        /* =====================================================
+          SYSTEM-NACHRICHTEN (hello, ack, ping, pong, etc.)
+          ===================================================== */
         if (msg.sys) {
           if (msg.sys.type === 'hello' && msg.from) {
             if (!hasSetPerspective) {
@@ -1161,26 +1236,72 @@ window.VERSION = VERSION;
                 [state.you, state.opp] = [state.opp, state.you];
                 renderAll();
                 showToast('Perspektive: ' + localOwner);
-              } else {
-                localOwner = desired;
               }
               hasSetPerspective = true;
-
-              // Multiplayer: Mirror automatisch einschalten, falls aus
-              if (!MIRROR_ON) setMirror(true, { persist:true });
             }
             sendSys({ type:'hello-ack', from:clientId });
-          } else if (msg.sys.type === 'ping' && typeof msg.sys.ts === 'number') {
+          }
+
+          else if (msg.sys.type === 'hello-ack' && msg.from) {
+            if (!hasSetPerspective) {
+              const iAmY = clientId.localeCompare(msg.from) < 0;
+              const desired = iAmY ? 'Y' : 'O';
+              if (localOwner !== desired) {
+                localOwner = desired;
+                [state.you, state.opp] = [state.opp, state.you];
+                renderAll();
+                showToast('Perspektive: ' + localOwner);
+              }
+              hasSetPerspective = true;
+            }
+          }
+
+          else if (msg.sys.type === 'ping' && typeof msg.sys.ts === 'number') {
             sendSys({ type:'pong', ts: msg.sys.ts });
-          } else if (msg.sys.type === 'pong' && typeof msg.sys.ts === 'number') {
+          }
+
+          else if (msg.sys.type === 'pong' && typeof msg.sys.ts === 'number') {
             latencyMs = Date.now() - msg.sys.ts;
           }
+
           updateOverlay();
           return;
         }
 
-        if (msg.move) applyMove(msg.move, false);
+        /* =====================================================
+          MOVE-NACHRICHTEN (eigentliche Spielzüge)
+          ===================================================== */
+        if (msg.move) {
+
+          const isRemote = msg.from && msg.from !== clientId;
+          let fromRect = null;
+
+          // Ghost-Startposition nur bei REMOTE-Zügen mit Karte merken
+          // (alles, was eine cardId hat, außer flip/recycle)
+          if (isRemote &&
+              msg.move.cardId &&
+              msg.move.kind !== 'flip' &&
+              msg.move.kind !== 'recycle') {
+
+            const board = document.getElementById('board');
+            const cardEl = document.querySelector(`.card[data-card-id="${msg.move.cardId}"]`);
+            if (board && cardEl) {
+              fromRect = cardEl.getBoundingClientRect();
+            }
+          }
+
+
+          // WICHTIG: Zuerst ganz normal den Spielzug übernehmen
+          applyMove(msg.move, false);
+
+          // Jetzt, nachdem renderAll() die neue Position erzeugt hat → Ghost fliegen lassen
+          if (isRemote && fromRect) {
+            spawnGhostMove(msg.move.cardId, fromRect);
+          }
+        }
+
         updateOverlay();
+
       } catch (e) {
         console.error('WS-Error', e);
       }

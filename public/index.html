@@ -134,6 +134,15 @@
       z-index:1000;
     }
 
+    /* Ghost-Karte für Gegner-Moves */
+    .card-ghost {
+      opacity: 0.8;
+      pointer-events: none;
+      z-index: 999;
+      /* Optischer Unterschied zum Original */
+      filter: drop-shadow(0 0 10px rgba(250, 204, 21, 0.9));
+    }
+
     .row-mid { position:relative; z-index:10; display:grid; grid-auto-rows:min-content; align-content:center; }
     .foundations-wrap { display:grid; justify-content:center; }
     .foundations { display:grid; grid-template-columns: repeat(8, var(--card-w)); gap:10px; justify-content:center; }
