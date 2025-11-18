@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.11.2';   // <– hier änderst du künftig die Version
+const VERSION = '2.11.3';   // <– hier änderst du künftig die Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -19,6 +19,7 @@ window.VERSION = VERSION;
    - v2.11.0: Gegnerischer Move sichtbar als "Geisterkarte" (Ghost Card)
    - v2.11.1: CSS angepasst auf neue Kartenlayouts (4 Ecken + Mitte)
    - v2.11.2: iOS GUI in Portrait mode optimiert.
+   - v2.11.3: PWA-Hinweis für iPad hinzugefügt, PWA Manifest
    ============================================================ */
 (function(){
 

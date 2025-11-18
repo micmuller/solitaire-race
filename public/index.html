@@ -7,6 +7,11 @@
     content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
   />
   <title>Solitaire HighNoon</title>
+  <link rel="manifest" href="/manifest.json" />
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="/icon-192.png">
   <style>
     :root {
       --bg:#0b1020; --felt:#0f5132; --card:#fff; --ink:#0b1020; --muted:#9aa3b2; --radius:10px;
@@ -26,6 +31,7 @@
       gap:8px;
       -webkit-tap-highlight-color: transparent;
     }
+
     header {
       display:flex;
       align-items:center;
@@ -37,6 +43,15 @@
       position:relative;
       z-index:100;
     }
+
+    /* obere Zeile: Titel links, Aktionen rechts */
+    .header-top {
+      width:100%;
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+
     header h1 {
       font-size:18px;
       margin:0;
@@ -45,7 +60,18 @@
       align-items:center;
       gap:8px;
     }
+
+    /* "Aktionen: 0" klein, rechtsbündig */
+    .header-actions {
+      margin-left:auto;
+      font-size:11px;
+      color:var(--muted);
+      white-space:nowrap;
+      opacity:0.85;
+    }
+
     header .controls { margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; }
+
     button, input {
       border-radius:8px;
       border:1px solid #ffffff22;
@@ -144,63 +170,62 @@
     }
 
     /* Innenaufbau der Karte */
-  .card-inner {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    box-sizing: border-box;
-    padding: 4px;
-  }
+    .card-inner {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      padding: 4px;
+    }
 
-  /* 4 Ecken mit Rank + kleinem Suit */
-  .card-corner {
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    font-size: 11px;
-    line-height: 1.1;
-  }
+    /* 4 Ecken mit Rank + kleinem Suit */
+    .card-corner {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-size: 11px;
+      line-height: 1.1;
+    }
 
-  .card-corner span {
-    display: block;
-  }
+    .card-corner span {
+      display: block;
+    }
 
-  /* Ecken-Positionen */
-  .card-corner.tl { top: 4px; left: 4px; }
-  .card-corner.tr { top: 4px; right: 4px; }
-  .card-corner.bl {
-    bottom: 4px;
-    left: 4px;
-    transform: rotate(180deg);
-  }
-  .card-corner.br {
-    bottom: 4px;
-    right: 4px;
-    transform: rotate(180deg);
-  }
+    /* Ecken-Positionen */
+    .card-corner.tl { top: 4px; left: 4px; }
+    .card-corner.tr { top: 4px; right: 4px; }
+    .card-corner.bl {
+      bottom: 4px;
+      left: 4px;
+      transform: rotate(180deg);
+    }
+    .card-corner.br {
+      bottom: 4px;
+      right: 4px;
+      transform: rotate(180deg);
+    }
 
-  /* Rank / Suit klein */
-  .card-rank {
-    font-weight: 700;
-  }
-  .card-suit-small {
-    font-size: 10px;
-  }
+    /* Rank / Suit klein */
+    .card-rank {
+      font-weight: 700;
+    }
+    .card-suit-small {
+      font-size: 10px;
+    }
 
-  /* große Mitte: Rank+Suit kombiniert */
-  .card-center {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 28px;
-    font-weight: 700;
-    opacity: 0.6;
-    pointer-events: none;
-  }   
-
+    /* große Mitte: Rank+Suit kombiniert */
+    .card-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      font-weight: 700;
+      opacity: 0.6;
+      pointer-events: none;
+    }
 
     .row-mid { position:relative; z-index:10; display:grid; grid-auto-rows:min-content; align-content:center; }
     .foundations-wrap { display:grid; justify-content:center; }
@@ -259,6 +284,11 @@
     .dot.ok { background:#22c55e; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
+    /* Overlay verstecken */
+    .overlay.overlay-hidden {
+      display:none;
+    }
+
     /* v2.10.x – header & controls skalieren mit --ui-scale */
     :root{
       --ui-scale: 1;          /* wird von scaling.js gesetzt (0.5–1.0) */
@@ -302,112 +332,174 @@
       border-radius: calc(10px * var(--ui-scale));
     }
 
-       /* --- iPad 12.9" Hochformat: Touch-Layout + große Karten + Board weiter oben --- */
-@media screen and (max-width: 1024px) and (orientation: portrait) {
+    /* --- iPad 12.9" Hochformat: Touch-Layout + große Karten + Board weiter oben --- */
+    @media screen and (max-width: 1024px) and (orientation: portrait) {
 
-  /* Karten deutlich größer auf dem iPad */
-  :root {
-    --card-w: 110px;   /* Breite der Karte */
-    --card-h: 160px;   /* Höhe der Karte */
-    --stack-yd: 30px;  /* vertikaler Versatz im Tableau */
-  }
+      /* Karten deutlich größer auf dem iPad */
+      :root {
+        --card-w: 110px;   /* Breite der Karte */
+        --card-h: 160px;   /* Höhe der Karte */
+        --stack-yd: 30px;  /* vertikaler Versatz im Tableau */
+      }
 
-  /* BODY: etwas weniger Abstand, Standard bleibt */
-  body {
-    grid-template-rows: auto 1fr;
-    gap: 6px;
-  }
+      /* BODY: etwas weniger Abstand, Standard bleibt */
+      body {
+        grid-template-rows: auto 1fr;
+        gap: 6px;
+      }
 
-  /* HEADER: zwei Zeilen, Touch-freundliche Inputs/Buttons */
-  header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-    padding: 8px 10px;
-  }
+            /* HEADER: zwei Zeilen, Touch-freundlich, gleich breit wie das Board */
+      header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+        padding: 8px 10px;
 
-  header h1 {
-    font-size: 20px;
-    margin-bottom: 2px;
-  }
+        /* neu: gleiche Breite & Zentrierung wie board-wrapper */
+        max-width: 1100px;
+        width: 100%;
+        margin: 0 auto;
+        box-sizing: border-box;
+      }
 
-  header .controls {
-    margin-left: 0;
-    width: 100%;
-    display: flex;
-    flex-wrap: wrap;
-    row-gap: 6px;
-    column-gap: 8px;
-    justify-content: flex-start;
-  }
+      .header-top {
+        width: 100%;
+      }
 
-  /* Eingaben + Buttons: schön breit / hoch zum Tippen */
-  header .controls input,
-  header .controls button {
-    flex: 1 1 calc(50% - 8px);   /* zwei Elemente pro Zeile */
-    min-width: 0;
-    font-size: 16px;
-    padding: 10px 12px;
-  }
+      header h1 {
+        font-size: 20px;
+      }
 
-  /* "Aktionen: X" in eigene schmale Zeile */
-  header .controls .small {
-    flex: 1 1 100%;
-    font-size: 12px;
-    text-align: left;
-    margin-top: 2px;
-  }
+      .header-actions {
+        font-size: 11px;
+      }
 
-  /* BOARD: weiter nach oben, nicht mehr mittig */
-  .board-wrapper {
-    width: 1100px;
-    height: 760px;
+      header .controls {
+        margin-left: 0;
+        width: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        row-gap: 6px;
+        column-gap: 8px;
+        justify-content: flex-start;
+      }
 
-    /* ganz wichtig: nicht mehr zentriert im Grid, sondern oben */
-    align-items: flex-start;
-    justify-content: center;
-    align-self: start;
-    justify-self: center;
-    place-self: start center;
+      header .controls input,
+      header .controls button {
+        flex: 1 1 calc(50% - 8px);
+        min-width: 0;
+        font-size: 16px;
+        padding: 10px 12px;
+      }
 
-    margin-top: 0;          /* nur falls du vorher mit margin gespielt hast */
-    transform-origin: top center;
-  }
+      /* --- Kompakter PWA-Hinweis auf iPad Portrait --- */
+#pwa-hint {
+  display: none;                   /* wird via JS eingeblendet */
+  position: relative;
+  margin: 6px auto 0;              /* zentriert unter dem Header */
+  
+  /* kompakte Box, nicht Fullwidth */
+  width: 85%;
+  max-width: 420px;
+  
+  background: #0b1222ee;
+  border: 1px solid #ffffff22;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.35;
+  z-index: 90;
+  
+  box-shadow: 0 4px 16px #0008;
+}
 
-  /* Etwas engere Abstände für das größere Kartenset */
-  .tableau {
-    gap: 8px;
-  }
-  .stack,
-  .pile,
-  .foundation {
-    margin: 0;
-  }
+/* erscheint, wenn JS die Klasse show setzt */
+#pwa-hint.show {
+  display: block;
+}
 
-  /* Status-Overlay leicht größer und näher am Board */
-  .overlay {
-    bottom: 8px;
-    right: 8px;
-    transform-origin: bottom right;
-    transform: scale(1.05);
-  }
-}s
+/* großes, gut tappbares X */
+#pwa-hint-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  background: none;
+  border: none;
+  color: #e5e7eb;
+  font-size: 28px;         /* groß für finger */
+  font-weight: 400;
+  padding: 4px 6px;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 8px;
+}
 
+/* X beim Drücken etwas heller */
+#pwa-hint-close:active {
+  color: #ffffff;
+  background: #ffffff22;
+}
+
+      /* BOARD: weiter nach oben, nicht mehr mittig */
+      .board-wrapper {
+        width: 1100px;
+        height: 760px;
+
+        /* ganz wichtig: nicht mehr zentriert im Grid, sondern oben */
+        align-items: flex-start;
+        justify-content: center;
+        align-self: start;
+        justify-self: center;
+        place-self: start center;
+
+        margin-top: 0;
+        transform-origin: top center;
+      }
+
+      /* Etwas engere Abstände für das größere Kartenset */
+      .tableau {
+        gap: 8px;
+      }
+      .stack,
+      .pile,
+      .foundation {
+        margin: 0;
+      }
+
+      /* Status-Overlay leicht größer und näher am Board */
+      .overlay {
+        bottom: 8px;
+        right: 8px;
+        transform-origin: bottom right;
+        transform: scale(1.05);
+      }
+    }
 
   </style>
 </head>
 <body>
   <header>
-    <h1>Solitaire HighNoon <span class="badge" id="ver"></span></h1>
+    <div class="header-top">
+      <h1>Solitaire HighNoon <span class="badge" id="ver"></span></h1>
+      <span class="header-actions">Aktionen: <span id="moves">0</span></span>
+    </div>
     <div class="controls">
       <input id="room" placeholder="Room-ID" title="Room/Match ID" />
       <input id="seed" placeholder="Seed (optional)" title="Deterministische Mischung" />
       <button id="newGame" class="primary">Neu starten</button>
       <button id="connect">Verbinden</button>
       <button id="toggleMirror" class="primary" title="Ansicht spiegeln">Mirror: On</button>
-      <span class="small">Aktionen: <span id="moves">0</span></span>
+      <button id="toggleOverlayBtn">Status</button>
     </div>
   </header>
+
+  <div id="pwa-hint" class="pwa-hint">
+  Für das beste Spielerlebnis auf dem iPad:
+  In Safari über <span class="kbd">Teilen</span> → <strong>„Zum Home-Bildschirm“</strong> hinzufügen
+  und das Spiel von dort starten.
+  <button id="pwa-hint-close" aria-label="Hinweis ausblenden">×</button>
+</div>
 
   <div class="overlay" id="overlay">
     <h3>Status</h3>
@@ -473,6 +565,8 @@
 
   <script src="./js/scaling.js" defer></script>
   <script src="./js/touch.js" defer></script>
+  <script src="./js/inlinehandler.js" defer></script>
   <script src="./js/game.js" defer></script>
+ 
 </body>
 </html>
