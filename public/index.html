@@ -301,6 +301,99 @@
       padding: calc(10px * var(--ui-scale)) calc(12px * var(--ui-scale));
       border-radius: calc(10px * var(--ui-scale));
     }
+
+       /* --- iPad 12.9" Hochformat: Touch-Layout + große Karten + Board weiter oben --- */
+@media screen and (max-width: 1024px) and (orientation: portrait) {
+
+  /* Karten deutlich größer auf dem iPad */
+  :root {
+    --card-w: 110px;   /* Breite der Karte */
+    --card-h: 160px;   /* Höhe der Karte */
+    --stack-yd: 30px;  /* vertikaler Versatz im Tableau */
+  }
+
+  /* BODY: etwas weniger Abstand, Standard bleibt */
+  body {
+    grid-template-rows: auto 1fr;
+    gap: 6px;
+  }
+
+  /* HEADER: zwei Zeilen, Touch-freundliche Inputs/Buttons */
+  header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  header h1 {
+    font-size: 20px;
+    margin-bottom: 2px;
+  }
+
+  header .controls {
+    margin-left: 0;
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    column-gap: 8px;
+    justify-content: flex-start;
+  }
+
+  /* Eingaben + Buttons: schön breit / hoch zum Tippen */
+  header .controls input,
+  header .controls button {
+    flex: 1 1 calc(50% - 8px);   /* zwei Elemente pro Zeile */
+    min-width: 0;
+    font-size: 16px;
+    padding: 10px 12px;
+  }
+
+  /* "Aktionen: X" in eigene schmale Zeile */
+  header .controls .small {
+    flex: 1 1 100%;
+    font-size: 12px;
+    text-align: left;
+    margin-top: 2px;
+  }
+
+  /* BOARD: weiter nach oben, nicht mehr mittig */
+  .board-wrapper {
+    width: 1100px;
+    height: 760px;
+
+    /* ganz wichtig: nicht mehr zentriert im Grid, sondern oben */
+    align-items: flex-start;
+    justify-content: center;
+    align-self: start;
+    justify-self: center;
+    place-self: start center;
+
+    margin-top: 0;          /* nur falls du vorher mit margin gespielt hast */
+    transform-origin: top center;
+  }
+
+  /* Etwas engere Abstände für das größere Kartenset */
+  .tableau {
+    gap: 8px;
+  }
+  .stack,
+  .pile,
+  .foundation {
+    margin: 0;
+  }
+
+  /* Status-Overlay leicht größer und näher am Board */
+  .overlay {
+    bottom: 8px;
+    right: 8px;
+    transform-origin: bottom right;
+    transform: scale(1.05);
+  }
+}s
+
+
   </style>
 </head>
 <body>
