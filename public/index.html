@@ -321,123 +321,143 @@
       border-radius: calc(10px * var(--ui-scale));
     }
 
-    /* --- iPad 12.9" Hochformat: Touch-Layout + große Karten + Board weiter unten / safe-area --- */
-    /* Hochformat-Layout (iPad Safari + PWA) */
-      @media screen and (orientation: portrait) {
+    /* --- iPad / Tablet Layout: große Karten + kompaktes Menü --- */
+/* Gilt für alle Geräte mit max. 1024px Breite (iPad Safari + PWA, Portrait & Landscape) */
+@media screen and (max-width: 1024px) {
 
-      :root {
-        --card-w: 110px;
-        --card-h: 160px;
-        --stack-yd: 30px;
-      }
+  :root {
+    /* Karten maximal groß, aber noch passend für 7 Tableaus */
+    --card-w: 128px;
+    --card-h: 190px;
+    --stack-yd: 30px;
+  }
 
-      body {
-        grid-template-rows: auto 1fr;
-        gap: 6px;
-        /* alles etwas vom oberen Rand weg, inkl. Dynamic Island */
-        padding-top: env(safe-area-inset-top, 10px);
-        padding-bottom: env(safe-area-inset-bottom, 0px);
-      }
+  body {
+    grid-template-rows: auto 1fr;
+    gap: 6px;
+    padding-top: env(safe-area-inset-top, 10px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 
-      /* Header auf Boardbreite begrenzen, zentriert */
-      header {
-        max-width: 1100px;
-        width: 100%;
-        margin: 0 auto;
-      }
+    /* Header auf iPad-Breite begrenzen, zentriert wie das Board */
+  header {
+    max-width: 1024px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+  }
 
-      header h1 {
-        font-size: 20px;
-      }
+  header h1 {
+    font-size: 20px;
+  }
 
-      /* Controls: eine kompakte Zeile, nicht umbrechen */
-      header .controls {
-        flex-wrap: nowrap;
-        justify-content: flex-start;
-      }
+  /* Kompakte, aber sichere Menü-Zeile – kein Überlaufen mehr */
+  header .controls {
+    margin-left: 0;
+    width: 100%;
+    display: grid;
+    grid-template-columns:
+      minmax(0, 1.3fr)   /* Room-ID */
+      minmax(0, 1.3fr)   /* Seed */
+      auto               /* Neu starten */
+      auto               /* Verbinden */
+      auto;              /* Status */
+    column-gap: 8px;
+    row-gap: 6px;
+    align-items: center;
+  }
 
-      header .controls input {
-        flex: 1 1 0;
-        min-width: 0;
-        max-width: none;
-      }
+  header .controls input {
+    width: 100%;
+    min-width: 0;
+  }
 
-      header .controls button {
-        flex: 0 0 auto;
-        font-size: 16px;
-        padding: 10px 12px;
-      }
+  header .controls button {
+    white-space: nowrap; /* Buttons bleiben kompakt, kein Umbruch im Text */
+    font-size: 16px;
+    padding: 8px 10px;
+  }
 
-      /* Kompakter PWA-Hinweis */
-      #pwa-hint {
-        display: none;
-        position: relative;
-        margin: 6px auto 0;
-        width: 85%;
-        max-width: 420px;
-        background: #0b1222ee;
-        border: 1px solid #ffffff22;
-        border-radius: 12px;
-        padding: 10px 14px;
-        font-size: 13px;
-        text-align: center;
-        line-height: 1.35;
-        z-index: 90;
-        box-shadow: 0 4px 16px #0008;
-      }
+  /* Kompakter PWA-Hinweis unter dem Menü */
+  #pwa-hint {
+    display: none;
+    position: relative;
+    margin: 6px auto 0;
+    width: 85%;
+    max-width: 420px;
+    background: #0b1222ee;
+    border: 1px solid #ffffff22;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
+    text-align: center;
+    line-height: 1.35;
+    z-index: 90;
+    box-shadow: 0 4px 16px #0008;
+  }
 
-      #pwa-hint.show {
-        display: block;
-      }
+  #pwa-hint.show {
+    display: block;
+  }
 
-      #pwa-hint-close {
-        position: absolute;
-        top: 4px;
-        right: 6px;
-        background: none;
-        border: none;
-        color: #e5e7eb;
-        font-size: 28px;
-        font-weight: 400;
-        padding: 4px 6px;
-        cursor: pointer;
-        line-height: 1;
-        border-radius: 8px;
-      }
+  #pwa-hint-close {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    background: none;
+    border: none;
+    color: #e5e7eb;
+    font-size: 28px;
+    font-weight: 400;
+    padding: 4px 6px;
+    cursor: pointer;
+    line-height: 1;
+    border-radius: 8px;
+  }
 
-      #pwa-hint-close:active {
-        color: #ffffff;
-        background: #ffffff22;
-      }
+  #pwa-hint-close:active {
+    color: #ffffff;
+    background: #ffffff22;
+  }
 
-      .board-wrapper {
-        width: 1100px;
-        height: 760px;
-        align-items: flex-start;
-        justify-content: center;
-        align-self: start;
-        justify-self: center;
-        place-self: start center;
-        margin-top: 4px;
-        transform-origin: top center;
-      }
+  /* Mehr Luft zwischen Gegner-Tableaus und Foundations,
+     damit hohe Stapel nicht in die Foundations ragen */
+  .row-mid {
+    margin-top: 48px;   /* bei Bedarf auf 40–48px erhöhen */
+    margin-bottom: 10px;
+  }
 
-      .tableau {
-        gap: 8px;
-      }
-      .stack,
-      .pile,
-      .foundation {
-        margin: 0;
-      }
+  /* Board-Basisgröße so wählen, dass es fast die ganze Breite nutzt,
+     ohne zu hoch zu werden (damit Scaling.js mehr vergrößert als verkleinert) */
+  .board-wrapper {
+    width: 1024px;     /* entspricht iPad-Breite */
+    height: 750px;     /* vorher z.B. 720 – leicht erhöhen */
+    align-items: flex-start;
+    justify-content: center;
+    align-self: start;
+    justify-self: center;
+    place-self: start center;
+    margin-top: 4px;
+    transform-origin: top center;
+  }
 
-      .overlay {
-        bottom: 8px;
-        right: 8px;
-        transform-origin: bottom right;
-        transform: scale(1.05);
-      }
-    }
+  .tableau {
+    gap: 8px;
+  }
+
+  .stack,
+  .pile,
+  .foundation {
+    margin: 0;
+  }
+
+  .overlay {
+    bottom: 8px;
+    right: 8px;
+    transform-origin: bottom right;
+    transform: scale(1.05);
+  }
+}
 
   </style>
 </head>

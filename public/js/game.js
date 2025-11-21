@@ -21,6 +21,7 @@ window.VERSION = VERSION;
    - v2.11.2: iOS GUI in Portrait mode optimiert.
    - v2.11.3: PWA-Hinweis für iPad hinzugefügt, PWA Manifest
    - v2.11.4: Menu buttons angepasst, PWA angepasst für iOS 16+
+   - v2.12.1: IPAD Portrait optimiert (höhere Board-Größe, grössere Karten)
    ============================================================ */
 (function(){
 
