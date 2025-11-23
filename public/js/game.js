@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.11.4';   // <– hier änderst du künftig die Version
+const VERSION = '2.12.5';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -22,6 +22,10 @@ window.VERSION = VERSION;
    - v2.11.3: PWA-Hinweis für iPad hinzugefügt, PWA Manifest
    - v2.11.4: Menu buttons angepasst, PWA angepasst für iOS 16+
    - v2.12.1: IPAD Portrait optimiert (höhere Board-Größe, grössere Karten)
+   - v2.12.2: Robustere WS-Verbindung + stabileres Mirroring (hello/self-ignore)
+   - V2.12.3: Troubleshooting Logs für WS-Verbindung
+   - v2.12.4: buildWSUrl() Bugfix IPAD connect problem
+   - v2.12.5: Troubleshooting WebSocket connection logs verbessert
    ============================================================ */
 (function(){
 
@@ -201,7 +205,7 @@ window.VERSION = VERSION;
   // ---------- Owner ----------
   let localOwner = 'Y';
   let hasSetPerspective = false;
-    function resetSessionPerspective() {
+  function resetSessionPerspective() {
     // Neue Session / neuer Room: Basis-Perspektive wieder auf 'Y'
     localOwner = 'Y';
     hasSetPerspective = false;
@@ -318,7 +322,7 @@ window.VERSION = VERSION;
     }
   }
 
-    function renderCard(c) {
+  function renderCard(c) {
     const e = mk('div', 'card');
     e.dataset.cardId = c.id;
 
@@ -796,7 +800,7 @@ window.VERSION = VERSION;
 
                 applyMove({
                   owner: localOwner,
-                  kind: 'toPile',
+                  kind:'toPile',
                   cardId,
                   count,
                   from: { kind:'pile', sideOwner: localOwner, uiIndex:(loc.type==='pile'?loc.pile:-1) },
@@ -960,9 +964,7 @@ window.VERSION = VERSION;
         myStock.onclick = () => {
           const side = ownerToSide(localOwner);
           const s = state[side].stock;
-          if (s.length) {
-            applyMove({ owner:localOwner, kind:'flip' }, true);
-          }
+          if (s.length) applyMove({ owner:localOwner, kind:'flip' }, true);
         };
         myStock.ondblclick = () => {
           const side = ownerToSide(localOwner);
@@ -1002,71 +1004,70 @@ window.VERSION = VERSION;
     }
   }
 
-    // ---------- Gegner-Ghost-Animation ----------
-    function spawnGhostMove(cardId, fromRect) {
-      try {
-        const board = document.getElementById('board');
-        if (!board || !fromRect) return;
+  // ---------- Gegner-Ghost-Animation ----------
+  function spawnGhostMove(cardId, fromRect) {
+    try {
+      const board = document.getElementById('board');
+      if (!board || !fromRect) return;
 
-        const boardRect = board.getBoundingClientRect();
+      const boardRect = board.getBoundingClientRect();
 
-        // Start relativ zum Board
-        const startX = fromRect.left - boardRect.left;
-        const startY = fromRect.top - boardRect.top;
+      // Start relativ zum Board
+      const startX = fromRect.left - boardRect.left;
+      const startY = fromRect.top - boardRect.top;
 
-        // Zielkarte nach applyMove/renderAll
-        const target = document.querySelector(`.card[data-card-id="${cardId}"]`);
-        if (!target) return;
-        const tRect = target.getBoundingClientRect();
-        const endX = tRect.left - boardRect.left;
-        const endY = tRect.top - boardRect.top;
+      // Zielkarte nach applyMove/renderAll
+      const target = document.querySelector(`.card[data-card-id="${cardId}"]`);
+      if (!target) return;
+      const tRect = target.getBoundingClientRect();
+      const endX = tRect.left - boardRect.left;
+      const endY = tRect.top - boardRect.top;
 
-        // Zeitparameter
-        const duration = 800;   // 0.8s Flug
-        const pause    = 200;   // kurze Pause am Ziel
-        const fadeOut  = 250;   // 0.25s ausblenden
+      // Zeitparameter
+      const duration = 800;   // 0.8s Flug
+      const pause    = 200;   // kurze Pause am Ziel
+      const fadeOut  = 250;   // 0.25s ausblenden
 
-        // Ghost-Karte erzeugen
-        const ghost = target.cloneNode(true);
-        ghost.classList.add('card-ghost');
-        ghost.style.position = 'absolute';
+      // Ghost-Karte erzeugen
+      const ghost = target.cloneNode(true);
+      ghost.classList.add('card-ghost');
+      ghost.style.position = 'absolute';
 
-        // 👉 Wir animieren jetzt *top/left*, NICHT transform
-        ghost.style.left = startX + 'px';
-        ghost.style.top  = startY + 'px';
+      // Wir animieren jetzt *top/left*, NICHT transform
+      ghost.style.left = startX + 'px';
+      ghost.style.top  = startY + 'px';
 
-        ghost.style.transition =
-          `top ${duration}ms ease-out, left ${duration}ms ease-out, opacity ${fadeOut}ms ease-out`;
-        ghost.style.pointerEvents = 'none';
-        ghost.style.opacity = '1';
+      ghost.style.transition =
+        `top ${duration}ms ease-out, left ${duration}ms ease-out, opacity ${fadeOut}ms ease-out`;
+      ghost.style.pointerEvents = 'none';
+      ghost.style.opacity = '1';
 
-        board.appendChild(ghost);
+      board.appendChild(ghost);
 
-        // Animation: von Start → Ziel
-        requestAnimationFrame(() => {
-          ghost.style.left = endX + 'px';
-          ghost.style.top  = endY + 'px';
+      // Animation: von Start → Ziel
+      requestAnimationFrame(() => {
+        ghost.style.left = endX + 'px';
+        ghost.style.top  = endY + 'px';
 
-          // kleine Pause am Ziel, dann ausblenden & entfernen
+        // kleine Pause am Ziel, dann ausblenden & entfernen
+        setTimeout(() => {
+          ghost.style.opacity = '0';
           setTimeout(() => {
-            ghost.style.opacity = '0';
-            setTimeout(() => {
-              if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
-            }, fadeOut);
-          }, duration + pause);
-        });
+            if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
+          }, fadeOut);
+        }, duration + pause);
+      });
 
-        // Zielkarte etwas länger highlighten
-        target.classList.add('selected');
-        setTimeout(
-          () => target.classList.remove('selected'),
-          duration + pause + fadeOut
-        );
-      } catch (e) {
-        console.warn('ghost move error', e);
-      }
+      // Zielkarte etwas länger highlighten
+      target.classList.add('selected');
+      setTimeout(
+        () => target.classList.remove('selected'),
+        duration + pause + fadeOut
+      );
+    } catch (e) {
+      console.warn('ghost move error', e);
     }
-
+  }
 
   // ---------- Moves / applyMove ----------
   function applyMove(move, announce = true) {
@@ -1157,25 +1158,47 @@ window.VERSION = VERSION;
   let clientId = Math.random().toString(36).slice(2);
   let ws = null, pingTimer = null, lastMsgAt = 0, latencyMs = null;
 
+    // Debug: zuletzt genutzte WS-URL & Fehlertext
+  let lastWsUrl = '';
+  let lastWsError = '';
+
+  // NEU: Timeout & Retry-Zähler
+  let connectRetryTimer = null;
+  let connectAttempts = 0;
+
   function setText(id, txt) {
     const n = document.getElementById(id);
     if (n) n.textContent = txt;
   }
 
   function updateOverlay() {
-    const online = ws && ws.readyState === 1;
+    const online     = ws && ws.readyState === 1;
+    const connecting = ws && ws.readyState === 0;
     const dot = document.getElementById('dot');
     const ovSync = document.getElementById('ov-sync');
 
-    if (dot) dot.classList.toggle('ok', !!online);
-    if (ovSync) ovSync.textContent = online ? 'online' : 'offline';
+    if (dot) {
+      dot.classList.toggle('ok', !!online);
+    }
+
+    if (ovSync) {
+      const attemptSuffix = connecting && connectAttempts > 1
+        ? ` (${connectAttempts})`
+        : '';
+      ovSync.textContent = online
+        ? 'online'
+        : (connecting ? `verbinden…${attemptSuffix}` : 'offline');
+    }
 
     setText('ov-room', state.room || '—');
     setText('ov-seed', state.seed || '—');
     setText('ov-peers', String(peers.size));
     setText('ov-latency', latencyMs != null ? `${Math.max(0,Math.round(latencyMs))} ms` : '—');
     setText('ov-last', lastMsgAt > 0 ? (Math.floor((Date.now()-lastMsgAt)/1000)||0)+'s ago' : '—');
-    // ov-version wird primär von updateMirrorUI gesetzt
+    
+    // Debug-Info
+    setText('ov-ws-url', lastWsUrl || '—');
+    setText('ov-ws-err', lastWsError || '—');
   }
 
   setInterval(() => {
@@ -1186,6 +1209,13 @@ window.VERSION = VERSION;
     updateOverlay();
   }, 1000);
 
+  function clearConnectRetryTimer() {
+    if (connectRetryTimer) {
+      clearTimeout(connectRetryTimer);
+      connectRetryTimer = null;
+    }
+  }
+
   function sendSys(o) {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ sys:o, from:clientId }));
   }
@@ -1194,40 +1224,95 @@ window.VERSION = VERSION;
   }
 
   function buildWsUrl() {
+    // 1) Vollständige Override-URL via ?ws=...
     const override = url.searchParams.get('ws');
     if (override) return override;
+
     const isHttps = location.protocol === 'https:';
     const proto = isHttps ? 'wss:' : 'ws:';
-    const host = location.hostname || '127.0.0.1';
-    const currentPort = (location.port ? parseInt(location.port,10) : (isHttps ? 443 : 80));
-    const wsPort = url.searchParams.get('ws_port') || (currentPort === 3001 ? 3001 : (isHttps ? 443 : 3001));
-    return `${proto}//${host}:${wsPort}/ws?room=${encodeURIComponent(state.room.trim())}`;
+
+    // location.host enthält hostname + port (z.B. "192.168.0.14:3001")
+    let hostPort = location.host || '';
+
+    // Optional: Port per ?ws_port= überschreiben
+    const wsPortOverride = url.searchParams.get('ws_port');
+    if (wsPortOverride && hostPort) {
+      const hostOnly = hostPort.split(':')[0];     // alles vor dem :
+      hostPort = `${hostOnly}:${wsPortOverride}`;  // z.B. 192.168.0.14:4000
+    }
+
+    // Falls aus irgendeinem Grund hostPort leer ist (exotischer iOS/PWA-Fall)
+    if (!hostPort) {
+      console.warn('[WS] location.host leer, fallback auf ws://localhost:3001');
+      hostPort = 'localhost:3001';
+    }
+
+    const room = encodeURIComponent(state.room.trim());
+    const wsUrl = `${proto}//${hostPort}/ws?room=${room}`;
+
+    // Debug: merken + Overlay updaten
+    lastWsUrl = wsUrl;
+    updateOverlay();
+    console.log('[WS] connecting to', wsUrl);
+
+    return wsUrl;
   }
 
-    function connectWS() {
+  function connectWS() {
     const room = state.room.trim();
     if (!room) {
       showToast('Room-ID fehlt');
       return;
     }
 
-    // Vorherige Verbindung sauber schließen
+    // Wenn wir schon eine aktive oder laufende Verbindung haben -> nur Overlay updaten
+    if (ws && (ws.readyState === 0 || ws.readyState === 1)) {
+      showToast('Bereits verbunden / Verbindung wird aufgebaut');
+      updateOverlay();
+      return;
+    }
+
+    // evtl. alten Timeout aufräumen
+    clearConnectRetryTimer();
+
+    // vorherige offene Verbindung sauber schließen
     if (ws && ws.readyState === WebSocket.OPEN) {
       try { ws.close(); } catch {}
     }
+
     ws = null;
     peers.clear();
     latencyMs = null;
     lastMsgAt = 0;
+
+    // NEU: neuer Verbindungsversuch -> Counter hoch
+    connectAttempts++;
     updateOverlay();
 
     const wsUrl = buildWsUrl();
     ws = new WebSocket(wsUrl);
 
+    // NEU: Timeout für hängenden CONNECTING-State (Safari/iPad)
+    connectRetryTimer = setTimeout(() => {
+      if (!ws) return;
+      if (ws.readyState === WebSocket.CONNECTING) {
+        console.warn('[WS] connect timeout, retrying...');
+        try { ws.close(); } catch {}
+        ws = null;
+        peers.clear();
+        latencyMs = null;
+        lastMsgAt = 0;
+        updateOverlay();
+        connectWS(); // Auto-Retry -> erhöht connectAttempts erneut
+      }
+    }, 5000); // 5 Sekunden
+
     ws.onopen = () => {
+      clearConnectRetryTimer();
       showToast('Verbunden');
       sendSys({ type:'hello' });
       updateOverlay();
+
       pingTimer = setInterval(() => {
         if (ws && ws.readyState === 1) {
           const ts = Date.now();
@@ -1237,6 +1322,7 @@ window.VERSION = VERSION;
     };
 
     ws.onclose = () => {
+      clearConnectRetryTimer();
       showToast('Getrennt');
       if (pingTimer) {
         clearInterval(pingTimer);
@@ -1247,6 +1333,9 @@ window.VERSION = VERSION;
 
     ws.onerror = (err) => {
       console.error('WS error', err);
+      // einfachen Text extrahieren
+      lastWsError = (err && err.message) ? err.message : 'WS-Error';
+      updateOverlay();
     };
 
     ws.onmessage = (ev) => {
@@ -1264,6 +1353,14 @@ window.VERSION = VERSION;
           SYSTEM-NACHRICHTEN (hello, ack, ping, pong, etc.)
           ===================================================== */
         if (msg.sys) {
+
+          // Eigene hello/hello-ack ignorieren, sonst zerschießt du dir die Perspektive
+          if (msg.from === clientId &&
+              (msg.sys.type === 'hello' || msg.sys.type === 'hello-ack')) {
+            updateOverlay();
+            return;
+          }
+
           if (msg.sys.type === 'hello' && msg.from) {
             if (!hasSetPerspective) {
               const iAmY = clientId.localeCompare(msg.from) < 0;
@@ -1314,7 +1411,6 @@ window.VERSION = VERSION;
           let fromRect = null;
 
           // Ghost-Startposition nur bei REMOTE-Zügen mit Karte merken
-          // (alles, was eine cardId hat, außer flip/recycle)
           if (isRemote &&
               msg.move.cardId &&
               msg.move.kind !== 'flip' &&
@@ -1327,11 +1423,10 @@ window.VERSION = VERSION;
             }
           }
 
-
-          // WICHTIG: Zuerst ganz normal den Spielzug übernehmen
+          // Spielzug übernehmen
           applyMove(msg.move, false);
 
-          // Jetzt, nachdem renderAll() die neue Position erzeugt hat → Ghost fliegen lassen
+          // danach Ghost fliegen lassen
           if (isRemote && fromRect) {
             spawnGhostMove(msg.move.cardId, fromRect);
           }
@@ -1375,10 +1470,12 @@ window.VERSION = VERSION;
       url.searchParams.set('room', state.room);
       history.replaceState({},'',url);
 
-      // Neue Multiplayer-Session: Perspektive + Mirror robust neu setzen
+      // Neue Multiplayer-Session
       resetSessionPerspective();
       setMirror(true, { persist:true });
 
+      // NEU: Counter für neuen manuellen Versuch resetten
+      connectAttempts = 0;
       connectWS();
     });
 

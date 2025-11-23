@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // ================================================================
 //  Solitaire HighNoon - Realtime Game Server
-//  Version: 1.6.2  (2025-11-16)
+//  Version: 1.6.3  (2025-11-23)
 //  Author: micmuller & ChatGPT (GPT-5)
+// -v1.6.3: Mehr Logging bei SYS/MOVE Nachrichten
 // ================================================================
 
 const http   = require('node:http');
@@ -14,7 +15,7 @@ const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
 // ---------- Version / CLI ----------
-const VERSION = '1.6.2';
+const VERSION = '1.6.3';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -189,7 +190,10 @@ wss.on('connection', (ws, req, room) => {
     try {
       const data = JSON.parse(buf.toString());
       if (data?.move) {
-        console.log(`[MOVE] ${isoNow()} room="${currentRoom}" kind=${data.move.kind}`);
+        console.log(
+          `[MOVE] ${isoNow()} room="${currentRoom}" kind=${data.move.kind} ` +
+          `from=${data.from || 'n/a'} cid=${ws.__cid || 'n/a'}`
+        );
       }
       if (data?.sys) {
         const lastH = lastHelloTsByClient.get(ws) || 0;
@@ -198,7 +202,10 @@ wss.on('connection', (ws, req, room) => {
 
         const lastSys = lastSysLogByRoom.get(currentRoom) || 0;
         if (now - lastSys >= STATUS_INTERVAL_MS) {
-          console.log(`[SYS] ${isoNow()} room="${currentRoom}" type=${data.sys.type}`);
+          console.log(
+            `[SYS] ${isoNow()} room="${currentRoom}" type=${data.sys.type} ` +
+            `from=${data.from || 'n/a'} cid=${ws.__cid || 'n/a'}`
+          );
           lastSysLogByRoom.set(currentRoom, now);
         }
       }
