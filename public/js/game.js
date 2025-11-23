@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.12.5';   // neue Version
+const VERSION = '2.12.11';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -26,6 +26,7 @@ window.VERSION = VERSION;
    - V2.12.3: Troubleshooting Logs für WS-Verbindung
    - v2.12.4: buildWSUrl() Bugfix IPAD connect problem
    - v2.12.5: Troubleshooting WebSocket connection logs verbessert
+   - v2.12.11: connectWS Update-Fix
    ============================================================ */
 (function(){
 
@@ -1259,186 +1260,184 @@ window.VERSION = VERSION;
   }
 
   function connectWS() {
-    const room = state.room.trim();
-    if (!room) {
-      showToast('Room-ID fehlt');
-      return;
-    }
+  const room = state.room.trim();
+  if (!room) {
+    showToast('Room-ID fehlt');
+    return;
+  }
 
-    // Wenn wir schon eine aktive oder laufende Verbindung haben -> nur Overlay updaten
-    if (ws && (ws.readyState === 0 || ws.readyState === 1)) {
-      showToast('Bereits verbunden / Verbindung wird aufgebaut');
-      updateOverlay();
-      return;
-    }
+  const maxAttempts = 4;       // weniger Versuche
+  const timeoutMs   = 2000;    // kürzeres Timeout
 
-    // evtl. alten Timeout aufräumen
-    clearConnectRetryTimer();
+  // alten Retry-Timer stoppen
+  if (connectRetryTimer) {
+    clearTimeout(connectRetryTimer);
+    connectRetryTimer = null;
+  }
 
-    // vorherige offene Verbindung sauber schließen
-    if (ws && ws.readyState === WebSocket.OPEN) {
+  // alte Verbindung IMMER hart schließen
+  if (ws) {
+    try { ws.close(); } catch {}
+  }
+  ws = null;
+
+  // Grundzustand
+  peers.clear();
+  latencyMs = null;
+  lastMsgAt = 0;
+
+  // neuer Versuch
+  connectAttempts++;
+  console.log('[WS] Versuch', connectAttempts, 'von', maxAttempts);
+
+  if (connectAttempts > maxAttempts) {
+    showToast('Verbindung gescheitert');
+    updateOverlay();
+    return;
+  }
+
+  const wsUrl = buildWsUrl();
+  ws = new WebSocket(wsUrl);
+
+  updateOverlay();
+
+  // Timeout: ALLES außer OPEN (1) ist ein Fehlschlag
+  connectRetryTimer = setTimeout(() => {
+    if (!ws) return;
+
+    if (ws.readyState !== WebSocket.OPEN) {
+      console.warn('[WS] Timeout / kein OPEN, retry… state =', ws.readyState);
+
       try { ws.close(); } catch {}
+      ws = null;
+
+      peers.clear();
+      latencyMs = null;
+      lastMsgAt = 0;
+      updateOverlay();
+
+      // nächster Versuch
+      connectWS();
+    }
+  }, timeoutMs);
+
+  ws.onopen = () => {
+    console.log('[WS] OPEN');
+    if (connectRetryTimer) {
+      clearTimeout(connectRetryTimer);
+      connectRetryTimer = null;
     }
 
-    ws = null;
-    peers.clear();
-    latencyMs = null;
-    lastMsgAt = 0;
+    // erfolgreicher Connect → Counter zurücksetzen
+    connectAttempts = 0;
 
-    // NEU: neuer Verbindungsversuch -> Counter hoch
-    connectAttempts++;
+    showToast('Verbunden');
+    sendSys({ type:'hello' });
     updateOverlay();
 
-    const wsUrl = buildWsUrl();
-    ws = new WebSocket(wsUrl);
-
-    // NEU: Timeout für hängenden CONNECTING-State (Safari/iPad)
-    connectRetryTimer = setTimeout(() => {
-      if (!ws) return;
-      if (ws.readyState === WebSocket.CONNECTING) {
-        console.warn('[WS] connect timeout, retrying...');
-        try { ws.close(); } catch {}
-        ws = null;
-        peers.clear();
-        latencyMs = null;
-        lastMsgAt = 0;
-        updateOverlay();
-        connectWS(); // Auto-Retry -> erhöht connectAttempts erneut
+    pingTimer = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const ts = Date.now();
+        sendSys({ type:'ping', ts });
       }
-    }, 5000); // 5 Sekunden
+    }, 5000);
+  };
 
-    ws.onopen = () => {
-      clearConnectRetryTimer();
-      showToast('Verbunden');
-      sendSys({ type:'hello' });
-      updateOverlay();
+  ws.onerror = (err) => {
+    console.error('WS error', err);
+    lastWsError = (err && err.message) ? err.message : 'WS error';
+    updateOverlay();
+    // der Timeout kümmert sich um Retry oder Abbruch
+  };
 
-      pingTimer = setInterval(() => {
-        if (ws && ws.readyState === 1) {
-          const ts = Date.now();
-          sendSys({ type:'ping', ts });
-        }
-      }, 5000);
-    };
+  ws.onmessage = (ev) => {
+    lastMsgAt = Date.now();
 
-    ws.onclose = () => {
-      clearConnectRetryTimer();
-      showToast('Getrennt');
-      if (pingTimer) {
-        clearInterval(pingTimer);
-        pingTimer = null;
+    try {
+      const msg = JSON.parse(ev.data);
+
+      if (msg.from) {
+        peers.set(msg.from, Date.now());
       }
-      updateOverlay();
-    };
 
-    ws.onerror = (err) => {
-      console.error('WS error', err);
-      // einfachen Text extrahieren
-      lastWsError = (err && err.message) ? err.message : 'WS-Error';
-      updateOverlay();
-    };
+      // ------ SYS ------
+      if (msg.sys) {
 
-    ws.onmessage = (ev) => {
-      lastMsgAt = Date.now();
-
-      try {
-        const msg = JSON.parse(ev.data);
-
-        // Peer-Liste aktualisieren
-        if (msg.from) {
-          peers.set(msg.from, Date.now());
-        }
-
-        /* =====================================================
-          SYSTEM-NACHRICHTEN (hello, ack, ping, pong, etc.)
-          ===================================================== */
-        if (msg.sys) {
-
-          // Eigene hello/hello-ack ignorieren, sonst zerschießt du dir die Perspektive
-          if (msg.from === clientId &&
-              (msg.sys.type === 'hello' || msg.sys.type === 'hello-ack')) {
-            updateOverlay();
-            return;
-          }
-
-          if (msg.sys.type === 'hello' && msg.from) {
-            if (!hasSetPerspective) {
-              const iAmY = clientId.localeCompare(msg.from) < 0;
-              const desired = iAmY ? 'Y' : 'O';
-              if (localOwner !== desired) {
-                localOwner = desired;
-                [state.you, state.opp] = [state.opp, state.you];
-                renderAll();
-                showToast('Perspektive: ' + localOwner);
-              }
-              hasSetPerspective = true;
-            }
-            sendSys({ type:'hello-ack', from:clientId });
-          }
-
-          else if (msg.sys.type === 'hello-ack' && msg.from) {
-            if (!hasSetPerspective) {
-              const iAmY = clientId.localeCompare(msg.from) < 0;
-              const desired = iAmY ? 'Y' : 'O';
-              if (localOwner !== desired) {
-                localOwner = desired;
-                [state.you, state.opp] = [state.opp, state.you];
-                renderAll();
-                showToast('Perspektive: ' + localOwner);
-              }
-              hasSetPerspective = true;
-            }
-          }
-
-          else if (msg.sys.type === 'ping' && typeof msg.sys.ts === 'number') {
-            sendSys({ type:'pong', ts: msg.sys.ts });
-          }
-
-          else if (msg.sys.type === 'pong' && typeof msg.sys.ts === 'number') {
-            latencyMs = Date.now() - msg.sys.ts;
-          }
-
+        if (msg.from === clientId &&
+            (msg.sys.type === 'hello' || msg.sys.type === 'hello-ack')) {
           updateOverlay();
           return;
         }
 
-        /* =====================================================
-          MOVE-NACHRICHTEN (eigentliche Spielzüge)
-          ===================================================== */
-        if (msg.move) {
-
-          const isRemote = msg.from && msg.from !== clientId;
-          let fromRect = null;
-
-          // Ghost-Startposition nur bei REMOTE-Zügen mit Karte merken
-          if (isRemote &&
-              msg.move.cardId &&
-              msg.move.kind !== 'flip' &&
-              msg.move.kind !== 'recycle') {
-
-            const board = document.getElementById('board');
-            const cardEl = document.querySelector(`.card[data-card-id="${msg.move.cardId}"]`);
-            if (board && cardEl) {
-              fromRect = cardEl.getBoundingClientRect();
+        if (msg.sys.type === 'hello') {
+          if (!hasSetPerspective) {
+            const iAmY = clientId.localeCompare(msg.from) < 0;
+            const desired = iAmY ? 'Y' : 'O';
+            if (localOwner !== desired) {
+              localOwner = desired;
+              [state.you, state.opp] = [state.opp, state.you];
+              renderAll();
+              showToast('Perspektive: ' + localOwner);
             }
+            hasSetPerspective = true;
           }
-
-          // Spielzug übernehmen
-          applyMove(msg.move, false);
-
-          // danach Ghost fliegen lassen
-          if (isRemote && fromRect) {
-            spawnGhostMove(msg.move.cardId, fromRect);
+          sendSys({ type:'hello-ack', from: clientId });
+        }
+        else if (msg.sys.type === 'hello-ack') {
+          if (!hasSetPerspective) {
+            const iAmY = clientId.localeCompare(msg.from) < 0;
+            const desired = iAmY ? 'Y' : 'O';
+            if (localOwner !== desired) {
+              localOwner = desired;
+              [state.you, state.opp] = [state.opp, state.you];
+              renderAll();
+              showToast('Perspektive: ' + localOwner);
+            }
+            hasSetPerspective = true;
           }
+        }
+        else if (msg.sys.type === 'ping' && typeof msg.sys.ts === 'number') {
+          sendSys({ type:'pong', ts: msg.sys.ts });
+        }
+        else if (msg.sys.type === 'pong' && typeof msg.sys.ts === 'number') {
+          latencyMs = Date.now() - msg.sys.ts;
         }
 
         updateOverlay();
-
-      } catch (e) {
-        console.error('WS-Error', e);
+        return;
       }
-    };
-  }
+
+      // ------ MOVES ------
+      if (msg.move) {
+        const isRemote = msg.from && msg.from !== clientId;
+        let fromRect = null;
+
+        if (isRemote &&
+            msg.move.cardId &&
+            msg.move.kind !== 'flip' &&
+            msg.move.kind !== 'recycle') {
+
+          const board = document.getElementById('board');
+          const cardEl = document.querySelector(`.card[data-card-id="${msg.move.cardId}"]`);
+          if (board && cardEl) {
+            fromRect = cardEl.getBoundingClientRect();
+          }
+        }
+
+        applyMove(msg.move, false);
+
+        if (isRemote && fromRect) {
+          spawnGhostMove(msg.move.cardId, fromRect);
+        }
+      }
+
+      updateOverlay();
+
+    } catch (e) {
+      console.error('WS parse error', e);
+    }
+  };
+}
 
   // ---------- Boot ----------
   function newGame() {
@@ -1466,17 +1465,36 @@ window.VERSION = VERSION;
     });
 
     el('#connect')?.addEventListener('click', () => {
-      state.room = (roomIn?.value || '').trim();
+      // iOS / PWA Bug: Input-Werte müssen erst geforced werden:
+      const roomValue = roomIn.value.trim();
+      const seedValue = seedIn.value.trim();
+
+      if (!roomValue) {
+        showToast("Room-ID fehlt");
+        return;
+      }
+
+      state.room = roomValue;
+      state.seed = seedValue;
+
       url.searchParams.set('room', state.room);
-      history.replaceState({},'',url);
+      url.searchParams.set('seed', state.seed);
+      history.replaceState({}, '', url);
 
-      // Neue Multiplayer-Session
       resetSessionPerspective();
-      setMirror(true, { persist:true });
+      setMirror(true, { persist: true });
 
-      // NEU: Counter für neuen manuellen Versuch resetten
+      // WICHTIG: WS vorher killen
+      if (ws) { try { ws.close(); } catch {} }
+      ws = null;
+
       connectAttempts = 0;
-      connectWS();
+
+      // iOS-PWA braucht kurzen Delay, damit state.room sicher übernommen wird:
+      setTimeout(() => {
+        console.log("CONNECT pressed → room =", state.room);
+        connectWS();
+      }, 50);
     });
 
     const mirrorBtn = document.getElementById('toggleMirror');
