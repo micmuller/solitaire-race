@@ -316,6 +316,47 @@
       display:none;
     }
 
+    .end-popup-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, .85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 80;
+    }
+    .end-popup-backdrop.show {
+      display: flex;
+    }
+    .end-popup-card {
+      background: #020617;
+      border-radius: 16px;
+      border: 1px solid #ffffff33;
+      padding: 20px 24px;
+      max-width: 320px;
+      text-align: center;
+      box-shadow: 0 18px 45px rgba(0,0,0,.85);
+    }
+    .end-popup-card h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+    .end-popup-card p {
+      margin: 0 0 16px;
+      font-size: 14px;
+      color: #e2e8f0;
+    }
+    .end-popup-card button {
+      padding: 6px 18px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      background: linear-gradient(135deg,#22c55e,#16a34a);
+      color: #0f172a;
+      font-weight: 600;
+    }
+
     .toast{
       padding: calc(10px * var(--ui-scale)) calc(12px * var(--ui-scale));
       border-radius: calc(10px * var(--ui-scale));
@@ -360,6 +401,7 @@
       minmax(0, 1.3fr)   /* Room-ID */
       minmax(0, 1.3fr)   /* Seed */
       auto               /* Neu starten */
+      auto               /* Beenden */
       auto               /* Verbinden */
       auto;              /* Status */
     column-gap: 8px;
@@ -471,6 +513,7 @@
       <input id="room" placeholder="Room-ID" title="Room/Match ID" />
       <input id="seed" placeholder="Seed (optional)" title="Deterministische Mischung" />
       <button id="newGame" class="primary">Neu starten</button>
+      <button id="endGame">Beenden</button>
       <button id="connect">Verbinden</button>
       <!-- Mirror-Button bleibt im DOM, ist aber per CSS versteckt -->
       <button id="toggleMirror" class="primary" title="Ansicht spiegeln">Mirror: On</button>
@@ -497,6 +540,14 @@
       <div>Version</div><div id="ov-version"></div>
       <div class="row"><span>WS URL</span><span id="ov-ws-url">—</span></div>
       <div class="row"><span>WS Err</span><span id="ov-ws-err">—</span></div>
+    </div>
+  </div>
+
+  <div class="end-popup-backdrop" id="end-popup">
+    <div class="end-popup-card">
+      <h2>Spiel beendet</h2>
+      <p class="end-popup-message">Das Spiel wurde beendet.</p>
+      <button id="end-popup-close">OK</button>
     </div>
   </div>
 

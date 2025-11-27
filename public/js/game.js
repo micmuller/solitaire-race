@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.12.11';   // neue Version
+const VERSION = '2.12.13';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -27,6 +27,7 @@ window.VERSION = VERSION;
    - v2.12.4: buildWSUrl() Bugfix IPAD connect problem
    - v2.12.5: Troubleshooting WebSocket connection logs verbessert
    - v2.12.11: connectWS Update-Fix
+   - v2.12.13: End Game Button + Overlay Meldung
    ============================================================ */
 (function(){
 
@@ -106,6 +107,23 @@ window.VERSION = VERSION;
     setTimeout(() => t.classList.remove('show'), 1800);
   }
   const el = s => document.querySelector(s);
+  
+  function showEndPopup(message) {
+    const popup = document.getElementById('end-popup');
+    if (!popup) return;
+    const msgNode = popup.querySelector('.end-popup-message');
+    if (msgNode) {
+      msgNode.textContent = message || 'Das Spiel wurde beendet.';
+    }
+    popup.classList.add('show');
+  }
+
+  function hideEndPopup() {
+    const popup = document.getElementById('end-popup');
+    if (!popup) return;
+    popup.classList.remove('show');
+  }
+
   const mk = (t, c) => {
     const e = document.createElement(t);
     if (c) e.className = c;
@@ -165,6 +183,11 @@ window.VERSION = VERSION;
     }
     const seed = xmur3(seedStr || '')();
     return { random: mulberry32(seed) };
+  }
+
+  function generateSeed() {
+    // einfacher, aber stabiler Zufalls-Seed
+    return Math.random().toString(36).slice(2, 10);
   }
 
   const SUITS = ["♠", "♥", "♦", "♣"];
@@ -1073,6 +1096,20 @@ window.VERSION = VERSION;
   // ---------- Moves / applyMove ----------
   function applyMove(move, announce = true) {
     try {
+      // Multiplayer-Schutz:
+    // Wenn wir in einem Room sind und keine aktive WS-Verbindung haben,
+    // KEINE lokalen Züge mehr erlauben → verhindert Desync.
+    if (announce) {
+      if (state.over) {
+        showToast('Spiel ist beendet');
+        return;
+      }
+      if (state.room && (!ws || ws.readyState !== WebSocket.OPEN)) {
+        showToast('Keine Verbindung – Zug verworfen');
+        return;
+      }
+    }
+      
       const side = ownerToSide(move.owner);
 
       if (move.kind === 'flip') {
@@ -1146,13 +1183,15 @@ window.VERSION = VERSION;
     }
   }
 
-  function checkWin() {
+function checkWin() {
     const total = state.foundations.reduce((a, f) => a + f.cards.length, 0);
     if (total === 208) {
       state.over = true;
       showToast('Alle Karten abgetragen!');
+      showEndPopup('Alle Karten abgetragen!');  // zentrales Pop-up
+      updateOverlay();
     }
-  }
+}
 
   // ---------- WebSocket / Sync ----------
   const peers = new Map();
@@ -1183,12 +1222,16 @@ window.VERSION = VERSION;
     }
 
     if (ovSync) {
-      const attemptSuffix = connecting && connectAttempts > 1
-        ? ` (${connectAttempts})`
-        : '';
-      ovSync.textContent = online
-        ? 'online'
-        : (connecting ? `verbinden…${attemptSuffix}` : 'offline');
+      if (state.over) {
+        ovSync.textContent = 'beendet';
+      } else {
+        const attemptSuffix = connecting && connectAttempts > 1
+          ? ` (${connectAttempts})`
+          : '';
+        ovSync.textContent = online
+          ? 'online'
+          : (connecting ? `verbinden…${attemptSuffix}` : 'offline');
+      }
     }
 
     setText('ov-room', state.room || '—');
@@ -1361,8 +1404,9 @@ window.VERSION = VERSION;
       }
 
       // ------ SYS ------
-      if (msg.sys) {
+            if (msg.sys) {
 
+        // Eigene hello/hello-ack ignorieren
         if (msg.from === clientId &&
             (msg.sys.type === 'hello' || msg.sys.type === 'hello-ack')) {
           updateOverlay();
@@ -1402,6 +1446,29 @@ window.VERSION = VERSION;
         else if (msg.sys.type === 'pong' && typeof msg.sys.ts === 'number') {
           latencyMs = Date.now() - msg.sys.ts;
         }
+        // ⬇️ NEU: synchroner Restart
+        else if (msg.sys.type === 'reset' && typeof msg.sys.seed === 'string') {
+          state.seed = msg.sys.seed;
+          const seedIn = document.getElementById('seed');
+          if (seedIn) seedIn.value = state.seed;
+
+          // URL aktualisieren, damit Reload denselben Seed hat
+          try {
+            url.searchParams.set('seed', state.seed);
+            history.replaceState({}, '', url);
+          } catch {}
+
+          showToast('Neues Spiel gestartet');
+          state.over = false;
+          newGame();
+        }
+        // ⬇️ NEU: gemeinsames Beenden
+        else if (msg.sys.type === 'quit') {
+          state.over = true;
+          showToast('Gegner hat das Spiel beendet');
+          showEndPopup('Der Gegner hat das Spiel beendet');
+        }
+
 
         updateOverlay();
         return;
@@ -1440,15 +1507,25 @@ window.VERSION = VERSION;
 }
 
   // ---------- Boot ----------
-  function newGame() {
+function newGame() {
     state.you = { stock:[], waste:[], tableau:[[],[],[],[],[],[],[]] };
     state.opp = { stock:[], waste:[], tableau:[[],[],[],[],[],[],[]] };
     state.foundations = Array.from({length:8},(_,i)=>({suit:SUITS[i%4],cards:[]}));
     state.moves = 0;
     state.over = false;
+    hideEndPopup();              // ggf. altes „Beendet“-Pop-up schließen
+
     deal(state.seed || '');
+
+    // WICHTIG: Perspektive behalten.
+    // Wenn dieser Client laut Handshake der „O“-Spieler ist,
+    // müssen wir die Decks wieder tauschen.
+    if (localOwner === 'O') {
+      [state.you, state.opp] = [state.opp, state.you];
+    }
+
     renderAll();
-  }
+}
 
   window.addEventListener('DOMContentLoaded', () => {
     const seedIn = el('#seed');
@@ -1457,11 +1534,46 @@ window.VERSION = VERSION;
     if (seedIn) seedIn.value = state.seed;
     if (roomIn) roomIn.value = state.room;
 
-    el('#newGame')?.addEventListener('click', () => {
-      state.seed = (seedIn?.value || '').trim();
-      url.searchParams.set('seed', state.seed);
-      history.replaceState({},'',url);
+        el('#newGame')?.addEventListener('click', () => {
+      let seedVal = (seedIn?.value || '').trim();
+      if (!seedVal) {
+        seedVal = generateSeed();
+        if (seedIn) seedIn.value = seedVal;
+      }
+
+      state.seed = seedVal;
+
+      try {
+        url.searchParams.set('seed', state.seed);
+        history.replaceState({}, '', url);
+      } catch {}
+
+      state.over = false;
       newGame();
+
+      const endBtn = el('#endGame');
+      if (endBtn) {
+        endBtn.addEventListener('click', () => {
+          if (state.over) return;
+
+          state.over = true;
+          showToast('Spiel beendet');
+          showEndPopup('Du hast das Spiel beendet');
+          updateOverlay();
+
+          // Wenn im Room & verbunden → dem Gegner Bescheid sagen
+          if (state.room && ws && ws.readyState === WebSocket.OPEN) {
+            sendSys({ type:'quit' });
+          }
+
+          updateOverlay();
+        });
+      }
+
+      // Wenn wir im Room und verbunden sind → Reset an alle senden
+      if (state.room && ws && ws.readyState === WebSocket.OPEN) {
+        sendSys({ type:'reset', seed: state.seed });
+      }
     });
 
     el('#connect')?.addEventListener('click', () => {
@@ -1499,6 +1611,11 @@ window.VERSION = VERSION;
 
     const mirrorBtn = document.getElementById('toggleMirror');
     if (mirrorBtn) mirrorBtn.addEventListener('click', toggleMirror);
+
+    const endPopupClose = document.getElementById('end-popup-close');
+    if (endPopupClose) {
+      endPopupClose.addEventListener('click', hideEndPopup);
+    }
 
     document.title = `Solitaire HighNoon — v${VERSION}`;
 
