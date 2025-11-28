@@ -1,35 +1,22 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.12.13';   // neue Version
+const VERSION = '2.13.1';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
-   Solitaire HighNoon — v2.7.8-stable (Basis), externalisiert für v2.9.x
-   - Stable Baseline (keine visuellen Mirror-Effekte, keine Transform/Flex-Änderungen)
-   - Standard: mirror-Param wird auf 1 gesetzt (kann via ?mirror=0 deaktiviert werden)
-   - Overlay zeigt Mirror-Status (mirror:on/off)
-   - Kompatibel mit responsive Scaling (scaling.js)
-   - Auto-Höhe für Tableau-Piles, damit Foundations in der Mitte nie überdeckt werden
-   - v2.9.3: Recycle-Fixes (robustere Trigger) + Hotkey-Foundation-Bugfix
-   - v2.9.4: Mirror-Toggle (Button) + Auto-Mirror beim 2. Client
-   - v2.10.0: Touch-Support (Tap/Double-Tap/Drag) für Touch-Geräte
-   - v2.10.1: Bugfixes Touch (kein Doppel-Flip, stabilere Drops)
-   - v2.10.2: Tap→Tap Moves auf Touch (Auswahl + Zieltap), besseres iPad Verhalten
-   - v2.10.4: Mirror Robuster
-   - v2.11.0: Gegnerischer Move sichtbar als "Geisterkarte" (Ghost Card)
-   - v2.11.1: CSS angepasst auf neue Kartenlayouts (4 Ecken + Mitte)
-   - v2.11.2: iOS GUI in Portrait mode optimiert.
-   - v2.11.3: PWA-Hinweis für iPad hinzugefügt, PWA Manifest
-   - v2.11.4: Menu buttons angepasst, PWA angepasst für iOS 16+
-   - v2.12.1: IPAD Portrait optimiert (höhere Board-Größe, grössere Karten)
-   - v2.12.2: Robustere WS-Verbindung + stabileres Mirroring (hello/self-ignore)
-   - V2.12.3: Troubleshooting Logs für WS-Verbindung
-   - v2.12.4: buildWSUrl() Bugfix IPAD connect problem
-   - v2.12.5: Troubleshooting WebSocket connection logs verbessert
-   - v2.12.11: connectWS Update-Fix
+   Solitaire HighNoon
    - v2.12.13: End Game Button + Overlay Meldung
+   - v2.13.1: Start Modularisierung
    ============================================================ */
 (function(){
+  // NEU: globaler Namespace für unser Spiel
+
+  // ======================================================
+  // 1) PLATFORM / TOUCH / MIRROR / LAYOUT
+  // ======================================================
+
+  const SHN = window.SHN || (window.SHN = {});
+
 
   const IS_TOUCH_DEVICE =
     ('ontouchstart' in window) ||
@@ -83,7 +70,7 @@ window.VERSION = VERSION;
     });
   }
 
-  // ---------- URL / Mirror-Flag ----------
+  // --- URL / Mirror-Flag ---
   const url = new URL(location.href);
   if (!url.searchParams.has('mirror')) {
     url.searchParams.set('mirror', '1');
@@ -92,13 +79,16 @@ window.VERSION = VERSION;
   const MIRROR_PARAM = url.searchParams.get('mirror');
   let MIRROR_ON = MIRROR_PARAM === '1'; // mutabel für Toggle
 
-  // ---------- Layout-Konstanten (müssen zu CSS-Variablen passen) ----------
+  // --- Layout-Konstanten (müssen zu CSS-Variablen passen) ---
   const CARD_H   = 120; // entspricht --card-h
   const STACK_YD = 24;  // entspricht --stack-yd
 
   let touchInput = null;
 
-  // ---------- Helpers ----------
+  // ======================================================
+  // 2) UI-HILFSFUNKTIONEN (Toast, DOM-Shortcuts, Popups)
+  // ======================================================
+
   function showToast(msg) {
     const t = document.getElementById('toast');
     if (!t) return;
@@ -106,6 +96,8 @@ window.VERSION = VERSION;
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), 1800);
   }
+  
+  
   const el = s => document.querySelector(s);
   
   function showEndPopup(message) {
@@ -129,6 +121,10 @@ window.VERSION = VERSION;
     if (c) e.className = c;
     return e;
   };
+
+  // ======================================================
+  // 3) DECK / RNG / KARTEN-UTILS
+  // ======================================================
 
   function canRecycle(side) {
     return state[side].stock.length === 0 && state[side].waste.length > 0;
@@ -215,7 +211,11 @@ window.VERSION = VERSION;
   function isRed(s) { return s === "♥" || s === "♦"; }
   function cardLabel(c) { return `${RANKS[c.rank]}${c.suit}`; }
 
-  // ---------- State ----------
+  // ======================================================
+  // 4) GAME STATE & DEAL
+  // ======================================================
+
+
   const state = {
     seed: url.searchParams.get('seed') || '',
     room: url.searchParams.get('room') || '',
@@ -266,7 +266,9 @@ window.VERSION = VERSION;
     state.opp.stock = deckOpp.slice(i);
   }
 
-  // ---------- DOM / Render ----------
+  // ======================================================
+  // 5) RENDERING / UI-DARSTELLUNG
+  // ======================================================
   function renderAll() {
     const mv = document.getElementById('moves');
     if (mv) mv.textContent = String(state.moves);
@@ -401,7 +403,9 @@ window.VERSION = VERSION;
     return e;
   }
 
-  // ---------- Rules ----------
+  // ======================================================
+  // 6) REGELN / ENGINE-HELPER
+  // ======================================================
   function canPlaceOnTableau(under, card) {
     if (!under) return card.rank === 12;
     const alt = isRed(under.suit) !== isRed(card.suit);
@@ -438,7 +442,10 @@ window.VERSION = VERSION;
     return pile[startIdx]?.up === true;
   }
 
-  // ---------- Touch / Pointer Handling ----------
+  // ======================================================
+  // 7) INPUT (TOUCH & MOUSE)
+  // ======================================================
+  // --- Touch / Pointer Handling ---
   const TOUCH_DRAG_CLASS = 'dragging';
 
   const touchDragState = {
@@ -855,7 +862,7 @@ window.VERSION = VERSION;
     }
   }
 
-  // ---------- Maus-Drag & Drop ----------
+  // --- Maus / Desktop-Drag & Drop ---
   let drag = { origin:null, count:1 };
 
   function onDragStart(e) {
@@ -1028,7 +1035,9 @@ window.VERSION = VERSION;
     }
   }
 
-  // ---------- Gegner-Ghost-Animation ----------
+  // ======================================================
+  // 8) ANIMATION (GEGNER-GHOST-MOVE)
+  // ======================================================
   function spawnGhostMove(cardId, fromRect) {
     try {
       const board = document.getElementById('board');
@@ -1093,7 +1102,9 @@ window.VERSION = VERSION;
     }
   }
 
-  // ---------- Moves / applyMove ----------
+  // ======================================================
+  // 9) ENGINE-KERN (MOVES / applyMove / checkWin)
+  // ======================================================
   function applyMove(move, announce = true) {
     try {
       // Multiplayer-Schutz:
@@ -1193,7 +1204,9 @@ function checkWin() {
     }
 }
 
-  // ---------- WebSocket / Sync ----------
+  // ======================================================
+  // 10) NETZWERK / WEBSOCKET-SYNC
+  // ======================================================
   const peers = new Map();
   let clientId = Math.random().toString(36).slice(2);
   let ws = null, pingTimer = null, lastMsgAt = 0, latencyMs = null;
@@ -1506,7 +1519,9 @@ function checkWin() {
   };
 }
 
-  // ---------- Boot ----------
+  // ======================================================
+  // 11) BOOTSTRAP / DOMContentLoaded
+  // ======================================================
 function newGame() {
     state.you = { stock:[], waste:[], tableau:[[],[],[],[],[],[],[]] };
     state.opp = { stock:[], waste:[], tableau:[[],[],[],[],[],[],[]] };
@@ -1629,5 +1644,65 @@ function newGame() {
       setupTouchControls(boardEl);
     }
   });
+
+  // ======================================================
+  // 12) SHN-MODULE / ÖFFENTLICHE API
+  // ======================================================
+    // ----------------------------------------------------
+  // Am Ende: Module / öffentliche API an SHN hängen
+  // ----------------------------------------------------
+
+  // 1) State nach außen sichtbar machen (für spätere Bots/Tests)
+  SHN.state = state;
+
+  // 2) Engine-API: alles, was den reinen Spielzustand betrifft
+  SHN.engine = {
+    newGame,
+    deal,
+    applyMove,
+    checkWin,
+    canPlaceOnTableau,
+    canPlaceOnFoundation,
+    locOfCard,
+    isFaceUpSequence,
+    generateSeed,
+    rng
+  };
+
+  // 3) UI-API: Darstellung & einfache UI-Helfer
+  SHN.ui = {
+    renderAll,
+    renderStack,
+    resizeTableauHeights,
+    renderCard,
+    updateOverlay,
+    updateMirrorUI,
+    setMirror,
+    toggleMirror,
+    showToast,
+    showEndPopup,
+    hideEndPopup
+  };
+
+  // 4) Netzwerk-API
+  SHN.net = {
+    connectWS,
+    send,
+    sendSys
+  };
+
+  // 5) Input-API
+  SHN.input = {
+    setupTouchControls,
+    handleTouchTap,
+    handleTouchDoubleTap
+    // (Drag-Handler lassen wir intern, die ruft nur TouchInput)
+  };
+
+  // 6) Meta/Version
+  SHN.meta = {
+    VERSION,
+    IS_TOUCH_DEVICE
+  };
 
 })();
