@@ -1,12 +1,14 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.13.1';   // neue Version
+const VERSION = '2.13.3';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
    Solitaire HighNoon
    - v2.12.13: End Game Button + Overlay Meldung
    - v2.13.1: Start Modularisierung
+   - v2.13.2: Move code cleanup
+   - v2.13.3: komplettes Startmenu in eigenem Modul
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -441,6 +443,108 @@ window.VERSION = VERSION;
     }
     return pile[startIdx]?.up === true;
   }
+
+  // ======================================================
+  // 9) ENGINE-KERN (MOVES / applyMove / checkWin)
+  // ======================================================
+  function applyMove(move, announce = true) {
+    try {
+      // Multiplayer-Schutz:
+    // Wenn wir in einem Room sind und keine aktive WS-Verbindung haben,
+    // KEINE lokalen Züge mehr erlauben → verhindert Desync.
+    if (announce) {
+      if (state.over) {
+        showToast('Spiel ist beendet');
+        return;
+      }
+      if (state.room && (!ws || ws.readyState !== WebSocket.OPEN)) {
+        showToast('Keine Verbindung – Zug verworfen');
+        return;
+      }
+    }
+      
+      const side = ownerToSide(move.owner);
+
+      if (move.kind === 'flip') {
+        const s = state[side].stock;
+        if (s.length) {
+          const c = s.pop();
+          c.up = true;
+          state[side].waste.push(c);
+        }
+        if (announce) state.moves++;
+        renderAll();
+        if (announce) send(move);
+        return;
+      }
+
+      if (move.kind === 'recycle') {
+        if (state[side].stock.length === 0 && state[side].waste.length > 0) {
+          const rev = [...state[side].waste].reverse();
+          rev.forEach(c => c.up = false);
+          state[side].stock = rev;
+          state[side].waste = [];
+        } else {
+          showToast('Nichts zu recyceln');
+        }
+        if (announce) state.moves++;
+        renderAll();
+        if (announce) send(move);
+        return;
+      }
+
+      const loc = move.cardId ? locOfCard(move.cardId) : null;
+      if (!loc) return;
+      if (announce && loc.side !== ownerToSide(move.owner)) return;
+
+      if (!announce) console.debug('[NET] move', move);
+
+      let cards = [];
+      if (loc.type === 'waste') {
+        if (loc.idx !== state[loc.side].waste.length-1) return;
+        cards.push(state[loc.side].waste.pop());
+      } else if (loc.type === 'pile') {
+        const pile = state[loc.side].tableau[loc.pile];
+        const count = move.count || 1;
+        cards = pile.splice(loc.idx, count);
+        if (pile.length > 0) pile[pile.length-1].up = true;
+      } else if (loc.type === 'found') {
+        if (loc.idx !== state.foundations[loc.f].cards.length-1) return;
+        cards.push(state.foundations[loc.f].cards.pop());
+      }
+      if (!cards.length) return;
+
+      if (move.to && move.to.kind === 'found') {
+        state.foundations[move.to.f].cards.push(cards[0]);
+      } else if (move.to && move.to.kind === 'pile') {
+        const ownerRef = move.to.sideOwner || move.owner;
+        const targetSide = ownerToSide(ownerRef);
+        const uiIndex =
+          (move.to.uiIndex != null)
+            ? move.to.uiIndex
+            : (move.to.pile != null ? move.to.pile : 0);
+        state[targetSide].tableau[uiIndex].push(...cards);
+      }
+
+      if (announce) state.moves++;
+      renderAll();
+      if (announce) send(move);
+      checkWin();
+    } catch (err) {
+      console.error('applyMove error', err);
+      showToast('Move-Fehler: ' + (err?.message || String(err)));
+    }
+  }
+
+function checkWin() {
+    const total = state.foundations.reduce((a, f) => a + f.cards.length, 0);
+    if (total === 208) {
+      state.over = true;
+      showToast('Alle Karten abgetragen!');
+      showEndPopup('Alle Karten abgetragen!');  // zentrales Pop-up
+      updateOverlay();
+    }
+}
 
   // ======================================================
   // 7) INPUT (TOUCH & MOUSE)
@@ -1102,107 +1206,6 @@ window.VERSION = VERSION;
     }
   }
 
-  // ======================================================
-  // 9) ENGINE-KERN (MOVES / applyMove / checkWin)
-  // ======================================================
-  function applyMove(move, announce = true) {
-    try {
-      // Multiplayer-Schutz:
-    // Wenn wir in einem Room sind und keine aktive WS-Verbindung haben,
-    // KEINE lokalen Züge mehr erlauben → verhindert Desync.
-    if (announce) {
-      if (state.over) {
-        showToast('Spiel ist beendet');
-        return;
-      }
-      if (state.room && (!ws || ws.readyState !== WebSocket.OPEN)) {
-        showToast('Keine Verbindung – Zug verworfen');
-        return;
-      }
-    }
-      
-      const side = ownerToSide(move.owner);
-
-      if (move.kind === 'flip') {
-        const s = state[side].stock;
-        if (s.length) {
-          const c = s.pop();
-          c.up = true;
-          state[side].waste.push(c);
-        }
-        if (announce) state.moves++;
-        renderAll();
-        if (announce) send(move);
-        return;
-      }
-
-      if (move.kind === 'recycle') {
-        if (state[side].stock.length === 0 && state[side].waste.length > 0) {
-          const rev = [...state[side].waste].reverse();
-          rev.forEach(c => c.up = false);
-          state[side].stock = rev;
-          state[side].waste = [];
-        } else {
-          showToast('Nichts zu recyceln');
-        }
-        if (announce) state.moves++;
-        renderAll();
-        if (announce) send(move);
-        return;
-      }
-
-      const loc = move.cardId ? locOfCard(move.cardId) : null;
-      if (!loc) return;
-      if (announce && loc.side !== ownerToSide(move.owner)) return;
-
-      if (!announce) console.debug('[NET] move', move);
-
-      let cards = [];
-      if (loc.type === 'waste') {
-        if (loc.idx !== state[loc.side].waste.length-1) return;
-        cards.push(state[loc.side].waste.pop());
-      } else if (loc.type === 'pile') {
-        const pile = state[loc.side].tableau[loc.pile];
-        const count = move.count || 1;
-        cards = pile.splice(loc.idx, count);
-        if (pile.length > 0) pile[pile.length-1].up = true;
-      } else if (loc.type === 'found') {
-        if (loc.idx !== state.foundations[loc.f].cards.length-1) return;
-        cards.push(state.foundations[loc.f].cards.pop());
-      }
-      if (!cards.length) return;
-
-      if (move.to && move.to.kind === 'found') {
-        state.foundations[move.to.f].cards.push(cards[0]);
-      } else if (move.to && move.to.kind === 'pile') {
-        const ownerRef = move.to.sideOwner || move.owner;
-        const targetSide = ownerToSide(ownerRef);
-        const uiIndex =
-          (move.to.uiIndex != null)
-            ? move.to.uiIndex
-            : (move.to.pile != null ? move.to.pile : 0);
-        state[targetSide].tableau[uiIndex].push(...cards);
-      }
-
-      if (announce) state.moves++;
-      renderAll();
-      if (announce) send(move);
-      checkWin();
-    } catch (err) {
-      console.error('applyMove error', err);
-      showToast('Move-Fehler: ' + (err?.message || String(err)));
-    }
-  }
-
-function checkWin() {
-    const total = state.foundations.reduce((a, f) => a + f.cards.length, 0);
-    if (total === 208) {
-      state.over = true;
-      showToast('Alle Karten abgetragen!');
-      showEndPopup('Alle Karten abgetragen!');  // zentrales Pop-up
-      updateOverlay();
-    }
-}
 
   // ======================================================
   // 10) NETZWERK / WEBSOCKET-SYNC
