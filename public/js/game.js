@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.13.4';   // neue Version
+const VERSION = '2.13.5';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -10,6 +10,7 @@ window.VERSION = VERSION;
    - v2.13.2: Move code cleanup
    - v2.13.3: komplettes Startmenu in eigenem Modul
    - v2.13.4: scaling.js Verbesserungen
+   - v2.13.5: GUI-Feinschliff (Abstände Gegner-Tableaus)
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel

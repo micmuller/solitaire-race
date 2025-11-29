@@ -258,7 +258,14 @@
       pointer-events: none;
     }
 
-    .row-mid { position:relative; z-index:10; display:grid; grid-auto-rows:min-content; align-content:center; }
+    .row-mid {
+      position: relative;
+      z-index: 10;
+      display: grid;
+      grid-auto-rows: min-content;
+      align-content: center;
+      margin-bottom: 1px; /* engerer Abstand zu row-bot */
+    }
     .foundations-wrap { display:grid; justify-content:center; }
 .foundations {
   display: grid;
@@ -280,6 +287,39 @@
 
     .row-top, .row-bot { position:relative; z-index:1; }
     .opponent { opacity:.95; }
+
+    /* Gegnerkarten kleiner – echte Breite/Höhe reduziert, kein transform */
+    .opponent .card {
+      width: calc(var(--card-w) * 0.7);
+      height: calc(var(--card-h) * 0.7);
+      transform: none;
+      font-size: 18px; /* global etwas kleiner als Standardkarte */
+    }
+
+    /* Gegner-Slots – gleiche Breite/Höhe wie die Gegnerkarten */
+    .opponent .stack,
+    .opponent .pile,
+    .opponent .foundation {
+      width: calc(var(--card-w) * 0.7);
+      height: calc(var(--card-h) * 0.7);
+    }
+
+    /* min-width der Piles an die kleinere Breite anpassen, damit die Tableaus wirklich enger werden */
+    .opponent .pile {
+      min-width: calc(var(--card-w) * 0.7);
+    }
+    /* Gegner-Tableaus so eng wie möglich */
+    .opponent .tableau {
+      gap: 5px;
+    }
+    .opponent .row {
+      gap: 5px;
+    }
+
+    /* Zone-Überschriften im Gegnerbereich etwa 80% der Standardgröße */
+    .opponent .zone-title {
+      font-size: 9.6px; /* 80% von 12px */
+    }
     .small { font-size:11px; color:#9aa3b2; }
     .kbd {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -473,8 +513,12 @@
   /* Mehr Luft zwischen Gegner-Tableaus und Foundations,
      damit hohe Stapel nicht in die Foundations ragen */
   .row-mid {
-    margin-top: 48px;   /* bei Bedarf auf 40–48px erhöhen */
-    margin-bottom: 10px;
+    margin-top: 16px; /* kompakter statt 48px */
+    margin-bottom: 1px;
+  }
+
+  .row-bot {
+    margin-top: 0px; /* zieht eigenen Bereich maximal hoch */
   }
 
   /* Board-Basisgröße so wählen, dass es fast die ganze Breite nutzt,
@@ -517,8 +561,27 @@
     font-size: 42px;
   }
 
+  /* Gegnerkarten-Typografie auf iPad ca. 80% der eigenen Karten */
+  .opponent .card {
+    font-size: 20px;
+  }
+  .opponent .card-corner {
+    font-size: 18px;
+  }
+  .opponent .card-suit-small {
+    font-size: 16px;
+  }
+  .opponent .card-center {
+    font-size: 30px;
+  }
+
   .tableau {
     gap: 8px;
+  }
+
+  /* Gegner-Tableaus im oberen Bereich mit leichtem Abstand zwischen den 7 Piles */
+  .row-top .tableau {
+    gap: 5px;
   }
 
   .stack,

@@ -17,9 +17,9 @@
 
   function viewportBox(){
     const headerH = document.querySelector('header')?.offsetHeight || 64;
-    // Minimaler Sicherheitsrand, damit nichts hart abgeschnitten wird
-    const SAFE_MARGIN_X = 2;
-    const SAFE_MARGIN_Y = 4;
+    // Portrait-/Landscape-Scaling nutzt den vollen Platz, ohne zusätzlichen Rand
+    const SAFE_MARGIN_X = 0;
+    const SAFE_MARGIN_Y = 0;
 
     const w = Math.min(window.innerWidth, document.documentElement.clientWidth) - SAFE_MARGIN_X * 2;
     const h = Math.min(window.innerHeight, document.documentElement.clientHeight) - headerH - SAFE_MARGIN_Y * 2;
