@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.13.5';   // neue Version
+const VERSION = '2.13.6';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -11,6 +11,7 @@ window.VERSION = VERSION;
    - v2.13.3: komplettes Startmenu in eigenem Modul
    - v2.13.4: scaling.js Verbesserungen
    - v2.13.5: GUI-Feinschliff (Abstände Gegner-Tableaus)
+   - v2.13.6: Touch-Input ,doubel-tap, Verbesserungen
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -59,6 +60,14 @@ window.VERSION = VERSION;
     // Fallback: auch auf touchend noch einmal absichern
     let lastTouchEnd = 0;
     document.addEventListener('touchend', function (e) {
+      // Auf dem Spielbrett selbst nicht in den Double-Tap-Flow eingreifen,
+      // damit TouchInput sauber arbeiten kann.
+      const target = e.target;
+      if (target && target.closest && target.closest('#board')) {
+        lastTouchEnd = Date.now();
+        return;
+      }
+
       const now = Date.now();
       if (now - lastTouchEnd <= 300) {
         e.preventDefault();
@@ -811,13 +820,72 @@ function checkWin() {
     }
   }
 
+  function autoMoveCardToFoundation(cardId, loc) {
+    if (!loc || !isMine(loc)) return;
+
+    let card;
+    if (loc.type === 'pile') {
+      const pile = state[loc.side].tableau[loc.pile];
+      if (loc.idx !== pile.length - 1) return;
+      card = pile[loc.idx];
+    } else if (loc.type === 'waste') {
+      if (loc.idx !== state[loc.side].waste.length - 1) return;
+      card = state[loc.side].waste[loc.idx];
+    } else {
+      return;
+    }
+
+    if (!card || !card.up) return;
+
+    const t = state.foundations.findIndex(f => canPlaceOnFoundation(f, card));
+    if (t > -1) {
+      applyMove({
+        owner: localOwner,
+        kind: 'toFound',
+        cardId,
+        count: 1,
+        to: { kind: 'found', f: t }
+      }, true);
+    }
+  }
+
+  function onDoubleClickAutoMove(e) {
+    const id = e.currentTarget.dataset.cardId;
+    const loc = locOfCard(id);
+    autoMoveCardToFoundation(id, loc);
+  }
+
   function handleTouchDoubleTap(pos, ev) {
-    const pt = getClientPointFromEvent(ev);
-    if (!pt) return;
-    const found = findCardAtPoint(pt);
-    if (!found) return;
-    const dummy = { currentTarget: found.cardEl };
-    onDoubleClickAutoMove(dummy);
+    try {
+      const pt = getClientPointFromEvent(ev);
+      if (!pt) return;
+
+      const found = findCardAtPoint(pt);
+      if (!found || !found.cardEl) {
+        clearTouchSelection();
+        return;
+      }
+
+      const cardEl = found.cardEl;
+      const cardId = cardEl.dataset.cardId;
+      if (!cardId) {
+        clearTouchSelection();
+        return;
+      }
+
+      const loc = locOfCard(cardId);
+      if (!loc || !isMine(loc)) {
+        clearTouchSelection();
+        return;
+      }
+
+      // vorhandene Auswahl ist nach erfolgreichem Auto-Move hinfällig
+      clearTouchSelection();
+      autoMoveCardToFoundation(cardId, loc);
+    } catch (err) {
+      console.error('handleTouchDoubleTap error', err);
+      showToast('Doppeltap-Fehler');
+    }
   }
 
   function isMine(loc) {
@@ -997,28 +1065,7 @@ function checkWin() {
     e.target.classList.remove('dragging');
   }
 
-  function onDoubleClickAutoMove(e) {
-    const id = e.currentTarget.dataset.cardId;
-    const loc = locOfCard(id);
-    if (!loc || !isMine(loc)) return;
 
-    let card;
-    if (loc.type === 'pile') {
-      const pile = state[loc.side].tableau[loc.pile];
-      if (loc.idx !== pile.length-1) return;
-      card = pile[loc.idx];
-    } else if (loc.type === 'waste') {
-      if (loc.idx !== state[loc.side].waste.length-1) return;
-      card = state[loc.side].waste[loc.idx];
-    } else {
-      return;
-    }
-
-    const t = state.foundations.findIndex(f => canPlaceOnFoundation(f, card));
-    if (t > -1) {
-      applyMove({ owner:localOwner, kind:'toFound', cardId:id, count:1, to:{ kind:'found', f:t } }, true);
-    }
-  }
 
   function setupDrops() {
     document.querySelectorAll('.foundation').forEach(slot => {
