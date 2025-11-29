@@ -213,10 +213,12 @@
     .card-corner {
       position: absolute;
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
       align-items: center;
+      justify-content: center;
       font-size: 11px;
-      line-height: 1.1;
+      line-height: 1.0;
+      gap: 2px; /* kleiner Abstand zwischen Rank und Suit */
     }
 
     .card-corner span {
@@ -241,6 +243,7 @@
     }
     .card-suit-small {
       font-size: 10px;
+      margin-left: 0px; /* bei Bedarf auf 1–2px erhöhen, um mehr Abstand zur Zahl zu haben */
     }
 
     .card-center {
@@ -257,7 +260,12 @@
 
     .row-mid { position:relative; z-index:10; display:grid; grid-auto-rows:min-content; align-content:center; }
     .foundations-wrap { display:grid; justify-content:center; }
-    .foundations { display:grid; grid-template-columns: repeat(8, var(--card-w)); gap:10px; justify-content:center; }
+.foundations {
+  display: grid;
+  grid-template-columns: repeat(8, var(--card-w));
+  gap: 10px;
+  justify-content: center;
+}
     .foundations .foundation::after {
       content: attr(data-suit);
       position:absolute;
@@ -367,9 +375,9 @@
 @media screen and (max-width: 1024px) {
 
   :root {
-    /* Karten maximal groß, aber noch passend für 7 Tableaus */
-    --card-w: 128px;
-    --card-h: 190px;
+    /* Karten maximal groß, Foundations fast randlos */
+    --card-w: 136px;
+    --card-h: 202px;
     --stack-yd: 30px;
   }
 
@@ -481,6 +489,32 @@
     place-self: start center;
     margin-top: 4px;
     transform-origin: top center;
+  }
+  /* Foundations sollen fast die gesamte Breite nutzen */
+  .board {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .foundations-wrap {
+    width: 100%;
+  }
+  .foundations {
+    width: 100%;
+    justify-content: space-between;
+    column-gap: 2px;
+  }
+  /* Größere Kartenbeschriftung auf Tablet/iPad 13,12 */
+  .card {
+    font-size: 24px;
+  }
+  .card-corner {
+    font-size: 24px;
+  }
+  .card-suit-small {
+    font-size: 22px;
+  }
+  .card-center {
+    font-size: 42px;
   }
 
   .tableau {

@@ -17,8 +17,13 @@
 
   function viewportBox(){
     const headerH = document.querySelector('header')?.offsetHeight || 64;
-    const w = Math.min(window.innerWidth, document.documentElement.clientWidth) - 16;
-    const h = Math.min(window.innerHeight, document.documentElement.clientHeight) - headerH - 16;
+    // Minimaler Sicherheitsrand, damit nichts hart abgeschnitten wird
+    const SAFE_MARGIN_X = 2;
+    const SAFE_MARGIN_Y = 4;
+
+    const w = Math.min(window.innerWidth, document.documentElement.clientWidth) - SAFE_MARGIN_X * 2;
+    const h = Math.min(window.innerHeight, document.documentElement.clientHeight) - headerH - SAFE_MARGIN_Y * 2;
+
     return { w: Math.max(320, w), h: Math.max(320, h) };
   }
 
@@ -27,8 +32,14 @@
     const sx = box.w / BASE_W;
     const sy = box.h / BASE_H;
 
+    const isPortrait = box.h > box.w;
+
+    // Im Portrait-Mode soll die Breite limitieren (Foundations möglichst randlos),
+    // im Landscape weiter wie bisher min(sx, sy).
+    const rawScale = isPortrait ? sx : Math.min(sx, sy);
+
     // scale inkl. weicher Untergrenze (fühlt sich auf 13" besser an)
-    const scale = Math.max(0.55, Math.min(1, Math.min(sx, sy)));
+    const scale = Math.max(0.55, Math.min(1, rawScale));
 
     // Board skalieren
     wrapper.style.transform = `scale(${scale})`;
@@ -48,7 +59,11 @@
   window.HighNoon.resize = {
     getScale: () => {
       const { w, h } = viewportBox();
-      return Math.max(0.55, Math.min(1, Math.min(w / BASE_W, h / BASE_H)));
+      const sx = w / BASE_W;
+      const sy = h / BASE_H;
+      const isPortrait = h > w;
+      const rawScale = isPortrait ? sx : Math.min(sx, sy);
+      return Math.max(0.55, Math.min(1, rawScale));
     },
     apply: applyScale,
     base: { w: BASE_W, h: BASE_H }
