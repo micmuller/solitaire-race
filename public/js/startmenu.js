@@ -233,12 +233,12 @@
           <span class="shn-startmenu-chip">Online-Duell</span>
         </button>
 
-        <button type="button" id="shn-startmenu-bot" class="shn-startmenu-button disabled">
+        <button type="button" id="shn-startmenu-bot" class="shn-startmenu-button">
           <span class="shn-startmenu-button-label">
             <span>🧍 vs 🤖</span>
             <span>Gegen Bot spielen</span>
           </span>
-          <span class="shn-startmenu-chip">Coming soon</span>
+          <span class="shn-startmenu-chip">Offline (lokal)</span>
         </button>
       </div>
 
@@ -435,8 +435,38 @@
 
     if (btnBot) {
       btnBot.addEventListener('click', () => {
-        ui.showToast('Bot-Modus folgt – aktuell nur Platzhalter.');
-        // Später: hier Bot-Setup aufrufen (lokaler Gegner)
+        // Lokales Spiel gegen Bot (offline, ohne Room/Connect)
+        const seed = engine.generateSeed();
+        state.seed = seed;
+        state.room = '';
+
+        // Seed/Room-Inputs im Haupt-UI aktualisieren
+        const seedIn = document.getElementById('seed');
+        const roomIn = document.getElementById('room');
+        if (seedIn) seedIn.value = seed;
+        if (roomIn) roomIn.value = '';
+
+        // URL anpassen: kein room, aber bot=easy setzen
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('room');
+          url.searchParams.set('seed', seed);
+          url.searchParams.set('bot', 'easy');
+          history.replaceState({}, '', url);
+        } catch (e) {
+          console.warn('[StartMenu] Konnte URL für Bot-Modus nicht aktualisieren:', e);
+        }
+
+        // Neues lokales Spiel starten (ohne Connect)
+        triggerNewGameIfPossible();
+
+        // Bot aktivieren, falls verfügbar
+        if (window.SHN && window.SHN.bot && typeof window.SHN.bot.enable === 'function') {
+          window.SHN.bot.enable('easy');
+        }
+
+        ui.showToast('Bot-Spiel (Easy) gestartet – du spielst unten, der Bot oben.');
+        overlay.remove();
       });
     }
 
