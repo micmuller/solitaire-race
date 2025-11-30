@@ -138,9 +138,7 @@
     }
 
     .board { position:relative; z-index:2; display:grid; grid-template-rows: auto 1fr auto; gap:18px; padding:14px; height:100%; }
-
     .row-top, .row-mid, .row-bot { display:grid; align-content:start; }
-
     .player-zone { display:grid; grid-template-rows: auto 1fr; gap:12px; }
     .zone-title { font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:var(--muted); }
 
@@ -628,6 +626,11 @@
     transform-origin: bottom right;
     transform: scale(1.05);
   }
+
+  .board {
+    padding-left: 0;
+    padding-right: 0;
+  }
 }
 
   </style>
@@ -737,6 +740,22 @@
   <script src="./js/inlinehandler.js" defer></script> 
   <script src="./js/game.js" defer></script>
   <script src="./js/startmenu.js" defer></script>
-  <script src="./js/bot.js"> defer</script>
+  <script src="./js/bot.js" defer></script>
+  <script>
+    // Fix: Gegner-Bereich einmalig nach initialem Layout „einfrieren“,
+    // damit hohe Stapel nicht das gesamte Board nach unten schieben.
+    // Zusätzlich eine sinnvolle Mindesthöhe, damit Foundations/Eigener Bereich
+    // nicht zu weit nach oben rutschen.
+    window.addEventListener('DOMContentLoaded', () => {
+      const rowTop = document.querySelector('.row-top');
+      if (rowTop) {
+        const h = rowTop.offsetHeight || 0;
+        // Basis-Mindesthöhe abhängig von der Bildschirmbreite
+        const baseMin = window.innerWidth <= 1024 ? 450 : 200; // iPad / Desktop
+        const finalH = Math.max(h, baseMin);
+        rowTop.style.height = finalH + 'px';
+      }
+    });
+  </script>
 </body>
 </html>

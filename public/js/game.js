@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.14.1';   // neue Version
+const VERSION = '2.14.2';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -14,7 +14,7 @@ window.VERSION = VERSION;
    - v2.13.6: Touch-Input ,doubel-tap, Verbesserungen
    - v2.13.11: Score & beenden, neues Game verhalten 
    - v2.14.0: Bot Modul hinzugefügt
-   - v2.14.1: Bot vs Player Modus im Startmenu plus Design fix
+   - v2.14.2: Bot vs Player Modus im Startmenu plus Design fix
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
