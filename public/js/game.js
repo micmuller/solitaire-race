@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.13.6';   // neue Version
+const VERSION = '2.13.11';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -12,6 +12,7 @@ window.VERSION = VERSION;
    - v2.13.4: scaling.js Verbesserungen
    - v2.13.5: GUI-Feinschliff (Abstände Gegner-Tableaus)
    - v2.13.6: Touch-Input ,doubel-tap, Verbesserungen
+   - v2.13.11: Score & beenden, neues Game verhalten 
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -95,6 +96,7 @@ window.VERSION = VERSION;
   // --- Layout-Konstanten (müssen zu CSS-Variablen passen) ---
   const CARD_H   = 120; // entspricht --card-h
   const STACK_YD = 24;  // entspricht --stack-yd
+  const FINISH_BONUS = 50; // Bonuspunkte bei komplett gelöstem Spiel
 
   let touchInput = null;
 
@@ -118,7 +120,9 @@ window.VERSION = VERSION;
     if (!popup) return;
     const msgNode = popup.querySelector('.end-popup-message');
     if (msgNode) {
-      msgNode.textContent = message || 'Das Spiel wurde beendet.';
+      const msg = message || 'Das Spiel wurde beendet.';
+      // \n → echte Zeilenumbrüche im Pop-up
+      msgNode.innerHTML = msg.replace(/\n/g, '<br>');
     }
     popup.classList.add('show');
   }
@@ -326,6 +330,7 @@ window.VERSION = VERSION;
     resizeTableauHeights();
     setupDrops();
     updateOverlay();
+    updateFoundationCounters();
   }
 
   function resizeTableauHeights() {
@@ -338,6 +343,64 @@ window.VERSION = VERSION;
         pileEl.style.height = needed + 'px';
       });
     });
+  }
+
+  // Zählt, wie viele Foundation-Karten vom lokalen Spieler vs. vom Gegner stammen
+  function computeLocalFoundationCounts() {
+    let mine = 0;
+    let other = 0;
+
+    for (const f of state.foundations) {
+      for (const c of f.cards) {
+        if (!c || !c.id) continue;
+        if (c.id.startsWith(localOwner + '-')) {
+          mine++;
+        } else {
+          other++;
+        }
+      }
+    }
+
+    return { mine, other };
+  }
+
+  // Aktualisiert die großen Score-Counter (unten links / oben rechts)
+  function updateFoundationCounters() {
+    const { mine, other } = computeLocalFoundationCounts();
+
+    const youEl = document.getElementById('score-you');
+    if (youEl) {
+      youEl.textContent = String(mine);
+    }
+
+    const oppEl = document.getElementById('score-opp');
+    if (oppEl) {
+      oppEl.textContent = String(other);
+    }
+  }
+
+  // Liefert Score-Infos (mit Bonus, falls alle 208 Karten liegen)
+  function computeScores() {
+    const { mine, other } = computeLocalFoundationCounts();
+    const totalCards = state.foundations.reduce((a, f) => a + f.cards.length, 0);
+    const hasBonus = (totalCards === 208);
+    const bonus = hasBonus ? FINISH_BONUS : 0;
+    const myTotal = mine + bonus;
+    const otherTotal = other + bonus;
+    return { mine, other, totalCards, hasBonus, bonus, myTotal, otherTotal };
+  }
+
+  // Neustart-Popup (gleiches Spiel vs. neue Karten) – generelle UI-Helper
+  function showRestartPopup() {
+    const popup = document.getElementById('restart-popup');
+    if (!popup) return;
+    popup.classList.add('show');
+  }
+
+  function hideRestartPopup() {
+    const popup = document.getElementById('restart-popup');
+    if (!popup) return;
+    popup.classList.remove('show');
   }
 
   function renderStack(side) {
@@ -547,15 +610,33 @@ window.VERSION = VERSION;
     }
   }
 
-function checkWin() {
+  function checkWin() {
     const total = state.foundations.reduce((a, f) => a + f.cards.length, 0);
     if (total === 208) {
       state.over = true;
+
+      const scores = computeScores();
+      const { mine, other, myTotal, otherTotal, bonus } = scores;
+
       showToast('Alle Karten abgetragen!');
-      showEndPopup('Alle Karten abgetragen!');  // zentrales Pop-up
+
+      const msgLines = [
+        'Alle Karten abgetragen!',
+        '',
+        `Deine abgelegten Karten: ${mine}`,
+        `Karten des Gegners: ${other}`,
+        '',
+        `Bonus für gelöstes Spiel: +${bonus} Punkte`,
+        '',
+        `Deine Gesamtpunkte: ${myTotal}`,
+        `Gegner-Gesamtpunkte: ${otherTotal}`
+      ];
+
+      showEndPopup(msgLines.join('\n'));
       updateOverlay();
+      updateFoundationCounters();
     }
-}
+  }
 
   // ======================================================
   // 7) INPUT (TOUCH & MOUSE)
@@ -1602,12 +1683,31 @@ function newGame() {
     if (roomIn) roomIn.value = state.room;
 
         el('#newGame')?.addEventListener('click', () => {
-      let seedVal = (seedIn?.value || '').trim();
-      if (!seedVal) {
-        seedVal = generateSeed();
-        if (seedIn) seedIn.value = seedVal;
+      // Aktueller Seed aus Input oder State
+      const inputSeed = (seedIn?.value || '').trim();
+      const currentSeed = inputSeed || (state.seed || '');
+
+      let useSameSeed = false;
+
+      if (!currentSeed) {
+        // Erstes Spiel: immer neue Karten
+        useSameSeed = false;
+      } else {
+        const msg =
+          'Gleiches Spiel neu starten?\n\n' +
+          'OK = gleiches Spiel\n' +
+          'Abbrechen = neue Karten (neuer Seed)';
+        useSameSeed = window.confirm(msg);
       }
 
+      let seedVal;
+      if (useSameSeed && currentSeed) {
+        seedVal = currentSeed;
+      } else {
+        seedVal = generateSeed();
+      }
+
+      if (seedIn) seedIn.value = seedVal;
       state.seed = seedVal;
 
       try {
@@ -1618,14 +1718,28 @@ function newGame() {
       state.over = false;
       newGame();
 
+      // End-Button nur einmal binden, inkl. Score im Pop-up
       const endBtn = el('#endGame');
-      if (endBtn) {
+      if (endBtn && !endBtn._shnBound) {
+        endBtn._shnBound = true;
         endBtn.addEventListener('click', () => {
           if (state.over) return;
 
           state.over = true;
+
+          const scores = computeScores();
+          const msgLines = [
+            'Du hast das Spiel beendet.',
+            '',
+            `Deine abgelegten Karten: ${scores.mine}`,
+            `Karten des Gegners: ${scores.other}`,
+            '',
+            `Deine Gesamtpunkte: ${scores.myTotal}`,
+            `Gegner-Gesamtpunkte: ${scores.otherTotal}`
+          ];
+
           showToast('Spiel beendet');
-          showEndPopup('Du hast das Spiel beendet');
+          showEndPopup(msgLines.join('\n'));
           updateOverlay();
 
           // Wenn im Room & verbunden → dem Gegner Bescheid sagen
@@ -1681,7 +1795,13 @@ function newGame() {
 
     const endPopupClose = document.getElementById('end-popup-close');
     if (endPopupClose) {
-      endPopupClose.addEventListener('click', hideEndPopup);
+      endPopupClose.addEventListener('click', () => {
+        hideEndPopup();
+        // Nach Spielende direkt das Startmenü öffnen, falls vorhanden
+        if (window.SHN && SHN.startmenu && typeof SHN.startmenu.open === 'function') {
+          SHN.startmenu.open();
+        }
+      });
     }
 
     document.title = `Solitaire HighNoon — v${VERSION}`;
@@ -1733,7 +1853,9 @@ function newGame() {
     toggleMirror,
     showToast,
     showEndPopup,
-    hideEndPopup
+    hideEndPopup,
+    showRestartPopup,
+    hideRestartPopup
   };
 
   // 4) Netzwerk-API

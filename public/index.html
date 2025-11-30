@@ -13,6 +13,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap');
     :root {
       --bg:#0b1020; --felt:#0f5132; --card:#fff; --ink:#0b1020; --muted:#9aa3b2; --radius:10px;
       /* Karten-/Layout-Variablen */
@@ -327,6 +328,37 @@
       padding:1px 6px;
       border-radius:6px;
       border:1px solid #ffffff22;
+    }
+
+    /* --- Foundation Score Counter (Du & Gegner) --- */
+    .score-counter {
+      position:absolute;
+      z-index:5000;
+      font-family:'Orbitron', sans-serif;
+      font-size:40px;
+      font-weight:700;
+      opacity:0.9;
+      pointer-events:none;
+      user-select:none;
+      text-shadow:0 0 12px rgba(255,255,255,0.5);
+    }
+
+    #score-you {
+      bottom:48px;
+      left:12px;
+      color:#00e0c7;
+      text-shadow:
+        0 0 8px rgba(0,224,199,0.7),
+        0 0 16px rgba(0,224,199,0.6);
+    }
+
+    #score-opp {
+      top:96px;
+      right:12px;
+      color:#ff4081;
+      text-shadow:
+        0 0 8px rgba(255,64,129,0.7),
+        0 0 16px rgba(255,64,129,0.6);
     }
 
     .overlay {
@@ -647,6 +679,9 @@
       <button id="end-popup-close">OK</button>
     </div>
   </div>
+
+  <div id="score-you" class="score-counter">0</div>
+  <div id="score-opp" class="score-counter">0</div>
 
   <main class="board-wrapper">
     <section class="board" id="board">

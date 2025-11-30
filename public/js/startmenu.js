@@ -280,7 +280,32 @@
     const copyLink = dialog.querySelector('#shn-startmenu-copy-link');
     const closeBtn = dialog.querySelector('#shn-startmenu-close');
 
+    // Restart-Popup-Buttons (global im DOM)
+    const restartSameBtn = document.getElementById('restart-same');
+    const restartNewBtn  = document.getElementById('restart-new');
+
     let inviteMode = false;
+    let hostExistingShownOnce = false; // steuert, ob vorhandenes Duell bereits einmal ohne Popup gezeigt wurde
+
+    function startHostGameWithSeed(room, seed) {
+      // Room/Seed in Main-UI & URL schreiben
+      fillInputsAndUrl(room, seed);
+
+      // Spiel neu starten und verbinden (falls möglich)
+      triggerNewGameIfPossible();
+      triggerConnectIfPossible();
+
+      ui.showToast('Duell gestartet – verbinde …');
+
+      // Startmenü und ggf. Restart-Popup schließen
+      if (typeof ui.hideRestartPopup === 'function') {
+        ui.hideRestartPopup();
+      } else {
+        const rp = document.getElementById('restart-popup');
+        if (rp) rp.classList.remove('show');
+      }
+      overlay.remove();
+    }
 
     // Falls Room/Seed bereits in der URL stehen (z.B. via Einladungslink),
     // Startmenü-Felder damit vorbefüllen und in einen "Join"-Modus schalten.
@@ -328,18 +353,63 @@
           return;
         }
 
-        // Host-Modus: Wenn bereits ein Room/Seed existiert (z.B. Host klickt erneut),
-        // NICHT neu generieren, sondern bestehende Werte wieder anzeigen.
-        if (state.room && state.seed) {
+        // Host-Modus: Wenn bereits ein Room/Seed existiert (z.B. Rematch),
+        // bisherigen Duell-Status anzeigen. Beim ersten Mal nur Link anzeigen,
+        // erst bei weiteren Klicks das Neustart-Popup anbieten.
+        if (state.room && state.seed && state.over) {
           const room = state.room;
           const seed = state.seed;
+
           if (roomOut) roomOut.value = room;
           if (seedOut) seedOut.value = seed;
           if (linkOut) linkOut.value = buildShareLink(room, seed);
           if (panelHuman) panelHuman.style.display = 'block';
           if (copyLink) copyLink.style.display = 'inline';
 
-          ui.showToast('Duell ist bereits vorbereitet – benutze diesen Link.');
+          // Erstes Mal: nur bestehenden Status anzeigen wie früher
+          if (!hostExistingShownOnce) {
+            hostExistingShownOnce = true;
+            ui.showToast('Duell ist bereits vorbereitet – benutze diesen Link.');
+            return;
+          }
+
+          // Ab dem zweiten Mal: Neustart-Popup mit Rematch-Optionen anbieten
+          if (restartSameBtn && !restartSameBtn._shnHostBound) {
+            restartSameBtn._shnHostBound = true;
+            restartSameBtn.addEventListener('click', () => {
+              // Gleiches Spiel: bestehenden Seed weiterverwenden
+              const r = state.room || room;
+              const s = state.seed || seed;
+              startHostGameWithSeed(r, s);
+            });
+          }
+
+          if (restartNewBtn && !restartNewBtn._shnHostBound) {
+            restartNewBtn._shnHostBound = true;
+            restartNewBtn.addEventListener('click', () => {
+              // Neue Karten: gleicher Room, neuer Seed
+              const r = state.room || room || generateRoomId();
+              const s = engine.generateSeed();
+
+              const shareLink = buildShareLink(r, s);
+
+              if (roomOut) roomOut.value = r;
+              if (seedOut) seedOut.value = s;
+              if (linkOut) linkOut.value = shareLink;
+              if (panelHuman) panelHuman.style.display = 'block';
+              if (copyLink) copyLink.style.display = 'inline';
+
+              startHostGameWithSeed(r, s);
+            });
+          }
+
+          if (typeof ui.showRestartPopup === 'function') {
+            ui.showRestartPopup();
+          } else {
+            const rp = document.getElementById('restart-popup');
+            if (rp) rp.classList.add('show');
+          }
+
           return;
         }
 
@@ -439,5 +509,9 @@
     // Startmenü beim Laden anzeigen
     createStartMenuOverlay();
   });
+
+  // Startmenü-API an SHN hängen, damit z.B. game.js es aufrufen kann
+  SHN.startmenu = SHN.startmenu || {};
+  SHN.startmenu.open = createStartMenuOverlay;
 
 })();
