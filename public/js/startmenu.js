@@ -3,7 +3,7 @@
 
 (function () {
   const SHN = window.SHN || {};
-  const { engine, state, ui, meta, net } = SHN;
+  const { engine, state, ui, meta } = SHN;
 
   if (!engine || !state || !ui || !meta) {
     console.warn('[StartMenu] SHN-API nicht vollständig verfügbar – startmenu.js wird übersprungen.');
@@ -106,6 +106,11 @@
         gap: 0.2rem;
         margin-top: 0.45rem;
       }
+      .shn-startmenu-info {
+        font-size: 0.8rem;
+        opacity: 0.9;
+        line-height: 1.35;
+      }
       .shn-startmenu-field label {
         font-size: 0.8rem;
         opacity: 0.8;
@@ -173,6 +178,16 @@
     }
   }
 
+  function getNickFromMainUi() {
+    const overlayNickEl = document.getElementById('shn-startmenu-nick');
+    let val = overlayNickEl && typeof overlayNickEl.value === 'string' ? overlayNickEl.value.trim() : '';
+    if (!val) {
+      const nickEl = document.getElementById('nick');
+      val = nickEl && typeof nickEl.value === 'string' ? nickEl.value.trim() : '';
+    }
+    return val || 'Player';
+  }
+
   function triggerNewGameIfPossible() {
     const newGameBtn = document.getElementById('newGame');
     if (newGameBtn) {
@@ -190,13 +205,37 @@
       return;
     }
     // Fallback, falls der Button einmal umgebaut wird und eine direkte API existiert
-    if (net && typeof net.connectWS === 'function') {
+    const netApi = SHN.net;
+    if (netApi && typeof netApi.connectWS === 'function') {
       try {
-        net.connectWS();
+        netApi.connectWS();
       } catch (e) {
         console.warn('[StartMenu] Connect-Fallback fehlgeschlagen:', e);
       }
     }
+  }
+
+  function waitForOnlineThen(action, timeoutMs = 5000) {
+    if (typeof action !== 'function') return;
+    // Wenn bereits online, direkt ausführen
+    if (state && state.netOnline) {
+      action();
+      return;
+    }
+    const step = 200;
+    let elapsed = 0;
+    const id = setInterval(() => {
+      if (state && state.netOnline) {
+        clearInterval(id);
+        action();
+      } else {
+        elapsed += step;
+        if (elapsed >= timeoutMs) {
+          clearInterval(id);
+          ui.showToast('Online-Verbindung nicht verfügbar (Timeout)');
+        }
+      }
+    }, step);
   }
 
   // ------------------------------------------------------
@@ -222,7 +261,20 @@
         <div class="shn-startmenu-version">v${meta.VERSION || ''}</div>
       </div>
 
+      <div class="shn-startmenu-field">
+        <label>Dein Nickname</label>
+        <input id="shn-startmenu-nick" class="shn-startmenu-input" type="text" placeholder="z.B. Michi" />
+      </div>
+
       <div class="shn-startmenu-section-title">Spielmodus wählen</div>
+
+      <div id="shn-startmenu-invite-note" class="shn-startmenu-field" style="display:none;">
+        <label>Einladung</label>
+        <div class="shn-startmenu-info">
+          Du wurdest zu einem Duell eingeladen.
+          Tippe auf „Gegen menschlichen Gegner“, um dem Spiel beizutreten.
+        </div>
+      </div>
 
       <div class="shn-startmenu-modes">
         <button type="button" id="shn-startmenu-human" class="shn-startmenu-button primary">
@@ -279,6 +331,24 @@
     const linkOut  = dialog.querySelector('#shn-startmenu-link');
     const copyLink = dialog.querySelector('#shn-startmenu-copy-link');
     const closeBtn = dialog.querySelector('#shn-startmenu-close');
+    const nickOverlay = dialog.querySelector('#shn-startmenu-nick');
+    const inviteNote = dialog.querySelector('#shn-startmenu-invite-note');
+
+    // Nickname aus dem Haupt-UI übernehmen, falls vorhanden
+    try {
+      const mainNickEl = document.getElementById('nick');
+      if (mainNickEl && nickOverlay && !nickOverlay.value) {
+        nickOverlay.value = mainNickEl.value || '';
+      }
+      // Änderungen im Overlay zurück ins Haupt-UI spiegeln
+      if (nickOverlay && mainNickEl) {
+        nickOverlay.addEventListener('input', () => {
+          mainNickEl.value = nickOverlay.value;
+        });
+      }
+    } catch (e) {
+      console.warn('[StartMenu] Konnte Nickname nicht synchronisieren:', e);
+    }
 
     // Restart-Popup-Buttons (global im DOM)
     const restartSameBtn = document.getElementById('restart-same');
@@ -321,6 +391,7 @@
         if (linkOut) linkOut.value = buildShareLink(existingRoom, existingSeed);
         if (panelHuman) panelHuman.style.display = 'block';
         if (copyLink) copyLink.style.display = 'none'; // für Joiner eher nicht nötig
+        if (inviteNote) inviteNote.style.display = 'block';
 
         // State & Hidden-Inputs im Haupt-UI auch aktualisieren
         fillInputsAndUrl(existingRoom, existingSeed);
@@ -342,20 +413,38 @@
 
     if (btnHuman) {
       btnHuman.addEventListener('click', () => {
-        // Wenn wir über einen Einladungslink hier sind, dürfen wir NICHT
-        // neuen Room/Seed erzeugen, sondern einfach dem Spiel beitreten.
+        // Wenn wir über einen Einladungslink hier sind, sollen wir dem bestehenden Match beitreten.
         if (inviteMode) {
-          // Room/Seed wurden bereits aus der URL übernommen und in Inputs/State gesetzt.
-          triggerNewGameIfPossible();
+          const existingRoom =
+            (roomOut && roomOut.value && roomOut.value.trim()) ||
+            state.room ||
+            '';
+          if (!existingRoom) {
+            ui.showToast('Kein Match-Code vorhanden');
+            return;
+          }
+
+          // Sicherstellen, dass eine WS-Verbindung besteht (Baseroom "lobby" setzen, falls leer)
+          const roomIn = document.getElementById('room');
+          if (roomIn && !roomIn.value) {
+            roomIn.value = 'lobby';
+          }
           triggerConnectIfPossible();
-          ui.showToast('Seed & Room übernommen – verbinde zum Duell …');
+
+          const netApi = SHN.net;
+          if (netApi && typeof netApi.joinMatch === 'function') {
+            netApi.joinMatch(existingRoom, getNickFromMainUi());
+            ui.showToast('Verbinde zum Duell …');
+          } else {
+            ui.showToast('Online-Duell nicht verfügbar');
+          }
+
           overlay.remove();
           return;
         }
 
         // Host-Modus: Wenn bereits ein Room/Seed existiert (z.B. Rematch),
-        // bisherigen Duell-Status anzeigen. Beim ersten Mal nur Link anzeigen,
-        // erst bei weiteren Klicks das Neustart-Popup anbieten.
+        // bisherigen Duell-Status anzeigen / Neustart-Popup nutzen.
         if (state.room && state.seed && state.over) {
           const room = state.room;
           const seed = state.seed;
@@ -413,23 +502,51 @@
           return;
         }
 
-        // Host-Modus: neuen Room + Seed erzeugen und Link bauen
-        const room = generateRoomId();
-        const seed = engine.generateSeed();
-
-        const shareLink = buildShareLink(room, seed);
-
-        if (roomOut) roomOut.value = room;
-        if (seedOut) seedOut.value = seed;
-        if (linkOut) linkOut.value = shareLink;
-        if (panelHuman) panelHuman.style.display = 'block';
-        if (copyLink) copyLink.style.display = 'inline';
-
-        fillInputsAndUrl(room, seed);
-        triggerNewGameIfPossible();
+        // Host-Modus: neues server-zentriertes Match erstellen
+        // 1) Basis-Room für die initiale WS-Verbindung setzen, falls leer
+        const roomIn = document.getElementById('room');
+        if (roomIn && !roomIn.value) {
+          roomIn.value = 'lobby';
+        }
+        // 2) Verbinden (falls noch nicht verbunden)
         triggerConnectIfPossible();
 
-        ui.showToast('Duell vorbereitet – verbinde und Link an Gegner senden.');
+        const netApi = SHN.net;
+        if (netApi && typeof netApi.createMatch === 'function') {
+          const nick = getNickFromMainUi();
+
+          // Wir warten, bis state.netOnline == true ist, bevor wir create_match schicken,
+          // damit die WebSocket-Verbindung sicher offen ist.
+          waitForOnlineThen(() => {
+            netApi.createMatch(nick);
+
+            // Panel sichtbar machen, Link-Feld vorbereiten
+            if (panelHuman) panelHuman.style.display = 'block';
+            if (copyLink) copyLink.style.display = 'inline';
+
+            // Sobald der Server match_created/match_joined geschickt und game.js
+            // state.room / state.seed gesetzt hat, können wir die Felder übernehmen.
+            let attempts = 0;
+            const maxAttempts = 20; // ~5 Sekunden bei 250ms
+            const pollId = setInterval(() => {
+              attempts++;
+              const r = state.room;
+              const s = state.seed;
+              if (r && s) {
+                if (roomOut) roomOut.value = r;
+                if (seedOut) seedOut.value = s;
+                if (linkOut) linkOut.value = buildShareLink(r, s);
+                clearInterval(pollId);
+              } else if (attempts >= maxAttempts) {
+                clearInterval(pollId);
+              }
+            }, 250);
+
+            ui.showToast('Duell wird erstellt …');
+          });
+        } else {
+          ui.showToast('Online-Duell nicht verfügbar');
+        }
       });
     }
 

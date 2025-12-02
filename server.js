@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // ================================================================
 //  Solitaire HighNoon - Realtime Game Server
-//  Version: 1.6.3  (2025-11-23)
+//  Version: 2.0.0
 //  Author: micmuller & ChatGPT (GPT-5)
 // -v1.6.3: Mehr Logging bei SYS/MOVE Nachrichten
+// -v2.0.0: Komplett überarbeiteter Match-/WebSocket-Server
 // ================================================================
 
 const http   = require('node:http');
@@ -15,7 +16,7 @@ const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
 // ---------- Version / CLI ----------
-const VERSION = '1.6.3';
+const VERSION = '2.0.0';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -107,11 +108,19 @@ const httpServer = http.createServer(handleRequest);
 // ================================================================
 const wss = new WebSocketServer({ noServer: true });
 const rooms = new Map();
+const {
+  createMatchForClient,
+  joinMatchForClient,
+  markPlayerDisconnected,
+  getPublicMatchView,
+  cleanupOldMatches
+} = require('./matches');
 const STATUS_INTERVAL_MS = 30_000;
 const HELLO_SUPPRESS_MS  = 15_000;
 let lastGlobalStatusLog = 0;
 const lastSysLogByRoom = new Map();
 const lastHelloTsByClient = new WeakMap();
+setInterval(() => cleanupOldMatches(), 10 * 60 * 1000).unref();
 
 function isoNow() { return new Date().toISOString(); }
 function getRoomOf(ws) { return ws.__room || null; }
@@ -143,6 +152,33 @@ function broadcastToRoom(room, data, excludeWs = null) {
     }
   }
 }
+
+function sendSys(ws, sysPayload, extra = {}) {
+  if (ws.readyState !== ws.OPEN) return;
+  const envelope = {
+    sys: sysPayload,
+    from: 'srv',
+    ...extra
+  };
+  ws.send(JSON.stringify(envelope));
+}
+
+function broadcastSysToRoom(room, sysPayload, extra = {}) {
+  const set = rooms.get(room);
+  if (!set) return;
+  const envelope = JSON.stringify({
+    sys: sysPayload,
+    from: 'srv',
+    matchId: sysPayload.matchId || extra.matchId || room,
+    ...extra
+  });
+  for (const client of set) {
+    if (client.readyState === client.OPEN) {
+      client.send(envelope);
+    }
+  }
+}
+
 function logStatus(roomHint = null) {
   const total = wss.clients.size;
   if (total === 0) return;
@@ -183,48 +219,186 @@ wss.on('connection', (ws, req, room) => {
   console.log(`[CONNECT] ${isoNow()} room="${room}" ip=${ip} cid=${cid} peers=${peersInRoom(room)}`);
   logStatus(room);
 
-  ws.on('message', buf => {
-    const now = Date.now();
-    const currentRoom = getRoomOf(ws);
-    if (!currentRoom) return;
-    try {
-      const data = JSON.parse(buf.toString());
-      if (data?.move) {
+ws.on('message', buf => {
+  const now = Date.now();
+  const currentRoom = getRoomOf(ws);
+  if (!currentRoom) return;
+  try {
+    const raw = buf.toString();
+    const data = JSON.parse(raw);
+
+    // MOVE-Logging wie bisher
+    if (data?.move) {
+      console.log(
+        `[MOVE] ${isoNow()} room="${currentRoom}" kind=${data.move.kind} ` +
+        `from=${data.from || 'n/a'} cid=${ws.__cid || 'n/a'}`
+      );
+    }
+
+    // SYS-Logging / Handling
+    if (data?.sys) {
+      const sys = data.sys;
+      const lastH = lastHelloTsByClient.get(ws) || 0;
+
+      // "hello" weiterhin entdoppeln
+      if (sys.type === 'hello' && now - lastH < HELLO_SUPPRESS_MS) return;
+      lastHelloTsByClient.set(ws, now);
+
+      const lastSys = lastSysLogByRoom.get(currentRoom) || 0;
+      if (now - lastSys >= STATUS_INTERVAL_MS) {
         console.log(
-          `[MOVE] ${isoNow()} room="${currentRoom}" kind=${data.move.kind} ` +
+          `[SYS] ${isoNow()} room="${currentRoom}" type=${sys.type} ` +
           `from=${data.from || 'n/a'} cid=${ws.__cid || 'n/a'}`
         );
+        lastSysLogByRoom.set(currentRoom, now);
       }
-      if (data?.sys) {
-        const lastH = lastHelloTsByClient.get(ws) || 0;
-        if (data.sys.type === 'hello' && now - lastH < HELLO_SUPPRESS_MS) return;
-        lastHelloTsByClient.set(ws, now);
 
-        const lastSys = lastSysLogByRoom.get(currentRoom) || 0;
-        if (now - lastSys >= STATUS_INTERVAL_MS) {
+      // Neue Match-Commands abfangen (Phase 1)
+      if (sys.type === 'create_match') {
+        const nick = sys.nick || 'Player 1';
+        try {
+          const match = createMatchForClient(ws, nick, rooms);
+
+          // WebSocket in ein dediziertes Match-Room verschieben
+          leaveRoom(ws);
+          joinRoom(ws, match.matchId);
+
+          const publicMatch = getPublicMatchView(match);
+
+          // Antwort an Host
+          sendSys(ws, {
+            type: 'match_created',
+            matchId: match.matchId,
+            seed: match.seed,
+            playerId: 'p1',
+            role: 'host',
+            status: match.status,
+            hostNick: nick,
+            match: publicMatch
+          }, { matchId: match.matchId });
+
+          // Erstes match_update nur an Host (noch keine weiteren Spieler im Raum)
+          sendSys(ws, {
+            type: 'match_update',
+            matchId: match.matchId,
+            status: match.status,
+            players: publicMatch.players
+          }, { matchId: match.matchId });
+
           console.log(
-            `[SYS] ${isoNow()} room="${currentRoom}" type=${data.sys.type} ` +
-            `from=${data.from || 'n/a'} cid=${ws.__cid || 'n/a'}`
+            `[MATCH] created matchId="${match.matchId}" seed="${match.seed}" hostNick="${nick}" cid=${ws.__cid}`
           );
-          lastSysLogByRoom.set(currentRoom, now);
+        } catch (err) {
+          console.error('[MATCH ERROR] create_match failed', err);
+          sendSys(ws, {
+            type: 'match_error',
+            for: 'create_match',
+            code: err.code || 'internal_error',
+            message: err.message || 'Interner Fehler beim Erstellen des Matches'
+          });
         }
+        return; // NICHT in den Raum broadcasten
       }
-      broadcastToRoom(currentRoom, buf.toString(), ws);
-      if (now - lastGlobalStatusLog >= STATUS_INTERVAL_MS) {
-        logStatus();
-        lastGlobalStatusLog = now;
-      }
-    } catch (err) {
-      console.error('[WS ERROR]', err);
-    }
-  });
 
-  ws.on('close', () => {
-    const roomLeft = getRoomOf(ws);
-    leaveRoom(ws);
-    console.log(`[DISCONNECT] ${isoNow()} room="${roomLeft}" cid=${cid}`);
-    logStatus(roomLeft);
-  });
+      if (sys.type === 'join_match') {
+        const matchId = sys.matchId;
+        const nick = sys.nick || 'Player';
+
+        if (!matchId) {
+          sendSys(ws, {
+            type: 'match_error',
+            for: 'join_match',
+            code: 'missing_match_id',
+            message: 'Kein Match-Code angegeben.'
+          });
+          return;
+        }
+
+        try {
+          const match = joinMatchForClient(ws, matchId, nick);
+
+          // WebSocket in den Match-Room verschieben
+          leaveRoom(ws);
+          joinRoom(ws, match.matchId);
+
+          const publicMatch = getPublicMatchView(match);
+
+          // Antwort an Guest selbst
+          sendSys(ws, {
+            type: 'match_joined',
+            matchId: match.matchId,
+            seed: match.seed,
+            playerId: ws.__playerId,
+            role: 'guest',
+            status: match.status,
+            hostNick: publicMatch.players[0]?.nick || 'Host'
+          }, { matchId: match.matchId });
+
+          // match_update an alle Spieler im Match-Room
+          broadcastSysToRoom(match.matchId, {
+            type: 'match_update',
+            matchId: match.matchId,
+            status: match.status,
+            players: publicMatch.players
+          });
+
+          console.log(
+            `[MATCH] join matchId="${match.matchId}" guestNick="${nick}" cid=${ws.__cid}`
+          );
+
+          // V1: Spiel automatisch starten, sobald 2 Spieler da sind
+          if (match.players.length === 2 && match.status === 'ready') {
+            broadcastSysToRoom(match.matchId, {
+              type: 'reset',
+              matchId: match.matchId,
+              seed: match.seed
+            });
+            match.status = 'running';
+            match.lastActivityAt = Date.now();
+            console.log(`[MATCH] auto-start matchId="${match.matchId}" seed="${match.seed}"`);
+          }
+        } catch (err) {
+          console.error('[MATCH ERROR] join_match failed', err);
+          let code = err.code || 'internal_error';
+          let message = err.message || 'Interner Fehler beim Beitreten zum Match';
+          if (code === 'match_not_found') {
+            message = 'Dieses Match existiert nicht oder ist bereits beendet.';
+          } else if (code === 'match_full') {
+            message = 'Dieses Match ist bereits voll.';
+          } else if (code === 'match_finished') {
+            message = 'Dieses Match ist bereits beendet.';
+          }
+          sendSys(ws, {
+            type: 'match_error',
+            for: 'join_match',
+            code,
+            message,
+            matchId
+          });
+        }
+        return; // NICHT in den Raum broadcasten
+      }
+    }
+
+    // Standardverhalten beibehalten: alles andere wie bisher an den Room broadcasten
+    broadcastToRoom(currentRoom, raw, ws);
+
+    if (now - lastGlobalStatusLog >= STATUS_INTERVAL_MS) {
+      logStatus();
+      lastGlobalStatusLog = now;
+    }
+  } catch (err) {
+    console.error('[WS ERROR]', err);
+  }
+});
+
+ws.on('close', () => {
+  const roomLeft = getRoomOf(ws);
+  markPlayerDisconnected(ws);
+  leaveRoom(ws);
+  console.log(`[DISCONNECT] ${isoNow()} room="${roomLeft}" cid=${cid}`);
+  logStatus(roomLeft);
+});
 });
 
 // ================================================================

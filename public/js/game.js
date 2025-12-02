@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.14.5';   // neue Version
+const VERSION = '3.0.4';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -16,6 +16,7 @@ window.VERSION = VERSION;
    - v2.14.0: Bot Modul hinzugefügt
    - v2.14.2: Bot vs Player Modus im Startmenu plus Design fix
    - v2.14.5: Stock/Waste Select fix, Foundation glow bei Auto-Move
+   - v3.0.4: Server-zentrierter Match-Flow (create_match/join_match) – Basis
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -243,7 +244,8 @@ window.VERSION = VERSION;
     opp: { stock: [], waste: [], tableau: [[], [], [], [], [], [], []] },
     foundations: Array.from({ length: 8 }, (_, i) => ({ suit: SUITS[i % 4], cards: [] })),
     moves: 0,
-    over: false
+    over: false,
+    netOnline: false
   };
 
   // ---------- Owner ----------
@@ -1376,6 +1378,7 @@ window.VERSION = VERSION;
   function updateOverlay() {
     const online     = ws && ws.readyState === 1;
     const connecting = ws && ws.readyState === 0;
+    state.netOnline = !!online;
     const dot = document.getElementById('dot');
     const ovSync = document.getElementById('ov-sync');
 
@@ -1566,7 +1569,7 @@ window.VERSION = VERSION;
       }
 
       // ------ SYS ------
-            if (msg.sys) {
+      if (msg.sys) {
 
         // Eigene hello/hello-ack ignorieren
         if (msg.from === clientId &&
@@ -1607,6 +1610,80 @@ window.VERSION = VERSION;
         }
         else if (msg.sys.type === 'pong' && typeof msg.sys.ts === 'number') {
           latencyMs = Date.now() - msg.sys.ts;
+        }
+        // Match-Flow: neue match-bezogene SYS-Handler
+        else if (msg.sys.type === 'match_created') {
+          const matchId = msg.sys.matchId;
+          const seed    = msg.sys.seed;
+          const status  = msg.sys.status;
+          const hostNick = msg.sys.hostNick;
+
+          if (matchId) {
+            state.room = matchId;
+            const roomIn = document.getElementById('room');
+            if (roomIn) roomIn.value = matchId;
+          }
+
+          if (seed) {
+            state.seed = seed;
+            const seedIn = document.getElementById('seed');
+            if (seedIn) seedIn.value = seed;
+          }
+
+          // URL aktualisieren, damit Reload denselben Match/Seed hat
+          try {
+            const urlObj = new URL(window.location.href);
+            if (state.room) urlObj.searchParams.set('room', state.room);
+            if (state.seed) urlObj.searchParams.set('seed', state.seed);
+            history.replaceState({}, '', urlObj);
+          } catch (e) {
+            console.warn('[WS] Konnte URL nach match_created nicht aktualisieren:', e);
+          }
+
+          const label = matchId ? `Match erstellt: ${matchId}` : 'Match erstellt';
+          showToast(label);
+          console.log('[MATCH] created (client)', msg.sys);
+        }
+        else if (msg.sys.type === 'match_joined') {
+          const matchId = msg.sys.matchId;
+          const seed    = msg.sys.seed;
+          const hostNick = msg.sys.hostNick;
+
+          if (matchId) {
+            state.room = matchId;
+            const roomIn = document.getElementById('room');
+            if (roomIn) roomIn.value = matchId;
+          }
+
+          if (seed) {
+            state.seed = seed;
+            const seedIn = document.getElementById('seed');
+            if (seedIn) seedIn.value = seed;
+          }
+
+          try {
+            const urlObj = new URL(window.location.href);
+            if (state.room) urlObj.searchParams.set('room', state.room);
+            if (state.seed) urlObj.searchParams.set('seed', state.seed);
+            history.replaceState({}, '', urlObj);
+          } catch (e) {
+            console.warn('[WS] Konnte URL nach match_joined nicht aktualisieren:', e);
+          }
+
+          const msgTxt = matchId
+            ? `Match beigetreten: ${matchId}${hostNick ? ' vs. ' + hostNick : ''}`
+            : 'Match beigetreten';
+          showToast(msgTxt);
+          console.log('[MATCH] joined (client)', msg.sys);
+        }
+        else if (msg.sys.type === 'match_update') {
+          // Vorerst nur für Debug/UX: spätere Lobby-Anzeige möglich
+          console.log('[MATCH] update', msg.sys);
+        }
+        else if (msg.sys.type === 'match_error') {
+          const m = msg.sys.message || 'Match-Fehler';
+          showToast(m);
+          console.warn('[MATCH] error', msg.sys);
         }
         // ⬇️ NEU: synchroner Restart
         else if (msg.sys.type === 'reset' && typeof msg.sys.seed === 'string') {
@@ -1833,6 +1910,30 @@ function newGame() {
     }
   });
 
+  // Client-Helper für Match-Erstellung / Match-Beitritt
+  function createMatchClient(nick) {
+    const name =
+      (nick && String(nick).trim()) ||
+      (document.getElementById('nick')?.value?.trim()) ||
+      'Player';
+    sendSys({ type: 'create_match', nick: name });
+  }
+
+  function joinMatchClient(matchId, nick) {
+    const code =
+      (matchId && String(matchId).trim()) ||
+      (document.getElementById('room')?.value?.trim());
+    if (!code) {
+      showToast('Match-Code fehlt');
+      return;
+    }
+    const name =
+      (nick && String(nick).trim()) ||
+      (document.getElementById('nick')?.value?.trim()) ||
+      'Player';
+    sendSys({ type: 'join_match', matchId: code, nick: name });
+  }
+
   // ======================================================
   // 12) SHN-MODULE / ÖFFENTLICHE API
   // ======================================================
@@ -1878,7 +1979,9 @@ function newGame() {
   SHN.net = {
     connectWS,
     send,
-    sendSys
+    sendSys,
+    createMatch: createMatchClient,
+    joinMatch: joinMatchClient
   };
 
   // 5) Input-API
