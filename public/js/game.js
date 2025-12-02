@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '2.14.2';   // neue Version
+const VERSION = '2.14.5';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -15,6 +15,7 @@ window.VERSION = VERSION;
    - v2.13.11: Score & beenden, neues Game verhalten 
    - v2.14.0: Bot Modul hinzugefügt
    - v2.14.2: Bot vs Player Modus im Startmenu plus Design fix
+   - v2.14.5: Stock/Waste Select fix, Foundation glow bei Auto-Move
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -592,6 +593,8 @@ window.VERSION = VERSION;
 
       if (move.to && move.to.kind === 'found') {
         state.foundations[move.to.f].cards.push(cards[0]);
+        // Foundation Glow auch bei Ghost-Moves (remote)
+        try { flashFoundation(move.to.f); } catch {}
       } else if (move.to && move.to.kind === 'pile') {
         const ownerRef = move.to.sideOwner || move.owner;
         const targetSide = ownerToSide(ownerRef);
@@ -798,27 +801,20 @@ window.VERSION = VERSION;
       return;
     }
 
-    // --- 2) Waste: ggf. Auto-Move zur Foundation oder als Auswahl ---
+    // --- 2) Waste: nur Auswahl per Single-Tap, Auto-Move via Double-Tap ---
     if (myWaste && (targetEl === myWaste || (targetEl.closest && targetEl.closest('#' + myWaste.id)))) {
       const side = mySide;
       const w = state[side].waste;
       if (!w.length) { clearTouchSelection(); return; }
-      const card = w[w.length - 1];
 
-      // Auto-Move zur Foundation, falls möglich
-      const t = state.foundations.findIndex(f => canPlaceOnFoundation(f, card));
-      if (t > -1) {
-        applyMove({
-          owner: localOwner,
-          kind:'toFound',
-          cardId: card.id,
-          count: 1,
-          to: { kind:'found', f:t }
-        }, true);
-        clearTouchSelection();
+      const card = w[w.length - 1];
+      const loc = locOfCard(card.id);
+
+      if (loc && isMine(loc)) {
+        // Einzelner Tap: Karte (bzw. Sequenz) nur markieren
+        selectCardsForTouch(loc);
       } else {
-        const loc = locOfCard(card.id);
-        if (loc && isMine(loc)) selectCardsForTouch(loc);
+        clearTouchSelection();
       }
       return;
     }
@@ -903,6 +899,22 @@ window.VERSION = VERSION;
     }
   }
 
+  function flashFoundation(fIndex) {
+    try {
+      const container = document.getElementById('foundations');
+      if (!container) return;
+      const slot = container.querySelector(`.foundation[data-f="${fIndex}"]`);
+      if (!slot) return;
+
+      slot.classList.add('foundation-flash');
+      setTimeout(() => {
+        slot.classList.remove('foundation-flash');
+      }, 350);
+    } catch (e) {
+      console.warn('flashFoundation error', e);
+    }
+  }
+
   function autoMoveCardToFoundation(cardId, loc) {
     if (!loc || !isMine(loc)) return;
 
@@ -929,6 +941,8 @@ window.VERSION = VERSION;
         count: 1,
         to: { kind: 'found', f: t }
       }, true);
+
+      flashFoundation(t);
     }
   }
 
