@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.0.4';   // neue Version
+const VERSION = '3.0.7';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -17,6 +17,8 @@ window.VERSION = VERSION;
    - v2.14.2: Bot vs Player Modus im Startmenu plus Design fix
    - v2.14.5: Stock/Waste Select fix, Foundation glow bei Auto-Move
    - v3.0.4: Server-zentrierter Match-Flow (create_match/join_match) – Basis
+   - v3.0.5: Lobby-infos vorbereitet
+   - v3.0.7: Match-Start bei match_joined synchronisiert (Auto-newGame)
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -245,7 +247,14 @@ window.VERSION = VERSION;
     foundations: Array.from({ length: 8 }, (_, i) => ({ suit: SUITS[i % 4], cards: [] })),
     moves: 0,
     over: false,
-    netOnline: false
+    netOnline: false,
+    match: {
+      id: url.searchParams.get('room') || '',
+      status: 'idle',        // 'idle' | 'waiting' | 'ready' | 'running' | 'finished'
+      hostNick: '',
+      guestNick: '',
+      playersConnected: 0
+    }
   };
 
   // ---------- Owner ----------
@@ -1613,9 +1622,9 @@ window.VERSION = VERSION;
         }
         // Match-Flow: neue match-bezogene SYS-Handler
         else if (msg.sys.type === 'match_created') {
-          const matchId = msg.sys.matchId;
-          const seed    = msg.sys.seed;
-          const status  = msg.sys.status;
+          const matchId  = msg.sys.matchId;
+          const seed     = msg.sys.seed;
+          const status   = msg.sys.status;
           const hostNick = msg.sys.hostNick;
 
           if (matchId) {
@@ -1629,6 +1638,21 @@ window.VERSION = VERSION;
             const seedIn = document.getElementById('seed');
             if (seedIn) seedIn.value = seed;
           }
+
+          // Lobby-Infos aktualisieren
+          if (!state.match) {
+            state.match = {
+              id: '',
+              status: 'idle',
+              hostNick: '',
+              guestNick: '',
+              playersConnected: 0
+            };
+          }
+          state.match.id = matchId || state.room || state.match.id;
+          state.match.status = status || 'waiting';
+          if (hostNick) state.match.hostNick = hostNick;
+          state.match.playersConnected = 1;
 
           // URL aktualisieren, damit Reload denselben Match/Seed hat
           try {
@@ -1645,9 +1669,10 @@ window.VERSION = VERSION;
           console.log('[MATCH] created (client)', msg.sys);
         }
         else if (msg.sys.type === 'match_joined') {
-          const matchId = msg.sys.matchId;
-          const seed    = msg.sys.seed;
+          const matchId  = msg.sys.matchId;
+          const seed     = msg.sys.seed;
           const hostNick = msg.sys.hostNick;
+          const guestNick = msg.sys.guestNick;
 
           if (matchId) {
             state.room = matchId;
@@ -1661,6 +1686,22 @@ window.VERSION = VERSION;
             if (seedIn) seedIn.value = seed;
           }
 
+          // Lobby-Infos aktualisieren
+          if (!state.match) {
+            state.match = {
+              id: '',
+              status: 'idle',
+              hostNick: '',
+              guestNick: '',
+              playersConnected: 0
+            };
+          }
+          state.match.id = matchId || state.room || state.match.id;
+          state.match.status = 'ready';
+          if (hostNick) state.match.hostNick = hostNick;
+          if (guestNick) state.match.guestNick = guestNick;
+          state.match.playersConnected = 2;
+
           try {
             const urlObj = new URL(window.location.href);
             if (state.room) urlObj.searchParams.set('room', state.room);
@@ -1670,6 +1711,17 @@ window.VERSION = VERSION;
             console.warn('[WS] Konnte URL nach match_joined nicht aktualisieren:', e);
           }
 
+          // WICHTIG:
+          // Sobald das Match serverseitig bestätigt ist (match_joined),
+          // beide Clients mit dem vom Server gelieferten Seed neu starten.
+          // Das verhindert, dass Host & Joiner unterschiedliche Layouts
+          // sehen, falls einer von beiden vorher bereits ein lokales Spiel
+          // mit einem anderen Seed gestartet hatte.
+          if (state.seed) {
+            state.over = false;
+            newGame();
+          }
+
           const msgTxt = matchId
             ? `Match beigetreten: ${matchId}${hostNick ? ' vs. ' + hostNick : ''}`
             : 'Match beigetreten';
@@ -1677,8 +1729,57 @@ window.VERSION = VERSION;
           console.log('[MATCH] joined (client)', msg.sys);
         }
         else if (msg.sys.type === 'match_update') {
-          // Vorerst nur für Debug/UX: spätere Lobby-Anzeige möglich
-          console.log('[MATCH] update', msg.sys);
+          const m = msg.sys.match || msg.sys;
+          console.log('[MATCH] update', m);
+
+          if (!m) {
+            return;
+          }
+
+          if (!state.match) {
+            state.match = {
+              id: '',
+              status: 'idle',
+              hostNick: '',
+              guestNick: '',
+              playersConnected: 0
+            };
+          }
+
+          state.match.id = m.matchId || state.room || state.match.id;
+          state.match.status = m.status || state.match.status || 'waiting';
+
+          let host = null;
+          let guest = null;
+          let connectedCount = state.match.playersConnected || 0;
+
+          if (Array.isArray(m.players)) {
+            host = m.players.find(p => p.role === 'host') || null;
+            guest = m.players.find(p => p.role === 'guest') || null;
+
+            if (host && host.nick) state.match.hostNick = host.nick;
+            if (guest && guest.nick) state.match.guestNick = guest.nick;
+
+            connectedCount = m.players.filter(p => p.connected !== false).length;
+          }
+
+          const prevConnected = state.match.playersConnected || 0;
+          state.match.playersConnected = connectedCount;
+
+          // Einfache Lobby-Feedback-Logik:
+          // - 1 Spieler connected  → "Warte auf Gegner …"
+          // - 2 Spieler connected  → "Gegner verbunden: <Nick>"
+          let toastMsg = '';
+          if (connectedCount === 1 && prevConnected !== 1) {
+            toastMsg = 'Warte auf Gegner …';
+          } else if (connectedCount >= 2 && prevConnected < 2) {
+            const oppNick = (guest && guest.nick) || (host && host.nick) || 'Gegner';
+            toastMsg = `Gegner verbunden: ${oppNick}`;
+          }
+
+          if (toastMsg) {
+            showToast(toastMsg);
+          }
         }
         else if (msg.sys.type === 'match_error') {
           const m = msg.sys.message || 'Match-Fehler';

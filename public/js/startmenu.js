@@ -424,22 +424,32 @@
             return;
           }
 
-          // Sicherstellen, dass eine WS-Verbindung besteht (Baseroom "lobby" setzen, falls leer)
+          // Sicherstellen, dass eine WS-Verbindung besteht.
+          // Hier NICHT pauschal auf "lobby" zurückfallen, sondern den
+          // Match-Room (z.B. ZXZKW) verwenden, der bereits im UI steht.
           const roomIn = document.getElementById('room');
           if (roomIn && !roomIn.value) {
-            roomIn.value = 'lobby';
+            roomIn.value = existingRoom;
           }
+
           triggerConnectIfPossible();
 
           const netApi = SHN.net;
           if (netApi && typeof netApi.joinMatch === 'function') {
-            netApi.joinMatch(existingRoom, getNickFromMainUi());
-            ui.showToast('Verbinde zum Duell …');
+            const nick = getNickFromMainUi();
+
+            // Wie beim Host: warten, bis state.netOnline == true ist,
+            // damit join_match sicher auf einer offenen WS-Verbindung
+            // gesendet wird (sonst wird es im CONNECTING-State verworfen).
+            waitForOnlineThen(() => {
+              netApi.joinMatch(existingRoom, nick);
+              ui.showToast('Verbinde zum Duell …');
+              overlay.remove();
+            });
           } else {
             ui.showToast('Online-Duell nicht verfügbar');
           }
 
-          overlay.remove();
           return;
         }
 
