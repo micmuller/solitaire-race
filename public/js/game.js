@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.0.7';   // neue Version
+const VERSION = '3.0.25';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -19,6 +19,10 @@ window.VERSION = VERSION;
    - v3.0.4: Server-zentrierter Match-Flow (create_match/join_match) – Basis
    - v3.0.5: Lobby-infos vorbereitet
    - v3.0.7: Match-Start bei match_joined synchronisiert (Auto-newGame)
+   - v3.0.10: Push-Invite SYS-Handler + Invite-Popup
+   - v3.0.23: Nickname-Weitergabe im hello-SYS (Startmenü-Nick)
+   - v3.0.24: Zusätzliche hello-Syncs nach match_update (Nick-Fix für Guest-Join)
+   - v3.0.25: Nickname-Priorität aus localStorage (Fix für Guest-Join in Match-Room)
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -238,8 +242,23 @@ window.VERSION = VERSION;
   // 4) GAME STATE & DEAL
   // ======================================================
 
+  // Hilfsfunktion: Nickname aus localStorage laden (für Rejoins / neue Tabs)
+  function loadStoredNick() {
+    try {
+      if (typeof localStorage === 'undefined') return '';
+      const v = localStorage.getItem('nick');
+      if (!v) return '';
+      const trimmed = String(v).trim();
+      return trimmed || '';
+    } catch (e) {
+      console.warn('[NICK] Konnte Nick aus localStorage nicht laden:', e);
+      return '';
+    }
+  }
+
 
   const state = {
+    nick: loadStoredNick(),
     seed: url.searchParams.get('seed') || '',
     room: url.searchParams.get('room') || '',
     you: { stock: [], waste: [], tableau: [[], [], [], [], [], [], []] },
@@ -254,7 +273,11 @@ window.VERSION = VERSION;
       hostNick: '',
       guestNick: '',
       playersConnected: 0
-    }
+    },
+    // Letzte empfangene Einladung (für UI / Accept/Decline)
+    lastInvite: null,
+    // Vom Server gemeldete Online-Spieler (Presence / Lobby)
+    onlinePlayers: []
   };
 
   // ---------- Owner ----------
@@ -1417,6 +1440,12 @@ window.VERSION = VERSION;
     // Debug-Info
     setText('ov-ws-url', lastWsUrl || '—');
     setText('ov-ws-err', lastWsError || '—');
+
+    // Neue Anzeige: Nicknames im Status-Overlay
+    const hostNick  = (state.match && state.match.hostNick)  ? state.match.hostNick  : '—';
+    const guestNick = (state.match && state.match.guestNick) ? state.match.guestNick : '—';
+    setText('ov-hostnick', hostNick);
+    setText('ov-guestnick', guestNick);
   }
 
   setInterval(() => {
@@ -1481,6 +1510,55 @@ window.VERSION = VERSION;
   if (!room) {
     showToast('Room-ID fehlt');
     return;
+  }
+
+  // *** NEU: Nickname vor dem Verbindungsaufbau aus Startmenü / Hauptfeld
+  // in den State übernehmen, damit ws.onopen ihn zuverlässig verwenden kann.
+  try {
+    const overlayNickEl = document.getElementById('shn-startmenu-nick');
+    const mainNickInput = document.getElementById('nick');
+
+    let nickVal = '';
+
+    // 1) Nick aus localStorage hat höchste Priorität (falls vorhanden)
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('nick');
+        if (stored && String(stored).trim()) {
+          nickVal = String(stored).trim();
+        }
+      }
+    } catch (e2) {
+      console.warn('[WS] Konnte Nick nicht aus localStorage lesen:', e2);
+    }
+
+    // 2) Falls nichts im Storage: vorhandenen State-Nick verwenden
+    if (!nickVal && typeof state.nick === 'string' && state.nick.trim()) {
+      nickVal = state.nick.trim();
+    }
+
+    // 3) Falls immer noch leer: Nickname aus Startmenü / Hauptfeld lesen
+    if (!nickVal && overlayNickEl && typeof overlayNickEl.value === 'string' && overlayNickEl.value.trim()) {
+      nickVal = overlayNickEl.value.trim();
+    } else if (!nickVal && mainNickInput && typeof mainNickInput.value === 'string' && mainNickInput.value.trim()) {
+      nickVal = mainNickInput.value.trim();
+    }
+
+    if (nickVal) {
+      state.nick = nickVal;
+      console.log('[WS] connectWS() – Nick aus Storage/UI übernommen:', nickVal);
+
+      // sicherstellen, dass der Nick im Storage persistiert ist
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('nick', nickVal);
+        }
+      } catch (e3) {
+        console.warn('[WS] Konnte Nick vor connectWS nicht in localStorage speichern:', e3);
+      }
+    }
+  } catch (e) {
+    console.warn('[WS] Konnte Nick vor connectWS nicht aus UI lesen:', e);
   }
 
   const maxAttempts = 4;       // weniger Versuche
@@ -1549,7 +1627,64 @@ window.VERSION = VERSION;
     connectAttempts = 0;
 
     showToast('Verbunden');
-    sendSys({ type:'hello' });
+
+    // Nickname für hello-SYS ermitteln:
+    // 1) bevorzugt Nick aus localStorage,
+    // 2) dann state.nick (vom Startmenü gesetzt),
+    // 3) dann das Startmenü-Feld (falls noch vorhanden),
+    // 4) dann das Haupt-UI-Feld #nick,
+    // 5) Fallback auf "Player".
+    const mainNickInput = document.getElementById('nick');
+    const overlayNickEl = document.getElementById('shn-startmenu-nick');
+    let nickVal = '';
+
+    // 1) localStorage
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('nick');
+        if (stored && String(stored).trim()) {
+          nickVal = String(stored).trim();
+        }
+      }
+    } catch (e2) {
+      console.warn('[WS] Konnte Nick in ws.onopen nicht aus localStorage lesen:', e2);
+    }
+
+    // 2) state.nick
+    if (!nickVal && typeof state.nick === 'string' && state.nick.trim()) {
+      nickVal = state.nick.trim();
+    }
+
+    // 3) Overlay-Feld
+    if (!nickVal && overlayNickEl && typeof overlayNickEl.value === 'string' && overlayNickEl.value.trim()) {
+      nickVal = overlayNickEl.value.trim();
+    }
+    // 4) Haupt-UI-Feld #nick
+    else if (!nickVal && mainNickInput && typeof mainNickInput.value === 'string' && mainNickInput.value.trim()) {
+      nickVal = mainNickInput.value.trim();
+    }
+
+    // 5) Fallback
+    if (!nickVal) {
+      nickVal = 'Player';
+    }
+
+    // Debug: Nickname verwenden
+    console.log('[WS] Using nick:', nickVal);
+
+    // für spätere Verwendungen den Nick auch im State merken
+    state.nick = nickVal;
+
+    // Nick in localStorage persistieren
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('nick', state.nick);
+      }
+    } catch (e) {
+      console.warn('[NICK] Konnte Nick in localStorage (connectWS) nicht speichern:', e);
+    }
+
+    sendSys({ type: 'hello', nick: nickVal });
     updateOverlay();
 
     pingTimer = setInterval(() => {
@@ -1599,6 +1734,8 @@ window.VERSION = VERSION;
             }
             hasSetPerspective = true;
           }
+
+          // Nur Handshake beantworten – Nickname-Sync passiert über match_created/joined
           sendSys({ type:'hello-ack', from: clientId });
         }
         else if (msg.sys.type === 'hello-ack') {
@@ -1619,6 +1756,12 @@ window.VERSION = VERSION;
         }
         else if (msg.sys.type === 'pong' && typeof msg.sys.ts === 'number') {
           latencyMs = Date.now() - msg.sys.ts;
+        }
+        // Online-Player-Liste vom Server
+        else if (msg.sys.type === 'player_list') {
+          const players = Array.isArray(msg.sys.players) ? msg.sys.players : [];
+          state.onlinePlayers = players;
+          console.log('[ONLINE] players', players);
         }
         // Match-Flow: neue match-bezogene SYS-Handler
         else if (msg.sys.type === 'match_created') {
@@ -1662,6 +1805,19 @@ window.VERSION = VERSION;
             history.replaceState({}, '', urlObj);
           } catch (e) {
             console.warn('[WS] Konnte URL nach match_created nicht aktualisieren:', e);
+          }
+
+          // Nickname-Logik: wenn der Server uns einen Host-Namen liefert,
+          // diesen auch lokal übernehmen und per hello an den Server bestätigen.
+          if (hostNick) {
+            if (!state.nick || state.nick === 'Player') {
+              state.nick = hostNick;
+            }
+            try {
+              sendSys({ type: 'hello', nick: state.nick });
+            } catch (e) {
+              console.warn('[MATCH] konnte korrigierendes hello für Host nicht senden:', e);
+            }
           }
 
           const label = matchId ? `Match erstellt: ${matchId}` : 'Match erstellt';
@@ -1709,6 +1865,21 @@ window.VERSION = VERSION;
             history.replaceState({}, '', urlObj);
           } catch (e) {
             console.warn('[WS] Konnte URL nach match_joined nicht aktualisieren:', e);
+          }
+
+          // Nickname-Logik für den Joiner: wenn der Server uns einen Guest-Namen
+          // liefert, diesen lokal als state.nick übernehmen und per hello
+          // an den Server bestätigen, damit Logs und weitere SYS-Messages
+          // den korrekten Nick tragen.
+          if (guestNick) {
+            if (!state.nick || state.nick === 'Player') {
+              state.nick = guestNick;
+            }
+            try {
+              sendSys({ type: 'hello', nick: state.nick });
+            } catch (e) {
+              console.warn('[MATCH] konnte korrigierendes hello für Guest nicht senden:', e);
+            }
           }
 
           // WICHTIG:
@@ -1780,6 +1951,20 @@ window.VERSION = VERSION;
           if (toastMsg) {
             showToast(toastMsg);
           }
+
+          // Sicherstellen, dass der Server unseren aktuellen Nick in diesem Room kennt.
+          // Gerade beim Guest-Join (Invite-Flows) kann der interne Match-Client sonst
+          // auf "Player" stehen bleiben. Ein erneutes hello mit state.nick korrigiert das.
+          try {
+            if (state.nick && typeof state.nick === 'string') {
+              const trimmedNick = state.nick.trim();
+              if (trimmedNick && trimmedNick !== 'Player' && ws && ws.readyState === WebSocket.OPEN) {
+                sendSys({ type: 'hello', nick: trimmedNick });
+              }
+            }
+          } catch (e) {
+            console.warn('[MATCH] konnte hello nach match_update nicht senden:', e);
+          }
         }
         else if (msg.sys.type === 'match_error') {
           const m = msg.sys.message || 'Match-Fehler';
@@ -1807,6 +1992,86 @@ window.VERSION = VERSION;
           state.over = true;
           showToast('Gegner hat das Spiel beendet');
           showEndPopup('Der Gegner hat das Spiel beendet');
+        }
+        // -------- PUSH-INVITES (Client-seitige Basis-Handler) --------
+        else if (msg.sys.type === 'invite') {
+          const matchId  = msg.sys.matchId || null;
+          const fromCid  = msg.sys.fromCid || null;
+          const fromNick = msg.sys.fromNick || 'Spieler';
+          const createdAt = msg.sys.createdAt || null;
+
+          state.lastInvite = {
+            matchId,
+            fromCid,
+            hostCid: fromCid,
+            fromNick,
+            createdAt
+          };
+
+          console.log('[INVITE] received', msg.sys);
+
+          // Wenn das Startmenü eine Popup-Funktion bereitstellt, diese nutzen
+          try {
+            if (window.SHN &&
+                window.SHN.startmenu &&
+                typeof window.SHN.startmenu.showInvitePopup === 'function') {
+              window.SHN.startmenu.showInvitePopup(state.lastInvite);
+            } else {
+              const label = fromNick
+                ? `${fromNick} lädt dich zu einem Duell ein`
+                : 'Du wurdest zu einem Duell eingeladen';
+              showToast(label);
+            }
+          } catch (e) {
+            console.warn('[INVITE] Fehler beim Anzeigen des Invite-Popups:', e);
+            const fallback = fromNick
+              ? `${fromNick} lädt dich zu einem Duell ein`
+              : 'Du wurdest zu einem Duell eingeladen';
+            showToast(fallback);
+          }
+        }
+        else if (msg.sys.type === 'invite_sent') {
+          // Bestätigung für den Einladenden
+          console.log('[INVITE] sent', msg.sys);
+          showToast('Einladung gesendet');
+        }
+        else if (msg.sys.type === 'invite_accept') {
+          const fromNick = msg.sys.fromNick || 'Spieler';
+          console.log('[INVITE] accept', msg.sys);
+
+          // Match-State für den Host aktualisieren, damit der Guest-Name
+          // im Overlay (ov-guestnick) angezeigt wird.
+          try {
+            if (!state.match) {
+              state.match = {
+                id: state.room || '',
+                status: 'ready',
+                hostNick: '',
+                guestNick: fromNick,
+                playersConnected: 2
+              };
+            } else {
+              if (!state.match.id) {
+                state.match.id = state.room || state.match.id;
+              }
+              state.match.status = 'ready';
+              state.match.guestNick = fromNick;
+              const prev = state.match.playersConnected || 0;
+              if (prev < 2) {
+                state.match.playersConnected = 2;
+              }
+            }
+          } catch (e) {
+            console.warn('[INVITE] konnte Match-State bei invite_accept nicht aktualisieren:', e);
+          }
+
+          showToast(`Einladung akzeptiert von ${fromNick}`);
+          updateOverlay();
+        }
+        else if (msg.sys.type === 'invite_decline') {
+          const fromNick = msg.sys.fromNick || 'Spieler';
+          console.log('[INVITE] decline', msg.sys);
+          showToast(`Einladung abgelehnt von ${fromNick}`);
         }
 
 
@@ -2015,8 +2280,31 @@ function newGame() {
   function createMatchClient(nick) {
     const name =
       (nick && String(nick).trim()) ||
+      (typeof state.nick === 'string' && state.nick.trim()) ||
       (document.getElementById('nick')?.value?.trim()) ||
       'Player';
+
+    // Nick im State fixieren
+    state.nick = name;
+    console.log('[MATCH] createMatchClient nick =', name);
+
+    // Nick persistieren
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('nick', name);
+      }
+    } catch (e) {
+      console.warn('[NICK] Konnte Nick in localStorage (createMatchClient) nicht speichern:', e);
+    }
+
+    // Korrigierendes hello mit dem endgültigen Nick an den Server senden,
+    // damit Logs und weitere SYS-Messages nicht mehr "Player" enthalten.
+    try {
+      sendSys({ type: 'hello', nick: name });
+    } catch (e) {
+      console.warn('[MATCH] konnte hello für createMatchClient nicht senden:', e);
+    }
+
     sendSys({ type: 'create_match', nick: name });
   }
 
@@ -2028,11 +2316,171 @@ function newGame() {
       showToast('Match-Code fehlt');
       return;
     }
+
     const name =
       (nick && String(nick).trim()) ||
+      (typeof state.nick === 'string' && state.nick.trim()) ||
       (document.getElementById('nick')?.value?.trim()) ||
       'Player';
+
+    // Nick im State fixieren
+    state.nick = name;
+    console.log('[MATCH] joinMatchClient nick =', name);
+
+    // Nick persistieren
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('nick', name);
+      }
+    } catch (e) {
+      console.warn('[NICK] Konnte Nick in localStorage (joinMatchClient) nicht speichern:', e);
+    }
+
+    // Korrigierendes hello mit dem endgültigen Nick an den Server senden,
+    // damit Logs und weitere SYS-Messages den richtigen Guest-Namen haben.
+    try {
+      sendSys({ type: 'hello', nick: name });
+    } catch (e) {
+      console.warn('[MATCH] konnte hello für joinMatchClient nicht senden:', e);
+    }
+
     sendSys({ type: 'join_match', matchId: code, nick: name });
+  }
+
+  function sendInviteClient(targetCid, matchId, fromNick) {
+    const code =
+      (matchId && String(matchId).trim()) ||
+      state.room ||
+      url.searchParams.get('room') ||
+      '';
+    if (!code) {
+      showToast('Kein Match für Einladung');
+      return;
+    }
+    if (!targetCid) {
+      showToast('Ziel-Spieler-ID fehlt');
+      return;
+    }
+
+    const name =
+      (fromNick && String(fromNick).trim()) ||
+      (typeof state.nick === 'string' && state.nick.trim()) ||
+      (document.getElementById('nick')?.value?.trim()) ||
+      'Player';
+
+    sendSys({
+      type: 'invite',
+      matchId: code,
+      targetCid,
+      fromNick: name
+    });
+  }
+
+  function acceptInviteClient(matchId, hostCid, fromNick) {
+    const invite = state.lastInvite || {};
+    const mId = (matchId && String(matchId).trim()) || invite.matchId || '';
+    const hCid = (hostCid && String(hostCid).trim()) || invite.hostCid || '';
+
+    if (!mId || !hCid) {
+      showToast('Einladung ist abgelaufen oder ungültig');
+      return;
+    }
+
+    const name =
+      (fromNick && String(fromNick).trim()) ||
+      (typeof state.nick === 'string' && state.nick.trim()) ||
+      (document.getElementById('nick')?.value?.trim()) ||
+      'Player';
+
+    // Nick im State fixieren und korrigierendes hello senden
+    state.nick = name;
+
+    // Nick persistieren
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('nick', name);
+      }
+    } catch (e) {
+      console.warn('[NICK] Konnte Nick in localStorage (acceptInviteClient) nicht speichern:', e);
+    }
+
+    try {
+      sendSys({ type: 'hello', nick: name });
+    } catch (e) {
+      console.warn('[INVITE] konnte hello für acceptInviteClient nicht senden:', e);
+    }
+
+    // Lokalen Match-State für den Guest sofort aktualisieren,
+    // damit das Overlay Host- und Guest-Namen anzeigen kann,
+    // noch bevor ein match_joined/match_update vom Server kommt.
+    try {
+      if (!state.match) {
+        state.match = {
+          id: mId,
+          status: 'ready',
+          hostNick: invite.fromNick || 'Host',
+          guestNick: name,
+          playersConnected: 2
+        };
+      } else {
+        state.match.id = mId || state.match.id;
+        state.match.status = 'ready';
+        if (invite.fromNick) state.match.hostNick = invite.fromNick;
+        state.match.guestNick = name;
+        const prev = state.match.playersConnected || 0;
+        if (prev < 2) {
+          state.match.playersConnected = 2;
+        }
+      }
+
+      // Room auch lokal setzen (wird später durch match_joined bestätigt)
+      state.room = mId;
+      const roomIn = document.getElementById('room');
+      if (roomIn) roomIn.value = mId;
+
+      updateOverlay();
+    } catch (e) {
+      console.warn('[INVITE] konnte Match-State beim Guest nicht aktualisieren:', e);
+    }
+
+    sendSys({
+      type: 'invite_accept',
+      matchId: mId,
+      hostCid: hCid,
+      fromNick: name
+    });
+  }
+
+  function declineInviteClient(matchId, hostCid, fromNick) {
+    const invite = state.lastInvite || {};
+    const mId = (matchId && String(matchId).trim()) || invite.matchId || '';
+    const hCid = (hostCid && String(hostCid).trim()) || invite.hostCid || '';
+
+    if (!mId || !hCid) {
+      showToast('Einladung ist abgelaufen oder ungültig');
+      return;
+    }
+
+    const name =
+      (fromNick && String(fromNick).trim()) ||
+      (typeof state.nick === 'string' && state.nick.trim()) ||
+      (document.getElementById('nick')?.value?.trim()) ||
+      'Player';
+
+    sendSys({
+      type: 'invite_decline',
+      matchId: mId,
+      hostCid: hCid,
+      fromNick: name
+    });
+  }
+
+  function refreshOnlinePlayersClient() {
+    try {
+      sendSys({ type: 'who_is_online' });
+    } catch (e) {
+      console.warn('[ONLINE] konnte who_is_online nicht senden', e);
+    }
   }
 
   // ======================================================
@@ -2082,7 +2530,11 @@ function newGame() {
     send,
     sendSys,
     createMatch: createMatchClient,
-    joinMatch: joinMatchClient
+    joinMatch: joinMatchClient,
+    sendInvite: sendInviteClient,
+    acceptInvite: acceptInviteClient,
+    declineInvite: declineInviteClient,
+    refreshOnlinePlayers: refreshOnlinePlayersClient
   };
 
   // 5) Input-API

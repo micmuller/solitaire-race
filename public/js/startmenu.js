@@ -135,6 +135,29 @@
         font-size: 0.8rem;
         opacity: 0.75;
       }
+      .shn-startmenu-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        margin-top: 0.9rem;
+      }
+      .shn-startmenu-actions button {
+        padding: 0.4rem 0.9rem;
+        border-radius: 0.45rem;
+        border: 1px solid rgba(156,163,175,0.7);
+        background: #1f2937;
+        color: #e5e7eb;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      .shn-startmenu-actions button.primary {
+        background: #2563eb;
+        border-color: #2563eb;
+      }
+      .shn-startmenu-actions button.danger {
+        background: #7f1d1d;
+        border-color: #b91c1c;
+      }
       .shn-startmenu-small-link {
         color: #93c5fd;
         cursor: pointer;
@@ -142,6 +165,147 @@
       }
     `;
     document.head.appendChild(style);
+  }
+  // ------------------------------------------------------
+  // Einladung annehmen/ablehnen Popup
+  // ------------------------------------------------------
+  function showInvitePopup(invite) {
+    ensureStartMenuStyles();
+
+    // Falls bereits ein Invite-Popup offen ist, nicht noch eins öffnen
+    if (document.getElementById('shn-invite-overlay')) return;
+
+    const data = invite || (window.SHN && window.SHN.state && window.SHN.state.lastInvite) || {};
+    const matchId  = data.matchId || '';
+    const hostCid  = data.hostCid || data.fromCid || '';
+    const fromNick = data.fromNick || 'Spieler';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'shn-invite-overlay';
+    overlay.className = 'shn-startmenu-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'shn-startmenu-dialog';
+
+    dialog.innerHTML = `
+      <div class="shn-startmenu-header">
+        <div class="shn-startmenu-title">Einladung zum Duell</div>
+        <div class="shn-startmenu-version">v${meta.VERSION || ''}</div>
+      </div>
+      <div class="shn-startmenu-field">
+        <label>Von</label>
+        <div class="shn-startmenu-info">${fromNick}</div>
+      </div>
+      <div class="shn-startmenu-field">
+        <label>Match-ID</label>
+        <div class="shn-startmenu-info">${matchId || 'unbekannt'}</div>
+      </div>
+      <div class="shn-startmenu-actions">
+        <button type="button" id="shn-invite-decline" class="danger">Ablehnen</button>
+        <button type="button" id="shn-invite-accept" class="primary">Annehmen</button>
+      </div>
+    `;
+
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    const btnAccept = dialog.querySelector('#shn-invite-accept');
+    const btnDecline = dialog.querySelector('#shn-invite-decline');
+
+    function closePopup() {
+      overlay.remove();
+    }
+
+    if (btnAccept) {
+      btnAccept.addEventListener('click', () => {
+        const netApi = SHN.net;
+        const nick = getNickFromMainUi();
+        if (!matchId || !hostCid || !netApi) {
+          ui.showToast('Einladung ist nicht mehr gültig');
+          closePopup();
+          return;
+        }
+
+        // Nickname VOR dem neuen Connect in Main-UI & State schreiben,
+        // damit das erste hello im Match-Raum nicht wieder "Player" sendet.
+        try {
+          const mainNickEl = document.getElementById('nick');
+          if (mainNickEl) {
+            mainNickEl.value = nick;
+          }
+          if (SHN.state) {
+            SHN.state.nick = nick;
+          }
+        } catch (e) {
+          console.warn('[INVITE] konnte Nick beim Invite-Accept nicht setzen:', e);
+        }
+
+        // Room-Kontext auf das eingeladene Match setzen:
+        // 1) SHN.state.room aktualisieren
+        // 2) Hidden-Input #room anpassen
+        // 3) URL-Parameter ?room= aktualisieren
+        try {
+          if (SHN.state) {
+            SHN.state.room = matchId;
+          }
+        } catch (e) {
+          console.warn('[INVITE] konnte SHN.state.room nicht setzen', e);
+        }
+
+        const roomIn = document.getElementById('room');
+        if (roomIn) {
+          roomIn.value = matchId;
+        }
+
+        try {
+          const urlObj = new URL(window.location.href);
+          urlObj.searchParams.set('room', matchId);
+          history.replaceState({}, '', urlObj);
+        } catch (e) {
+          console.warn('[INVITE] konnte URL für Match-Raum nicht aktualisieren', e);
+        }
+
+        // Zuerst WS-Verbindung sicherstellen (jetzt mit dem richtigen Room)
+        triggerConnectIfPossible();
+
+        if (typeof netApi.acceptInvite !== 'function' || typeof netApi.joinMatch !== 'function') {
+          ui.showToast('Invite-Funktion nicht verfügbar');
+          closePopup();
+          return;
+        }
+
+        waitForOnlineThen(() => {
+          // Nach erfolgreichem Connect explizit ein hello mit dem korrekten Nick senden,
+          // damit ein eventuell vorheriges hello("Player") überschrieben wird.
+          try {
+            if (netApi && typeof netApi.sendSys === 'function') {
+              netApi.sendSys({ type: 'hello', nick });
+            }
+          } catch (err) {
+            console.warn('[INVITE] hello(nick) nach Connect fehlgeschlagen:', err);
+          }
+
+          // Host benachrichtigen, dass wir akzeptieren
+          netApi.acceptInvite(matchId, hostCid, nick);
+          // Dann dem Match beitreten; der Server erledigt den Rest (match_joined/reset)
+          netApi.joinMatch(matchId, nick);
+          ui.showToast('Verbinde zum Duell …');
+          closePopup();
+        });
+      });
+    }
+
+    if (btnDecline) {
+      btnDecline.addEventListener('click', () => {
+        const netApi = SHN.net;
+        const nick = getNickFromMainUi();
+        if (matchId && hostCid && netApi && typeof netApi.declineInvite === 'function') {
+          netApi.declineInvite(matchId, hostCid, nick);
+        }
+        ui.showToast('Einladung abgelehnt');
+        closePopup();
+      });
+    }
   }
 
   function buildShareLink(room, seed) {
@@ -255,6 +419,38 @@
     const dialog = document.createElement('div');
     dialog.className = 'shn-startmenu-dialog';
 
+    // Interval-ID für regelmäßiges Aktualisieren der Online-Spielerliste
+    let onlineRefreshIntervalId = null;
+
+    function destroyOverlay() {
+      if (onlineRefreshIntervalId) {
+        clearInterval(onlineRefreshIntervalId);
+        onlineRefreshIntervalId = null;
+      }
+      overlay.remove();
+    }
+
+    function updateOnlineDropdown(inviteTargetSelectEl) {
+      if (!inviteTargetSelectEl) return;
+
+      // Wenn bereits ein Spieler ausgewählt ist, nicht neu aufbauen,
+      // damit die Auswahl durch das 5-Sekunden-Refresh nicht verloren geht.
+      if (inviteTargetSelectEl.value) {
+        return;
+      }
+
+      inviteTargetSelectEl.innerHTML = '<option value="">– Spieler auswählen –</option>';
+      const players = Array.isArray(state.onlinePlayers) ? state.onlinePlayers : [];
+      const others = players.filter(p => !p.isSelf);
+      for (const p of others) {
+        const opt = document.createElement('option');
+        const shortCid = (p.cid || '').slice(0, 6);
+        opt.value = p.cid;
+        opt.textContent = `${p.nick || 'Player'} (${shortCid})`;
+        inviteTargetSelectEl.appendChild(opt);
+      }
+    }
+
     dialog.innerHTML = `
       <div class="shn-startmenu-header">
         <div class="shn-startmenu-title">Solitaire HighNoon</div>
@@ -280,9 +476,17 @@
         <button type="button" id="shn-startmenu-human" class="shn-startmenu-button primary">
           <span class="shn-startmenu-button-label">
             <span>🧍 vs 🧍</span>
-            <span>Gegen menschlichen Gegner</span>
+            <span>Gegen menschlichen Gegner (Host)</span>
           </span>
           <span class="shn-startmenu-chip">Online-Duell</span>
+        </button>
+
+        <button type="button" id="shn-startmenu-join-wait" class="shn-startmenu-button">
+          <span class="shn-startmenu-button-label">
+            <span>🧍 ⏳</span>
+            <span>An Spiel teilnehmen (warten auf Einladung)</span>
+          </span>
+          <span class="shn-startmenu-chip">Online, passiv</span>
         </button>
 
         <button type="button" id="shn-startmenu-bot" class="shn-startmenu-button">
@@ -307,9 +511,22 @@
           <label>Einladungslink (zum Senden an den Gegner)</label>
           <input id="shn-startmenu-link" class="shn-startmenu-input" type="text" readonly />
         </div>
+        <div class="shn-startmenu-field" id="shn-startmenu-invite-target-wrapper" style="display:none;">
+          <label>Gegenspieler auswählen</label>
+          <select id="shn-startmenu-target-select" class="shn-startmenu-input">
+            <option value="">– Spieler auswählen –</option>
+          </select>
+          <div class="shn-startmenu-info">
+            Optional: Manuelle Spieler-ID, falls der Gegenspieler nicht in der Liste erscheint.
+          </div>
+          <input id="shn-startmenu-targetcid" class="shn-startmenu-input" type="text" placeholder="Client-ID des Gegners (cid)" />
+        </div>
       </div>
 
       <div class="shn-startmenu-footer">
+        <span id="shn-startmenu-send-invite" class="shn-startmenu-small-link" style="display:none; margin-right:auto;">
+          Einladung senden
+        </span>
         <span id="shn-startmenu-copy-link" class="shn-startmenu-small-link" style="display:none;">
           Link kopieren
         </span>
@@ -324,6 +541,7 @@
 
     // Events verdrahten
     const btnHuman = dialog.querySelector('#shn-startmenu-human');
+    const btnJoinWait = dialog.querySelector('#shn-startmenu-join-wait');
     const btnBot   = dialog.querySelector('#shn-startmenu-bot');
     const panelHuman = dialog.querySelector('#shn-startmenu-human-panel');
     const roomOut  = dialog.querySelector('#shn-startmenu-room');
@@ -333,21 +551,82 @@
     const closeBtn = dialog.querySelector('#shn-startmenu-close');
     const nickOverlay = dialog.querySelector('#shn-startmenu-nick');
     const inviteNote = dialog.querySelector('#shn-startmenu-invite-note');
+    const inviteTargetWrapper = dialog.querySelector('#shn-startmenu-invite-target-wrapper');
+    const inviteTargetSelect = dialog.querySelector('#shn-startmenu-target-select');
+    const inviteTargetCidInput = dialog.querySelector('#shn-startmenu-targetcid');
+    const sendInviteLink = dialog.querySelector('#shn-startmenu-send-invite');
 
-    // Nickname aus dem Haupt-UI übernehmen, falls vorhanden
+    // Zentral: Nickname vor jeglichem Connect in State & Main-UI spiegeln
+    function syncNickEarly() {
+      const overlayNickEl = dialog.querySelector('#shn-startmenu-nick');
+      const mainNickEl = document.getElementById('nick');
+
+      let n = overlayNickEl && typeof overlayNickEl.value === 'string' ? overlayNickEl.value.trim() : '';
+      if (!n && mainNickEl && typeof mainNickEl.value === 'string') {
+        n = mainNickEl.value.trim();
+      }
+      if (!n) n = 'Player';
+
+      if (mainNickEl) {
+        mainNickEl.value = n;
+      }
+      if (SHN.state) {
+        SHN.state.nick = n;
+      }
+      // Nick auch im localStorage persistent halten, damit Reloads und neue Verbindungen
+      // denselben Spielernamen weiterverwenden können.
+      try {
+        if (window.localStorage) {
+          window.localStorage.setItem('shn_nick', n);
+        }
+      } catch (e) {
+        console.warn('[StartMenu] Konnte Nick nicht in localStorage schreiben:', e);
+      }
+    }
+
+    // Nickname-Sync: Overlay ⇄ Main UI (inkl. localStorage)
     try {
       const mainNickEl = document.getElementById('nick');
-      if (mainNickEl && nickOverlay && !nickOverlay.value) {
-        nickOverlay.value = mainNickEl.value || '';
+      const overlayNickEl = dialog.querySelector('#shn-startmenu-nick');
+
+      // 0) Aus localStorage vorbefüllen, falls vorhanden
+      try {
+        if (window.localStorage) {
+          const stored = window.localStorage.getItem('shn_nick');
+          if (stored && stored.trim()) {
+            if (overlayNickEl && !overlayNickEl.value.trim()) {
+              overlayNickEl.value = stored.trim();
+            }
+            if (mainNickEl && !mainNickEl.value.trim()) {
+              mainNickEl.value = stored.trim();
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[StartMenu] Konnte Nick nicht aus localStorage lesen:', e);
       }
-      // Änderungen im Overlay zurück ins Haupt-UI spiegeln
-      if (nickOverlay && mainNickEl) {
-        nickOverlay.addEventListener('input', () => {
-          mainNickEl.value = nickOverlay.value;
+
+      // 1) Overlay befüllen, falls leer
+      if (overlayNickEl && mainNickEl) {
+        if (!overlayNickEl.value.trim() && mainNickEl.value.trim()) {
+          overlayNickEl.value = mainNickEl.value.trim();
+        }
+      }
+
+      // 2) Sofort beim Öffnen Nickname zurück ins Main-UI spiegeln,
+      //    damit "hello" IMMER den korrekten Nick bekommt, egal welche Taste gedrückt wird.
+      if (overlayNickEl && mainNickEl) {
+        mainNickEl.value = overlayNickEl.value.trim();
+      }
+
+      // 3) Live-Sync bei Eingabe
+      if (overlayNickEl && mainNickEl) {
+        overlayNickEl.addEventListener('input', () => {
+          mainNickEl.value = overlayNickEl.value.trim();
         });
       }
     } catch (e) {
-      console.warn('[StartMenu] Konnte Nickname nicht synchronisieren:', e);
+      console.warn('[StartMenu] Nick-Sync Fehler:', e);
     }
 
     // Restart-Popup-Buttons (global im DOM)
@@ -374,7 +653,7 @@
         const rp = document.getElementById('restart-popup');
         if (rp) rp.classList.remove('show');
       }
-      overlay.remove();
+      destroyOverlay();
     }
 
     // Falls Room/Seed bereits in der URL stehen (z.B. via Einladungslink),
@@ -413,6 +692,9 @@
 
     if (btnHuman) {
       btnHuman.addEventListener('click', () => {
+        // Nickname zentral vor allem anderen synchronisieren
+        syncNickEarly();
+
         // Wenn wir über einen Einladungslink hier sind, sollen wir dem bestehenden Match beitreten.
         if (inviteMode) {
           const existingRoom =
@@ -441,11 +723,11 @@
             // Wie beim Host: warten, bis state.netOnline == true ist,
             // damit join_match sicher auf einer offenen WS-Verbindung
             // gesendet wird (sonst wird es im CONNECTING-State verworfen).
-            waitForOnlineThen(() => {
-              netApi.joinMatch(existingRoom, nick);
-              ui.showToast('Verbinde zum Duell …');
-              overlay.remove();
-            });
+          waitForOnlineThen(() => {
+            netApi.joinMatch(existingRoom, nick);
+            ui.showToast('Verbinde zum Duell …');
+            destroyOverlay();
+          });
           } else {
             ui.showToast('Online-Duell nicht verfügbar');
           }
@@ -530,6 +812,15 @@
           waitForOnlineThen(() => {
             netApi.createMatch(nick);
 
+            // Optional: Online-Spieler-Liste vom Server anfordern
+            try {
+              if (SHN.net && typeof SHN.net.refreshOnlinePlayers === 'function') {
+                SHN.net.refreshOnlinePlayers();
+              }
+            } catch (e) {
+              console.warn('[StartMenu] Konnte Online-Spieler nicht aktualisieren:', e);
+            }
+
             // Panel sichtbar machen, Link-Feld vorbereiten
             if (panelHuman) panelHuman.style.display = 'block';
             if (copyLink) copyLink.style.display = 'inline';
@@ -546,6 +837,25 @@
                 if (roomOut) roomOut.value = r;
                 if (seedOut) seedOut.value = s;
                 if (linkOut) linkOut.value = buildShareLink(r, s);
+                // Invite-UI für den Host einblenden, sobald ein Match existiert
+                if (inviteTargetWrapper) inviteTargetWrapper.style.display = 'flex';
+                if (sendInviteLink) sendInviteLink.style.display = 'inline';
+
+                // Dropdown initial mit aktuellen Online-Spielern füllen
+                updateOnlineDropdown(inviteTargetSelect);
+
+                // Regelmäßig Online-Spieler-Liste aktualisieren, solange das Startmenü offen ist
+                if (!onlineRefreshIntervalId && SHN.net && typeof SHN.net.refreshOnlinePlayers === 'function') {
+                  onlineRefreshIntervalId = setInterval(() => {
+                    try {
+                      SHN.net.refreshOnlinePlayers();
+                      updateOnlineDropdown(inviteTargetSelect);
+                    } catch (e) {
+                      console.warn('[StartMenu] Fehler beim Aktualisieren der Online-Spieler:', e);
+                    }
+                  }, 5000);
+                }
+
                 clearInterval(pollId);
               } else if (attempts >= maxAttempts) {
                 clearInterval(pollId);
@@ -593,7 +903,7 @@
         }
 
         ui.showToast('Bot-Spiel (Easy) gestartet – du spielst unten, der Bot oben.');
-        overlay.remove();
+        destroyOverlay();
       });
     }
 
@@ -650,9 +960,79 @@
       });
     }
 
+    if (sendInviteLink && inviteTargetCidInput) {
+      sendInviteLink.addEventListener('click', () => {
+        let cid = '';
+        // 1) Auswahl aus Dropdown bevorzugen
+        if (inviteTargetSelect && inviteTargetSelect.value) {
+          cid = inviteTargetSelect.value.trim();
+        } else {
+          // 2) Fallback: manuelle Eingabe
+          cid = (inviteTargetCidInput.value || '').trim();
+        }
+
+        if (!cid) {
+          ui.showToast('Bitte einen Spieler auswählen oder eine Spieler-ID eingeben');
+          return;
+        }
+
+        const netApi = SHN.net;
+        if (!netApi || typeof netApi.sendInvite !== 'function') {
+          ui.showToast('Invite-Funktion nicht verfügbar');
+          return;
+        }
+        const roomCode =
+          (roomOut && roomOut.value && roomOut.value.trim()) ||
+          state.room ||
+          '';
+        if (!roomCode) {
+          ui.showToast('Kein Match für Einladung');
+          return;
+        }
+
+        netApi.sendInvite(cid, roomCode, getNickFromMainUi());
+      });
+    }
+
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
-        overlay.remove();
+        destroyOverlay();
+      });
+    }
+
+    if (btnJoinWait) {
+      btnJoinWait.addEventListener('click', () => {
+        // Nickname zentral vor allem anderen synchronisieren
+        syncNickEarly();
+
+        // Auf "lobby" verbinden, um sichtbar für den Host zu sein
+        const roomIn = document.getElementById('room');
+        if (roomIn && !roomIn.value) {
+          roomIn.value = 'lobby';
+        }
+
+        // Verbindung aufbauen
+        triggerConnectIfPossible();
+        ui.showToast('Verbinde und warte auf Einladung …');
+
+        // Sicherstellen, dass ein hello-SYS mit Nickname gesendet wird,
+        // sobald die Verbindung online ist (zusätzlich zum ws.onopen in game.js).
+        if (typeof waitForOnlineThen === 'function' &&
+            SHN.net &&
+            typeof SHN.net.sendSys === 'function') {
+
+          const finalNick = (document.getElementById('nick')?.value?.trim()) || 'Player';
+
+          waitForOnlineThen(() => {
+            try {
+              SHN.net.sendSys({ type: 'hello', nick: finalNick });
+            } catch (err) {
+              console.warn('[StartMenu] hello(nick) fehlgeschlagen:', err);
+            }
+          });
+        }
+
+        destroyOverlay();
       });
     }
 
@@ -663,6 +1043,17 @@
   // Init
   // ------------------------------------------------------
   window.addEventListener('DOMContentLoaded', () => {
+    // Default-Room "lobby" setzen, falls noch kein Room hinterlegt ist,
+    // damit ein Verbinden ohne explizite Room-ID möglich ist.
+    try {
+      const roomIn = document.getElementById('room');
+      if (roomIn && !roomIn.value) {
+        roomIn.value = 'lobby';
+      }
+    } catch (e) {
+      console.warn('[StartMenu] Konnte Default-Room nicht setzen:', e);
+    }
+
     // Startmenü beim Laden anzeigen
     createStartMenuOverlay();
   });
@@ -670,5 +1061,6 @@
   // Startmenü-API an SHN hängen, damit z.B. game.js es aufrufen kann
   SHN.startmenu = SHN.startmenu || {};
   SHN.startmenu.open = createStartMenuOverlay;
+  SHN.startmenu.showInvitePopup = showInvitePopup;
 
 })();

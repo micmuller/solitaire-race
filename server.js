@@ -5,6 +5,7 @@
 //  Author: micmuller & ChatGPT (GPT-5)
 // -v1.6.3: Mehr Logging bei SYS/MOVE Nachrichten
 // -v2.0.0: Komplett überarbeiteter Match-/WebSocket-Server
+// -v2.1.5: Invite-System (Push-Einladungen)
 // ================================================================
 
 const http   = require('node:http');
@@ -16,7 +17,7 @@ const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
 // ---------- Version / CLI ----------
-const VERSION = '2.0.0';
+const VERSION = '2.1.5';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -108,6 +109,12 @@ const httpServer = http.createServer(handleRequest);
 // ================================================================
 const wss = new WebSocketServer({ noServer: true });
 const rooms = new Map();
+const clientsById = new Map(); // cid -> ws
+
+// Einfaches Player-Verzeichnis für Presence / Online-Liste
+// cid -> { cid, nick, room, lastSeen }
+const playerDirectory = new Map();
+
 const {
   createMatchForClient,
   joinMatchForClient,
@@ -128,6 +135,13 @@ function joinRoom(ws, room) {
   ws.__room = room;
   if (!rooms.has(room)) rooms.set(room, new Set());
   rooms.get(room).add(ws);
+
+  // Player-Directory aktualisieren, falls Eintrag existiert
+  if (ws.__cid && playerDirectory.has(ws.__cid)) {
+    const entry = playerDirectory.get(ws.__cid);
+    entry.room = room;
+    entry.lastSeen = Date.now();
+  }
 }
 function leaveRoom(ws) {
   const room = getRoomOf(ws);
@@ -216,6 +230,14 @@ wss.on('connection', (ws, req, room) => {
   joinRoom(ws, room);
   const cid = Math.random().toString(36).slice(2);
   ws.__cid = cid;
+  clientsById.set(cid, ws);
+  // Initialer Eintrag im Player-Verzeichnis (Nick folgt bei "hello")
+  playerDirectory.set(cid, {
+    cid,
+    nick: 'Player',
+    room,
+    lastSeen: Date.now()
+  });
   console.log(`[CONNECT] ${isoNow()} room="${room}" ip=${ip} cid=${cid} peers=${peersInRoom(room)}`);
   logStatus(room);
 
@@ -240,17 +262,87 @@ ws.on('message', buf => {
       const sys = data.sys;
       const lastH = lastHelloTsByClient.get(ws) || 0;
 
-      // "hello" weiterhin entdoppeln
-      if (sys.type === 'hello' && now - lastH < HELLO_SUPPRESS_MS) return;
-      lastHelloTsByClient.set(ws, now);
+      // "hello" weiterhin zeitlich entdoppeln – aber NICHT komplett abbrechen,
+      // damit spätere hello-Nachrichten (z.B. mit korrigiertem Nick) trotzdem
+      // den Nick im Player-Verzeichnis aktualisieren können.
+      if (sys.type === 'hello') {
+        if (now - lastH < HELLO_SUPPRESS_MS) {
+          // nur das generische [SYS]-Logging throtteln, aber kein return mehr
+        }
+        lastHelloTsByClient.set(ws, now);
+      }
 
       const lastSys = lastSysLogByRoom.get(currentRoom) || 0;
       if (now - lastSys >= STATUS_INTERVAL_MS) {
+        const nickLog = ws.__nick || sys.nick || 'Player';
         console.log(
           `[SYS] ${isoNow()} room="${currentRoom}" type=${sys.type} ` +
-          `from=${data.from || 'n/a'} cid=${ws.__cid || 'n/a'}`
+          `from=${data.from || 'n/a'} cid=${ws.__cid || 'n/a'} nick="${nickLog}"`
         );
         lastSysLogByRoom.set(currentRoom, now);
+      }
+
+      // "hello" nutzt der Client, um sich mit Nick zu melden → Player-Verzeichnis aktualisieren
+      // WICHTIG: kein "return" hier, damit die Nachricht weiterhin an die anderen Clients
+      // im Raum gebroadcastet wird (Mirror-Handshake hello/hello-ack in game.js).
+      if (sys.type === 'hello') {
+        const cid = ws.__cid;
+        const roomName = getRoomOf(ws) || currentRoom || 'lobby';
+
+        // Nick-Kandidat aus der Nachricht
+        const candidate = (typeof sys.nick === 'string' && sys.nick.trim()) || '';
+        const previous  = (typeof ws.__nick === 'string' && ws.__nick.trim()) || '';
+
+        let nick;
+
+        if (candidate && candidate !== 'Player') {
+          // Bevorzugt: ein expliziter, nicht-default Nick aus der Nachricht
+          nick = candidate;
+        } else if (previous && previous !== 'Player') {
+          // Falls wir bereits früher einen besseren Nick hatten, NICHT durch "Player" überschreiben
+          nick = previous;
+        } else if (candidate) {
+          // Kandidat ist zwar "Player" oder leer, aber besser als gar nichts
+          nick = candidate;
+        } else {
+          nick = previous || 'Player';
+        }
+
+        ws.__nick = nick;
+
+        playerDirectory.set(cid, {
+          cid,
+          nick,
+          room: roomName,
+          lastSeen: now
+        });
+
+        // Explizites Debug-Logging für hello, unabhängig vom 30s-SYS-Intervall
+        console.log(
+          `[SYS-HELLO] ${isoNow()} room="${roomName}" cid=${cid} nick="${nick}"`
+        );
+      }
+
+      // Presence-Abfrage: Wer ist online?
+      if (sys.type === 'who_is_online') {
+        const meCid = ws.__cid;
+        const players = [];
+
+        for (const [cid, info] of playerDirectory.entries()) {
+          players.push({
+            cid,
+            nick: info.nick || 'Player',
+            room: info.room || 'lobby',
+            isSelf: cid === meCid
+          });
+        }
+
+        sendSys(ws, {
+          type: 'player_list',
+          players
+        });
+
+        return;
       }
 
       // Neue Match-Commands abfangen (Phase 1)
@@ -378,6 +470,125 @@ ws.on('message', buf => {
         }
         return; // NICHT in den Raum broadcasten
       }
+
+      // -------- PUSH-INVITES (Phase 1: reine Weiterleitung) --------
+      if (sys.type === 'invite') {
+        const matchId   = sys.matchId;
+        const targetCid = sys.targetCid;
+        const fromNick  = sys.fromNick || sys.nick || 'Player';
+
+        if (!matchId || !targetCid) {
+          sendSys(ws, {
+            type: 'invite_error',
+            for: 'invite',
+            code: 'missing_fields',
+            message: 'Match-ID oder Ziel-Spieler fehlen.'
+          });
+          return;
+        }
+
+        const target = clientsById.get(targetCid);
+        if (!target || target.readyState !== target.OPEN) {
+          sendSys(ws, {
+            type: 'invite_error',
+            for: 'invite',
+            code: 'target_offline',
+            message: 'Der eingeladene Spieler ist nicht online.',
+            matchId,
+            targetCid
+          });
+          return;
+        }
+
+        // Invite zum Zielspieler pushen
+        sendSys(target, {
+          type: 'invite',
+          matchId,
+          fromCid: ws.__cid,
+          fromNick,
+          createdAt: isoNow()
+        }, { matchId });
+
+        // Bestätigung an den Host
+        sendSys(ws, {
+          type: 'invite_sent',
+          matchId,
+          targetCid,
+          targetRoom: getRoomOf(target) || null
+        }, { matchId });
+
+        console.log(
+          `[INVITE] ${isoNow()} from=${ws.__cid} to=${targetCid} matchId="${matchId}"`
+        );
+        return; // Nicht an Raum broadcasten
+      }
+
+      if (sys.type === 'invite_accept') {
+        const matchId = sys.matchId;
+        const hostCid = sys.hostCid;
+        const fromNick = sys.fromNick || sys.nick || 'Player';
+
+        if (!matchId || !hostCid) {
+          sendSys(ws, {
+            type: 'invite_error',
+            for: 'invite_accept',
+            code: 'missing_fields',
+            message: 'Match-ID oder Host-Spieler fehlen.'
+          });
+          return;
+        }
+
+        const host = clientsById.get(hostCid);
+        if (host && host.readyState === host.OPEN) {
+          sendSys(host, {
+            type: 'invite_accept',
+            matchId,
+            fromCid: ws.__cid,
+            fromNick,
+            at: isoNow()
+          }, { matchId });
+        }
+
+        console.log(
+          `[INVITE] accept matchId="${matchId}" hostCid=${hostCid} fromCid=${ws.__cid}`
+        );
+        // WICHTIG: der eigentliche Match-Beitritt erfolgt weiterhin
+        // über ein separates "join_match" vom Client, damit die bestehende
+        // Logik in joinMatchForClient() verwendet wird.
+        return;
+      }
+
+      if (sys.type === 'invite_decline') {
+        const matchId = sys.matchId;
+        const hostCid = sys.hostCid;
+        const fromNick = sys.fromNick || sys.nick || 'Player';
+
+        if (!matchId || !hostCid) {
+          sendSys(ws, {
+            type: 'invite_error',
+            for: 'invite_decline',
+            code: 'missing_fields',
+            message: 'Match-ID oder Host-Spieler fehlen.'
+          });
+          return;
+        }
+
+        const host = clientsById.get(hostCid);
+        if (host && host.readyState === host.OPEN) {
+          sendSys(host, {
+            type: 'invite_decline',
+            matchId,
+            fromCid: ws.__cid,
+            fromNick,
+            at: isoNow()
+          }, { matchId });
+        }
+
+        console.log(
+          `[INVITE] decline matchId="${matchId}" hostCid=${hostCid} fromCid=${ws.__cid}`
+        );
+        return;
+      }
     }
 
     // Standardverhalten beibehalten: alles andere wie bisher an den Room broadcasten
@@ -396,6 +607,8 @@ ws.on('close', () => {
   const roomLeft = getRoomOf(ws);
   markPlayerDisconnected(ws);
   leaveRoom(ws);
+  clientsById.delete(cid);
+  playerDirectory.delete(cid);
   console.log(`[DISCONNECT] ${isoNow()} room="${roomLeft}" cid=${cid}`);
   logStatus(roomLeft);
 });
