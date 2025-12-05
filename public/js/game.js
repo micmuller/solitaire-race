@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.0.25';   // neue Version
+const VERSION = '3.0.27';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -22,7 +22,7 @@ window.VERSION = VERSION;
    - v3.0.10: Push-Invite SYS-Handler + Invite-Popup
    - v3.0.23: Nickname-Weitergabe im hello-SYS (Startmenü-Nick)
    - v3.0.24: Zusätzliche hello-Syncs nach match_update (Nick-Fix für Guest-Join)
-   - v3.0.25: Nickname-Priorität aus localStorage (Fix für Guest-Join in Match-Room)
+   - v3.0.27: Nickname-Priorität aus localStorage (Fix für Guest-Join in Match-Room)
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -242,14 +242,68 @@ window.VERSION = VERSION;
   // 4) GAME STATE & DEAL
   // ======================================================
 
+
+  // Hilfsfunktion: aktuellen Nickname aus State / UI / Storage ermitteln
+  function resolveCurrentNick() {
+    try {
+      let nick = '';
+
+      // 1) Explizit gesetzter State-Nick (z.B. vom Startmenü) hat Vorrang
+      if (state.nick && typeof state.nick === 'string') {
+        const trimmed = state.nick.trim();
+        if (trimmed && trimmed !== 'Player') {
+          nick = trimmed;
+        }
+      }
+
+      // 2) Startmenü-Feld (Overlay), falls sichtbar
+      if (!nick) {
+        const overlayNickEl =
+          document.getElementById('shn-startmenu-nick') ||
+          document.querySelector('#shn-startmenu input[type="text"], .shn-startmenu input[type="text"]');
+        if (overlayNickEl && typeof overlayNickEl.value === 'string') {
+          const v = overlayNickEl.value.trim();
+          if (v) nick = v;
+        }
+      }
+
+      // 3) Haupt-UI-Feld #nick
+      if (!nick) {
+        const mainNickInput = document.getElementById('nick');
+        if (mainNickInput && typeof mainNickInput.value === 'string') {
+          const v = mainNickInput.value.trim();
+          if (v) nick = v;
+        }
+      }
+
+      // 4) Fallback: aus localStorage (alle bekannten Keys)
+      if (!nick) {
+        nick = loadStoredNick();
+      }
+
+      // 5) Letzter Fallback
+      if (!nick) nick = 'Player';
+
+      return nick;
+    } catch (e) {
+      console.warn('[NICK] resolveCurrentNick Fehler:', e);
+      return 'Player';
+    }
+  }
+
   // Hilfsfunktion: Nickname aus localStorage laden (für Rejoins / neue Tabs)
   function loadStoredNick() {
     try {
       if (typeof localStorage === 'undefined') return '';
-      const v = localStorage.getItem('nick');
-      if (!v) return '';
-      const trimmed = String(v).trim();
-      return trimmed || '';
+
+      const keys = ['nick', 'shnNick', 'shn_nick', 'nickname'];
+      for (const k of keys) {
+        const v = localStorage.getItem(k);
+        if (v && String(v).trim()) {
+          return String(v).trim();
+        }
+      }
+      return '';
     } catch (e) {
       console.warn('[NICK] Konnte Nick aus localStorage nicht laden:', e);
       return '';
@@ -1512,53 +1566,16 @@ window.VERSION = VERSION;
     return;
   }
 
-  // *** NEU: Nickname vor dem Verbindungsaufbau aus Startmenü / Hauptfeld
-  // in den State übernehmen, damit ws.onopen ihn zuverlässig verwenden kann.
+  // *** Nickname vor dem Verbindungsaufbau aus State / UI / Storage ermitteln
+  const nickBeforeConnect = resolveCurrentNick();
+  state.nick = nickBeforeConnect;
+  console.log('[WS] connectWS() – final nick =', nickBeforeConnect);
   try {
-    const overlayNickEl = document.getElementById('shn-startmenu-nick');
-    const mainNickInput = document.getElementById('nick');
-
-    let nickVal = '';
-
-    // 1) Nick aus localStorage hat höchste Priorität (falls vorhanden)
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem('nick');
-        if (stored && String(stored).trim()) {
-          nickVal = String(stored).trim();
-        }
-      }
-    } catch (e2) {
-      console.warn('[WS] Konnte Nick nicht aus localStorage lesen:', e2);
-    }
-
-    // 2) Falls nichts im Storage: vorhandenen State-Nick verwenden
-    if (!nickVal && typeof state.nick === 'string' && state.nick.trim()) {
-      nickVal = state.nick.trim();
-    }
-
-    // 3) Falls immer noch leer: Nickname aus Startmenü / Hauptfeld lesen
-    if (!nickVal && overlayNickEl && typeof overlayNickEl.value === 'string' && overlayNickEl.value.trim()) {
-      nickVal = overlayNickEl.value.trim();
-    } else if (!nickVal && mainNickInput && typeof mainNickInput.value === 'string' && mainNickInput.value.trim()) {
-      nickVal = mainNickInput.value.trim();
-    }
-
-    if (nickVal) {
-      state.nick = nickVal;
-      console.log('[WS] connectWS() – Nick aus Storage/UI übernommen:', nickVal);
-
-      // sicherstellen, dass der Nick im Storage persistiert ist
-      try {
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('nick', nickVal);
-        }
-      } catch (e3) {
-        console.warn('[WS] Konnte Nick vor connectWS nicht in localStorage speichern:', e3);
-      }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('nick', nickBeforeConnect);
     }
   } catch (e) {
-    console.warn('[WS] Konnte Nick vor connectWS nicht aus UI lesen:', e);
+    console.warn('[WS] Konnte Nick vor connectWS nicht in localStorage speichern:', e);
   }
 
   const maxAttempts = 4;       // weniger Versuche
@@ -1628,60 +1645,18 @@ window.VERSION = VERSION;
 
     showToast('Verbunden');
 
-    // Nickname für hello-SYS ermitteln:
-    // 1) bevorzugt Nick aus localStorage,
-    // 2) dann state.nick (vom Startmenü gesetzt),
-    // 3) dann das Startmenü-Feld (falls noch vorhanden),
-    // 4) dann das Haupt-UI-Feld #nick,
-    // 5) Fallback auf "Player".
-    const mainNickInput = document.getElementById('nick');
-    const overlayNickEl = document.getElementById('shn-startmenu-nick');
-    let nickVal = '';
-
-    // 1) localStorage
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem('nick');
-        if (stored && String(stored).trim()) {
-          nickVal = String(stored).trim();
-        }
-      }
-    } catch (e2) {
-      console.warn('[WS] Konnte Nick in ws.onopen nicht aus localStorage lesen:', e2);
-    }
-
-    // 2) state.nick
-    if (!nickVal && typeof state.nick === 'string' && state.nick.trim()) {
-      nickVal = state.nick.trim();
-    }
-
-    // 3) Overlay-Feld
-    if (!nickVal && overlayNickEl && typeof overlayNickEl.value === 'string' && overlayNickEl.value.trim()) {
-      nickVal = overlayNickEl.value.trim();
-    }
-    // 4) Haupt-UI-Feld #nick
-    else if (!nickVal && mainNickInput && typeof mainNickInput.value === 'string' && mainNickInput.value.trim()) {
-      nickVal = mainNickInput.value.trim();
-    }
-
-    // 5) Fallback
-    if (!nickVal) {
-      nickVal = 'Player';
-    }
-
-    // Debug: Nickname verwenden
+    // Nickname für hello-SYS einmal zentral ermitteln
+    const nickVal = resolveCurrentNick();
     console.log('[WS] Using nick:', nickVal);
 
-    // für spätere Verwendungen den Nick auch im State merken
+    // im State merken und persistieren
     state.nick = nickVal;
-
-    // Nick in localStorage persistieren
     try {
       if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('nick', state.nick);
+        localStorage.setItem('nick', nickVal);
       }
     } catch (e) {
-      console.warn('[NICK] Konnte Nick in localStorage (connectWS) nicht speichern:', e);
+      console.warn('[NICK] Konnte Nick in localStorage (ws.onopen) nicht speichern:', e);
     }
 
     sendSys({ type: 'hello', nick: nickVal });
