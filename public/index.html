@@ -656,9 +656,10 @@
     <div class="controls">
       <input id="room" placeholder="Room-ID" title="Room/Match ID" />
       <input id="seed" placeholder="Seed (optional)" title="Deterministische Mischung" />
+      <button id="menuBtn">Menu</button>
       <button id="newGame" class="primary">Neu starten</button>
       <button id="endGame">Beenden</button>
-      <button id="connect">Verbinden</button>
+      <button id="connect" style="display:none;">Verbinden</button>
       <!-- Mirror-Button bleibt im DOM, ist aber per CSS versteckt -->
       <button id="toggleMirror" class="primary" title="Ansicht spiegeln">Mirror: On</button>
       <button id="toggleOverlayBtn">Status</button>
@@ -672,7 +673,7 @@
     <button id="pwa-hint-close" aria-label="Hinweis ausblenden">×</button>
   </div>
 
-  <div class="overlay" id="overlay">
+  <div class="overlay overlay-hidden" id="overlay">
     <h3>Status</h3>
     <div class="kv">
       <div>Sync</div><div><span class="dot" id="dot"></span><span id="ov-sync">offline</span></div>

@@ -124,6 +124,9 @@
         color: #e5e7eb;
         font-size: 0.8rem;
       }
+      .shn-startmenu-join-row .shn-startmenu-button {
+        width: auto;
+      }
       .shn-startmenu-input:read-only {
         opacity: 0.85;
       }
@@ -213,7 +216,11 @@
     const btnDecline = dialog.querySelector('#shn-invite-decline');
 
     function closePopup() {
-      overlay.remove();
+      try {
+        overlay.remove();
+      } catch (e) {
+        console.warn('[StartMenu] Invite-Overlay konnte nicht entfernt werden:', e);
+      }
     }
 
     if (btnAccept) {
@@ -284,7 +291,20 @@
           // Dann dem Match beitreten; der Server erledigt den Rest (match_joined/reset)
           netApi.joinMatch(matchId, nick);
           ui.showToast('Verbinde zum Duell …');
+          // Invite-Popup schließen
           closePopup();
+
+          // Zusätzlich das Startmenü-Overlay schließen, damit nach dem
+          // Annehmen einer Einladung alle Menüs verschwinden und
+          // der Fokus auf dem eigentlichen Spiel liegt.
+          try {
+            const startOverlay = document.getElementById('shn-startmenu-overlay');
+            if (startOverlay) {
+              startOverlay.remove();
+            }
+          } catch (e) {
+            console.warn('[StartMenu] Konnte Startmenü-Overlay nach Invite-Accept nicht schließen:', e);
+          }
         });
       });
     }
@@ -451,50 +471,43 @@
         <div class="shn-startmenu-version">v${meta.VERSION || ''}</div>
       </div>
 
+      <!-- Panel 1: Dein Name -->
       <div class="shn-startmenu-field">
-        <label>Dein Nickname</label>
+        <label>Dein Name</label>
         <input id="shn-startmenu-nick" class="shn-startmenu-input" type="text" placeholder="z.B. Michi" />
-      </div>
-
-      <div class="shn-startmenu-section-title">Spielmodus wählen</div>
-
-      <div id="shn-startmenu-invite-note" class="shn-startmenu-field" style="display:none;">
-        <label>Einladung</label>
         <div class="shn-startmenu-info">
-          Du wurdest zu einem Duell eingeladen.
-          Tippe auf „Gegen menschlichen Gegner“, um dem Spiel beizutreten.
+          Dieser Name wird im Spiel &amp; bei Einladungen verwendet.
         </div>
       </div>
 
-      <div class="shn-startmenu-modes">
+      <!-- Hinweis für Link-basierte Einladungen (URL mit room/seed) -->
+      <div id="shn-startmenu-invite-note" class="shn-startmenu-field" style="display:none; margin-top:0.5rem;">
+        <label>Einladung</label>
+        <div class="shn-startmenu-info">
+          Du wurdest zu einem Duell eingeladen.
+          Tippe auf „Duell starten" oder „An Spiel teilnehmen", um dem Spiel beizutreten.
+        </div>
+      </div>
+
+      <!-- Panel 2: Duell starten (Host) -->
+      <div class="shn-startmenu-section-title" style="margin-top:1.0rem;">Duell starten (Host)</div>
+      <div class="shn-startmenu-info" style="margin-bottom:0.4rem;">
+        Du bist der Gastgeber und startest ein neues Duell.
+      </div>
+
+      <div class="shn-startmenu-modes" style="margin-bottom:0.5rem;">
         <button type="button" id="shn-startmenu-human" class="shn-startmenu-button primary">
           <span class="shn-startmenu-button-label">
-            <span>🧍 vs 🧍</span>
-            <span>Gegen menschlichen Gegner (Host)</span>
+            <span>🔫</span>
+            <span>Neues Duell erstellen</span>
           </span>
           <span class="shn-startmenu-chip">Online-Duell</span>
         </button>
-
-        <button type="button" id="shn-startmenu-join-wait" class="shn-startmenu-button">
-          <span class="shn-startmenu-button-label">
-            <span>🧍 ⏳</span>
-            <span>An Spiel teilnehmen (warten auf Einladung)</span>
-          </span>
-          <span class="shn-startmenu-chip">Online, passiv</span>
-        </button>
-
-        <button type="button" id="shn-startmenu-bot" class="shn-startmenu-button">
-          <span class="shn-startmenu-button-label">
-            <span>🧍 vs 🤖</span>
-            <span>Gegen Bot spielen</span>
-          </span>
-          <span class="shn-startmenu-chip">Offline (lokal)</span>
-        </button>
       </div>
 
-      <div id="shn-startmenu-human-panel" style="display:none;">
+      <div id="shn-startmenu-human-panel" style="display:none; margin-top:0.25rem;">
         <div class="shn-startmenu-field">
-          <label>Room-ID</label>
+          <label>Dein Match-Code</label>
           <input id="shn-startmenu-room" class="shn-startmenu-input" type="text" readonly />
         </div>
         <div class="shn-startmenu-field">
@@ -505,7 +518,7 @@
           <label>Einladungslink (zum Senden an den Gegner)</label>
           <input id="shn-startmenu-link" class="shn-startmenu-input" type="text" readonly />
         </div>
-        <div class="shn-startmenu-field" id="shn-startmenu-invite-target-wrapper" style="display:none;">
+        <div class="shn-startmenu-field" id="shn-startmenu-invite-target-wrapper" style="display:none; margin-top:0.6rem;">
           <label>Gegenspieler auswählen</label>
           <select id="shn-startmenu-target-select" class="shn-startmenu-input">
             <option value="">– Spieler auswählen –</option>
@@ -517,12 +530,65 @@
         </div>
       </div>
 
+      <!-- Panel 3: An Spiel teilnehmen (Guest) -->
+      <div id="shn-startmenu-guest-panel">
+        <div class="shn-startmenu-section-title" style="margin-top:1.0rem;">An Spiel teilnehmen</div>
+
+        <!-- Modus A: Auf Einladung warten -->
+        <div class="shn-startmenu-modes" style="margin-bottom:0.35rem;">
+          <button type="button" id="shn-startmenu-join-wait" class="shn-startmenu-button">
+            <span class="shn-startmenu-button-label">
+              <span>⏳</span>
+              <span>Auf Einladung warten</span>
+            </span>
+            <span class="shn-startmenu-chip">Online, passiv</span>
+          </button>
+        </div>
+        <div id="shn-startmenu-guest-status" class="shn-startmenu-info" style="margin-bottom:0.6rem;">
+          Du verbindest dich in die Lobby und wartest auf eine Einladung.
+        </div>
+
+        <!-- Modus B: Ich habe einen Match-Code -->
+        <div class="shn-startmenu-field" style="margin-top:0.25rem;">
+          <label>Ich habe einen Match-Code</label>
+          <div class="shn-startmenu-info" style="margin-bottom:0.25rem;">
+            Wenn dir jemand einen Match-Code gegeben hat, kannst du direkt beitreten.
+          </div>
+          <div class="shn-startmenu-join-row" style="display:flex; gap:0.4rem; align-items:center;">
+            <input id="shn-startmenu-join-code" class="shn-startmenu-input" type="text" placeholder="z.B. EQ8ZV" style="flex:1;" />
+            <button type="button" id="shn-startmenu-join-code-btn" class="shn-startmenu-button" style="flex:0 0 auto; padding-inline:0.7rem;">
+              <span class="shn-startmenu-button-label">
+                <span>🚪</span>
+                <span>Beitreten</span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 4: Gegen Bot spielen -->
+      <div id="shn-startmenu-bot-panel">
+        <div class="shn-startmenu-section-title" style="margin-top:1.0rem;">Sofort spielen (ohne Online-Gegner)</div>
+        <div class="shn-startmenu-info" style="margin-bottom:0.3rem;">
+          Spiele direkt gegen einen Bot auf diesem Gerät.
+        </div>
+        <div class="shn-startmenu-modes">
+          <button type="button" id="shn-startmenu-bot" class="shn-startmenu-button">
+            <span class="shn-startmenu-button-label">
+              <span>🤖</span>
+              <span>Bot – Einfach</span>
+            </span>
+            <span class="shn-startmenu-chip">Offline</span>
+          </button>
+        </div>
+      </div>
+
       <div class="shn-startmenu-footer">
         <span id="shn-startmenu-send-invite" class="shn-startmenu-small-link" style="display:none; margin-right:auto;">
-          Einladung senden
+          📩 Spieler einladen
         </span>
         <span id="shn-startmenu-copy-link" class="shn-startmenu-small-link" style="display:none;">
-          Link kopieren
+          🔗 Link kopieren
         </span>
         <span id="shn-startmenu-close" class="shn-startmenu-small-link">
           Startmenü schließen
@@ -549,6 +615,12 @@
     const inviteTargetSelect = dialog.querySelector('#shn-startmenu-target-select');
     const inviteTargetCidInput = dialog.querySelector('#shn-startmenu-targetcid');
     const sendInviteLink = dialog.querySelector('#shn-startmenu-send-invite');
+    // Neue Query-Selectoren für Guest-Status und Match-Code-Join Controls
+    const guestStatusEl = dialog.querySelector('#shn-startmenu-guest-status');
+    const joinCodeInput = dialog.querySelector('#shn-startmenu-join-code');
+    const joinCodeBtn   = dialog.querySelector('#shn-startmenu-join-code-btn');
+    const guestPanel    = dialog.querySelector('#shn-startmenu-guest-panel');
+    const botPanel      = dialog.querySelector('#shn-startmenu-bot-panel');
 
     // Zentraler Helper: Nickname in Main-UI, State und localStorage anwenden
     function applyNickEverywhere(n) {
@@ -705,6 +777,12 @@
       btnHuman.addEventListener('click', () => {
         // Nickname zentral vor allem anderen synchronisieren
         syncNickEarly();
+        // Wenn der Host ein neues Duell erstellt, die Guest-/Bot-Panels ausblenden,
+        // damit der Dialog nicht zu lang wird.
+        if (!inviteMode) {
+          if (guestPanel) guestPanel.style.display = 'none';
+          if (botPanel) botPanel.style.display = 'none';
+        }
 
         // Wenn wir über einen Einladungslink hier sind, sollen wir dem bestehenden Match beitreten.
         if (inviteMode) {
@@ -1016,6 +1094,8 @@
         // Nickname zentral vor allem anderen synchronisieren
         syncNickEarly();
 
+        const nick = getNickFromMainUi();
+
         // Auf "lobby" verbinden, um sichtbar für den Host zu sein
         const roomIn = document.getElementById('room');
         if (roomIn && !roomIn.value) {
@@ -1025,8 +1105,50 @@
         // Verbindung aufbauen
         triggerConnectIfPossible();
         ui.showToast('Verbinde und warte auf Einladung …');
-      
-        destroyOverlay();
+
+        // Button-Label & -Zustand anpassen, damit klar ist, dass wir warten
+        btnJoinWait.classList.add('disabled');
+        const labelSpan = btnJoinWait.querySelector('.shn-startmenu-button-label span:nth-child(2)');
+        if (labelSpan) labelSpan.textContent = 'Warte auf Einladung …';
+
+        // Status-Text setzen
+        if (guestStatusEl) {
+          const roomVal = roomIn && roomIn.value ? roomIn.value : 'lobby';
+          guestStatusEl.textContent = `Du bist in der Lobby und wartest auf eine Einladung … (Verbunden als ${nick}, Room: ${roomVal})`;
+        }
+      });
+    }
+
+    // Logik für neuen "Match-Code beitreten"-Button
+    if (joinCodeBtn && joinCodeInput) {
+      joinCodeBtn.addEventListener('click', () => {
+        // Nickname früh synchronisieren
+        syncNickEarly();
+        const code = joinCodeInput.value ? joinCodeInput.value.trim() : '';
+        if (!code) {
+          ui.showToast('Bitte einen Match-Code eingeben');
+          return;
+        }
+
+        const nick = getNickFromMainUi();
+
+        // Room/Seed im Haupt-UI & State setzen
+        fillInputsAndUrl(code, state.seed || '');
+
+        // Verbindung aufbauen
+        triggerConnectIfPossible();
+
+        const netApi = SHN.net;
+        if (!netApi || typeof netApi.joinMatch !== 'function') {
+          ui.showToast('Online-Duell nicht verfügbar');
+          return;
+        }
+
+        waitForOnlineThen(() => {
+          netApi.joinMatch(code, nick);
+          ui.showToast('Verbinde zum Duell …');
+          destroyOverlay();
+        });
       });
     }
 

@@ -1,28 +1,17 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.0.30';   // neue Version
+const VERSION = '3.1.4';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
    Solitaire HighNoon
-   - v2.12.13: End Game Button + Overlay Meldung
-   - v2.13.1: Start Modularisierung
-   - v2.13.2: Move code cleanup
-   - v2.13.3: komplettes Startmenu in eigenem Modul
-   - v2.13.4: scaling.js Verbesserungen
-   - v2.13.5: GUI-Feinschliff (Abstände Gegner-Tableaus)
-   - v2.13.6: Touch-Input ,doubel-tap, Verbesserungen
-   - v2.13.11: Score & beenden, neues Game verhalten 
-   - v2.14.0: Bot Modul hinzugefügt
-   - v2.14.2: Bot vs Player Modus im Startmenu plus Design fix
-   - v2.14.5: Stock/Waste Select fix, Foundation glow bei Auto-Move
-   - v3.0.4: Server-zentrierter Match-Flow (create_match/join_match) – Basis
-   - v3.0.5: Lobby-infos vorbereitet
-   - v3.0.7: Match-Start bei match_joined synchronisiert (Auto-newGame)
    - v3.0.10: Push-Invite SYS-Handler + Invite-Popup
    - v3.0.23: Nickname-Weitergabe im hello-SYS (Startmenü-Nick)
    - v3.0.24: Zusätzliche hello-Syncs nach match_update (Nick-Fix für Guest-Join)
    - v3.0.30: Nickname Fixes (Invite-Accept, Server-hello Throttle)
+   - v3.1.1: Startmenu Design Anpassungen
+   - v3.1.3: Overlay Host/Guest Nicknames
+   - v3.1.4: Menu Anpassungen
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -1458,6 +1447,7 @@ window.VERSION = VERSION;
   // 10) NETZWERK / WEBSOCKET-SYNC
   // ======================================================
   const peers = new Map();
+  const remoteNicks = new Map(); // clientId -> nick (für Overlay-Anzeige)
   let clientId = Math.random().toString(36).slice(2);
   let ws = null, pingTimer = null, lastMsgAt = 0, latencyMs = null;
 
@@ -1508,17 +1498,56 @@ window.VERSION = VERSION;
     setText('ov-ws-url', lastWsUrl || '—');
     setText('ov-ws-err', lastWsError || '—');
 
-    // Neue Anzeige: Nicknames im Status-Overlay
-    const hostNick  = (state.match && state.match.hostNick)  ? state.match.hostNick  : '—';
-    const guestNick = (state.match && state.match.guestNick) ? state.match.guestNick : '—';
-    setText('ov-hostnick', hostNick);
-    setText('ov-guestnick', guestNick);
+    // Host/Gast-Anzeige im Overlay robuster machen:
+    // 1) Basis aus Match-State
+    let hostNick = (state.match && typeof state.match.hostNick === 'string')
+      ? state.match.hostNick.trim()
+      : '';
+    let guestNick = (state.match && typeof state.match.guestNick === 'string')
+      ? state.match.guestNick.trim()
+      : '';
+
+    // "Player" nicht als sinnvollen Nick anzeigen
+    if (hostNick === 'Player') hostNick = '';
+    if (guestNick === 'Player') guestNick = '';
+
+    // 2) Lokaler Nick als Fallback für Host
+    const localNick = (state.nick && state.nick.trim()) || loadStoredNick() || '';
+    if (!hostNick && localNick && localNick !== 'Player') {
+      hostNick = localNick;
+    }
+
+    // 3) Remote-Nick aus Hello-Nachrichten als Fallback für Guest
+    let remoteNick = '';
+    for (const [, n] of remoteNicks) {
+      if (n && n !== 'Player') {
+        remoteNick = n;
+        break;
+      }
+    }
+
+    if (!guestNick && remoteNick && remoteNick !== hostNick) {
+      guestNick = remoteNick;
+    }
+
+    // 4) Wenn wir weder Host- noch Guest-Rollen kennen, aber zwei Namen haben,
+    //    lokal als Host, remote als Guest anzeigen
+    if (!hostNick && !guestNick && localNick && localNick !== 'Player' && remoteNick && remoteNick !== 'Player') {
+      hostNick = localNick;
+      guestNick = remoteNick;
+    }
+
+    setText('ov-hostnick', hostNick || '—');
+    setText('ov-guestnick', guestNick || '—');
   }
 
   setInterval(() => {
     const now = Date.now();
     for (const [id, ts] of peers) {
-      if (now - ts > 15000) peers.delete(id);
+      if (now - ts > 15000) {
+        peers.delete(id);
+        remoteNicks.delete(id);
+      }
     }
     updateOverlay();
   }, 1000);
@@ -1705,6 +1734,18 @@ window.VERSION = VERSION;
         }
 
         if (msg.sys.type === 'hello') {
+          // Remote-Nickname (falls vorhanden) für Overlay merken
+          try {
+            const remoteNickVal = (msg.sys.nick && typeof msg.sys.nick === 'string')
+              ? msg.sys.nick.trim()
+              : '';
+            if (msg.from && msg.from !== clientId && remoteNickVal && remoteNickVal !== 'Player') {
+              remoteNicks.set(msg.from, remoteNickVal);
+            }
+          } catch (e) {
+            console.warn('[WS] Konnte Remote-Nick aus hello nicht merken:', e);
+          }
+
           if (!hasSetPerspective) {
             const iAmY = clientId.localeCompare(msg.from) < 0;
             const desired = iAmY ? 'Y' : 'O';
@@ -2239,6 +2280,21 @@ function newGame() {
     const boardEl = document.getElementById('board');
     if (IS_TOUCH_DEVICE) {
       setupTouchControls(boardEl);
+    }
+
+    // Menü-Button: Startmenü öffnen
+    const menuBtn = document.getElementById('menuBtn');
+    if (menuBtn && !menuBtn._shnBound) {
+      menuBtn._shnBound = true;
+      menuBtn.addEventListener('click', () => {
+        try {
+          if (window.SHN && SHN.startmenu && typeof SHN.startmenu.open === 'function') {
+            SHN.startmenu.open();
+          }
+        } catch (e) {
+          console.warn('[MENU] konnte Startmenü nicht öffnen:', e);
+        }
+      });
     }
   });
 
