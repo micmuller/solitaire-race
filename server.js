@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // ================================================================
 //  Solitaire HighNoon - Realtime Game Server
-//  Version: 2.0.0
 //  Author: micmuller & ChatGPT (GPT-5)
 // -v1.6.3: Mehr Logging bei SYS/MOVE Nachrichten
 // -v2.0.0: Komplett überarbeiteter Match-/WebSocket-Server
 // -v2.1.5: Invite-System (Push-Einladungen)
+// -v2.2.0: Bot-Grundgerüst (Server-seitige Bot-Registry, Option 1)
+// -v2.2.2: Bot-Logik erstellt.
 // ================================================================
 
 const http   = require('node:http');
@@ -17,7 +18,7 @@ const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
 // ---------- Version / CLI ----------
-const VERSION = '2.1.5';
+const VERSION = '2.2.4';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -114,6 +115,50 @@ const clientsById = new Map(); // cid -> ws
 // Einfaches Player-Verzeichnis für Presence / Online-Liste
 // cid -> { cid, nick, room, lastSeen }
 const playerDirectory = new Map();
+
+// Einfache Bot-Registry (Option 1): matchId -> Bot-Metadaten
+// Der Bot ist hier zunächst nur als Metadaten geplant; die eigentliche
+// Entscheidungslogik folgt in einem späteren Schritt.
+const botsByMatch = new Map();
+// Letzter bekannter Spielfeld-Zustand pro Match (vom Client gemeldet)
+const botStateByMatch = new Map();
+
+function createServerBot(matchId, difficulty = 'easy') {
+  const botId = 'bot-' + Math.random().toString(36).slice(2);
+  const botNick =
+    difficulty === 'hard'   ? 'Bot-Hard'   :
+    difficulty === 'medium' ? 'Bot-Medium' :
+    'Bot-Easy';
+
+  const bot = {
+    id: botId,
+    matchId,
+    difficulty,
+    nick: botNick,
+    createdAt: Date.now(),
+    lastMoveAt: 0,
+    state: null,
+    lastSeenStateAt: 0
+  };
+
+  botsByMatch.set(matchId, bot);
+
+  console.log(
+    `[BOT] created botId="${botId}" matchId="${matchId}" difficulty=${difficulty} nick="${botNick}"`
+  );
+
+  return bot;
+}
+
+function getServerBot(matchId) {
+  return botsByMatch.get(matchId) || null;
+}
+
+function removeServerBot(matchId) {
+  if (botsByMatch.delete(matchId)) {
+    console.log(`[BOT] removed bot for matchId="${matchId}"`);
+  }
+}
 
 const {
   createMatchForClient,
@@ -345,6 +390,52 @@ ws.on('message', buf => {
         return;
       }
 
+      // --- BOT STATE HANDLING (robuster & mit separater State-Map) ---
+      if (sys.type === 'bot_state') {
+        // MatchId möglichst robust ermitteln
+        let matchId = null;
+
+        if (typeof sys.matchId === 'string' && sys.matchId.trim()) {
+          matchId = sys.matchId.trim();
+        } else if (ws.__room && ws.__room !== 'lobby' && ws.__room !== 'default') {
+          matchId = ws.__room;
+        } else if (getRoomOf(ws) && getRoomOf(ws) !== 'lobby' && getRoomOf(ws) !== 'default') {
+          matchId = getRoomOf(ws);
+        }
+
+        // Wenn wir kein sinnvolles Match identifizieren können, ignorieren wir die Nachricht still.
+        if (!matchId) {
+          return;
+        }
+
+        const bot = getServerBot(matchId);
+        // WICHTIG: Nur wenn ein Server-Bot für dieses Match existiert, interessiert uns der State.
+        // In normalen Mensch-gegen-Mensch-Spielen wird bot_state damit still ignoriert und
+        // erzeugt keine Log-Spam mehr.
+        if (!bot) {
+          return;
+        }
+
+        const state = sys.state;
+
+        if (!state || typeof state !== 'object') {
+          console.log(
+            `[BOT] state update ignored matchId="${matchId}" (no or non-object state)`
+          );
+          return;
+        }
+
+        // Globalen State-Puffer aktualisieren
+        botStateByMatch.set(matchId, state);
+
+        bot.state = state;
+        bot.lastSeenStateAt = now;
+        console.log(
+          `[BOT] state update matchId="${matchId}" from cid=${ws.__cid} tick="${sys.tick ?? 'n/a'}" (haveBot=true)`
+        );
+        return;
+      }
+
       // Neue Match-Commands abfangen (Phase 1)
       if (sys.type === 'create_match') {
         const nick = sys.nick || 'Player 1';
@@ -469,6 +560,324 @@ ws.on('message', buf => {
           });
         }
         return; // NICHT in den Raum broadcasten
+      }
+
+      // -------- BOT-STEUERUNG (Option 2: eigenes Match mit Bot als Gegner) --------
+      if (sys.type === 'spawn_bot') {
+        const difficulty = sys.difficulty || 'easy';
+
+        // Robuste Nick-Bestimmung für den menschlichen Spieler
+        const effectiveNick =
+          (typeof sys.nick === 'string' && sys.nick.trim()) ||
+          (typeof ws.__nick === 'string' && ws.__nick.trim()) ||
+          'Player';
+
+        let matchId = sys.matchId || currentRoom || null;
+        let match = null;
+
+        // Fall A: Wir hängen in der Lobby / default-Raum → eigenes Bot-Match anlegen
+        const isLobbyLike = !matchId || matchId === 'lobby' || matchId === 'default';
+
+        if (isLobbyLike) {
+          try {
+            // Neues Match für diesen Client anlegen (Host = Mensch)
+            match = createMatchForClient(ws, effectiveNick, rooms);
+
+            // WebSocket in den Match-Room verschieben
+            leaveRoom(ws);
+            joinRoom(ws, match.matchId);
+            matchId = match.matchId;
+
+            const publicMatch = getPublicMatchView(match);
+
+            // Host informieren, dass ein Match erstellt wurde
+            sendSys(ws, {
+              type: 'match_created',
+              matchId: match.matchId,
+              seed: match.seed,
+              playerId: 'p1',
+              role: 'host',
+              status: match.status,
+              hostNick: effectiveNick,
+              match: publicMatch
+            }, { matchId: match.matchId });
+
+            // Erstes match_update nur an Host
+            sendSys(ws, {
+              type: 'match_update',
+              matchId: match.matchId,
+              status: match.status,
+              players: publicMatch.players
+            }, { matchId: match.matchId });
+
+            console.log(
+              `[MATCH] created (bot) matchId="${match.matchId}" seed="${match.seed}" hostNick="${effectiveNick}" cid=${ws.__cid}`
+            );
+          } catch (err) {
+            console.error('[BOT MATCH ERROR] spawn_bot create_match failed', err);
+            sendSys(ws, {
+              type: 'bot_error',
+              for: 'spawn_bot',
+              code: err.code || 'internal_error',
+              message: err.message || 'Interner Fehler beim Erstellen des Bot-Matches'
+            });
+            return;
+          }
+        }
+
+        // Wenn wir hier immer noch kein Match haben, brechen wir sauber ab
+        if (!matchId) {
+          sendSys(ws, {
+            type: 'bot_error',
+            for: 'spawn_bot',
+            code: 'missing_match_id',
+            message: 'Kein Match für den Bot angegeben.'
+          });
+          return;
+        }
+
+        // Prüfen, ob bereits ein Bot für dieses Match existiert
+        const existing = getServerBot(matchId);
+        if (existing) {
+          // Bereits ein Bot registriert – wir schicken nur die Info zurück
+          sendSys(ws, {
+            type: 'bot_spawned',
+            matchId,
+            botId: existing.id,
+            difficulty: existing.difficulty,
+            nick: existing.nick
+          });
+          return;
+        }
+
+        // Neuen Bot registrieren
+        const bot = createServerBot(matchId, difficulty);
+
+        // Bot im Match-Modell sichtbar machen, falls wir einen Match-Ref haben
+        if (match) {
+          const nowMs = Date.now();
+          if (!Array.isArray(match.players)) {
+            match.players = match.players ? [match.players] : [];
+          }
+          match.players.push({
+            id: bot.id,
+            nick: bot.nick,
+            isBot: true,
+            joinedAt: nowMs,
+            lastSeen: nowMs
+          });
+
+          match.status = 'ready';
+          match.lastActivityAt = nowMs;
+
+          const publicAfter = getPublicMatchView(match);
+
+          // Aktualisierte Match-View an Host
+          sendSys(ws, {
+            type: 'match_update',
+            matchId: match.matchId,
+            status: match.status,
+            players: publicAfter.players
+          }, { matchId: match.matchId });
+
+          // Spiel direkt starten (Reset für Host)
+          broadcastSysToRoom(match.matchId, {
+            type: 'reset',
+            matchId: match.matchId,
+            seed: match.seed
+          });
+
+          match.status = 'running';
+          match.lastActivityAt = Date.now();
+
+          console.log(
+            `[MATCH] auto-start bot matchId="${match.matchId}" seed="${match.seed}" hostNick="${effectiveNick}" botNick="${bot.nick}"`
+          );
+        }
+
+        // --- BOT AUTO‑TICK (Grundgerüst) ---
+        // Der Bot führt noch keine echten Züge aus,
+        // aber sendet alle 5 Sekunden ein "bot_heartbeat",
+        // damit der Match-Loop später darauf aufbauen kann.
+        if (!bot.__interval) {
+          bot.__interval = setInterval(() => {
+            const matchBot = getServerBot(matchId);
+            if (!matchBot) {
+              clearInterval(bot.__interval);
+              return;
+            }
+
+            // Basis-Logging des Heartbeats
+            console.log(
+              `[BOT] heartbeat botId="${matchBot.id}" matchId="${matchId}" difficulty=${matchBot.difficulty}`
+            );
+
+            // Verbesserte Bot-Logik (Entscheidungsbaum):
+            // 1. Versuche Tableau → Foundation
+            // 2. Versuche Waste → Foundation
+            // 3. Versuche Waste → Tableau
+            // 4. Versuche Tableau → Tableau
+            // 5. Fallback: Flip (draw/flip)
+            // Erwartet, dass das Spielfeld im Match-Objekt als "state" vorliegt.
+            try {
+              // Verwende den zuletzt vom Client gemeldeten Spielzustand (bot_state).
+              // Priorität: globale Map -> Bot-intern -> kein State
+              const state =
+                botStateByMatch.get(matchId) ||
+                matchBot.state ||
+                null;
+
+              let move = null;
+              // Helper: Send move
+              function sendMove(moveObj, kindLabel) {
+                const moveEnvelope = JSON.stringify({
+                  move: moveObj,
+                  from: matchBot.id
+                });
+                broadcastToRoom(matchId, moveEnvelope, null);
+                matchBot.lastMoveAt = Date.now();
+                console.log(
+                  `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="${kindLabel}"`
+                );
+              }
+
+              if (state) {
+                // 1. Tableau → Foundation
+                outer1:
+                for (let t = 0; t < (state.tableau ? state.tableau.length : 0); t++) {
+                  const pile = state.tableau[t];
+                  if (!pile || !pile.length) continue;
+                  const card = pile[pile.length-1];
+                  for (let f = 0; f < (state.foundation ? state.foundation.length : 0); f++) {
+                    const dest = state.foundation[f];
+                    // Simplified check: move if suit matches and rank is correct
+                    if (
+                      (!dest.length && card.rank === 1) || // Ace to empty foundation
+                      (dest.length &&
+                        dest[dest.length-1].suit === card.suit &&
+                        dest[dest.length-1].rank === card.rank - 1)
+                    ) {
+                      move = { kind: 'tableau_to_foundation', from: t, to: f, card };
+                      sendMove(move, 'tableau_to_foundation');
+                      break outer1;
+                    }
+                  }
+                }
+                // 2. Waste → Foundation
+                if (!move && state.waste && state.waste.length) {
+                  const card = state.waste[state.waste.length-1];
+                  for (let f = 0; f < (state.foundation ? state.foundation.length : 0); f++) {
+                    const dest = state.foundation[f];
+                    if (
+                      (!dest.length && card.rank === 1) ||
+                      (dest.length &&
+                        dest[dest.length-1].suit === card.suit &&
+                        dest[dest.length-1].rank === card.rank - 1)
+                    ) {
+                      move = { kind: 'waste_to_foundation', to: f, card };
+                      sendMove(move, 'waste_to_foundation');
+                      break;
+                    }
+                  }
+                }
+                // 3. Waste → Tableau
+                if (!move && state.waste && state.waste.length) {
+                  const card = state.waste[state.waste.length-1];
+                  for (let t = 0; t < (state.tableau ? state.tableau.length : 0); t++) {
+                    const dest = state.tableau[t];
+                    if (!dest.length) {
+                      if (card.rank === 13) { // King to empty
+                        move = { kind: 'waste_to_tableau', to: t, card };
+                        sendMove(move, 'waste_to_tableau');
+                        break;
+                      }
+                    } else {
+                      const destCard = dest[dest.length-1];
+                      // Different color, one less
+                      const red = c => c.suit === 'hearts' || c.suit === 'diamonds';
+                      if (
+                        red(card) !== red(destCard) &&
+                        destCard.rank === card.rank + 1
+                      ) {
+                        move = { kind: 'waste_to_tableau', to: t, card };
+                        sendMove(move, 'waste_to_tableau');
+                        break;
+                      }
+                    }
+                  }
+                }
+                // 4. Tableau → Tableau
+                if (!move) {
+                  for (let fromT = 0; fromT < (state.tableau ? state.tableau.length : 0); fromT++) {
+                    const pile = state.tableau[fromT];
+                    if (!pile || !pile.length) continue;
+                    const card = pile[pile.length-1];
+                    for (let toT = 0; toT < state.tableau.length; toT++) {
+                      if (toT === fromT) continue;
+                      const dest = state.tableau[toT];
+                      if (!dest.length) {
+                        if (card.rank === 13) {
+                          move = { kind: 'tableau_to_tableau', from: fromT, to: toT, card };
+                          sendMove(move, 'tableau_to_tableau');
+                          break;
+                        }
+                      } else {
+                        const destCard = dest[dest.length-1];
+                        const red = c => c.suit === 'hearts' || c.suit === 'diamonds';
+                        if (
+                          red(card) !== red(destCard) &&
+                          destCard.rank === card.rank + 1
+                        ) {
+                          move = { kind: 'tableau_to_tableau', from: fromT, to: toT, card };
+                          sendMove(move, 'tableau_to_tableau');
+                          break;
+                        }
+                      }
+                    }
+                    if (move) break;
+                  }
+                }
+              }
+              // 5. Fallback: Flip (draw/flip) — throttled to avoid spam
+              if (!move) {
+                const nowT = Date.now();
+                if (!matchBot.lastFlipAt || nowT - matchBot.lastFlipAt > 10000) {
+                  const moveEnvelope = JSON.stringify({
+                    move: {
+                      kind: 'flip',
+                      source: 'bot'
+                    },
+                    from: matchBot.id
+                  });
+                  broadcastToRoom(matchId, moveEnvelope, null);
+                  matchBot.lastMoveAt = nowT;
+                  matchBot.lastFlipAt = nowT;
+                  console.log(
+                    `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="flip (throttled)"`
+                  );
+                }
+              }
+            } catch (err) {
+              console.warn(
+                `[BOT] error while sending move botId="${matchBot.id}" matchId="${matchId}":`,
+                err
+              );
+            }
+          }, 5000);
+        }
+
+        // Rückmeldung an den Host, dass der Bot aktiv ist
+        sendSys(ws, {
+          type: 'bot_spawned',
+          matchId,
+          botId: bot.id,
+          difficulty: bot.difficulty,
+          nick: bot.nick
+        });
+
+        // WICHTIG: Option 2 erzeugt ein echtes Match mit Bot-Gegner; die
+        // eigentliche Spiel-Logik des Bots folgt später.
+        return; // nicht broadcasten
       }
 
       // -------- PUSH-INVITES (Phase 1: reine Weiterleitung) --------

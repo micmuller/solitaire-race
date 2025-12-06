@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.1.4';   // neue Version
+const VERSION = '3.1.6';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -12,6 +12,8 @@ window.VERSION = VERSION;
    - v3.1.1: Startmenu Design Anpassungen
    - v3.1.3: Overlay Host/Guest Nicknames
    - v3.1.4: Menu Anpassungen
+   - v3.1.5: Server-Bot Client-Button & API
+   - v3.1.6: Server-Bot snapshot send on every state change
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -483,6 +485,70 @@ window.VERSION = VERSION;
     return { mine, other, totalCards, hasBonus, bonus, myTotal, otherTotal };
   }
 
+  // --- Bot-Integration: kompakten Spielzustand für den Server-Bot bauen & senden ---
+  function cloneSideForBot(sideState) {
+    try {
+      if (!sideState) {
+        return { stock: [], waste: [], tableau: [] };
+      }
+      return {
+        stock: sideState.stock.map(c => ({ id: c.id, suit: c.suit, rank: c.rank, up: c.up })),
+        waste: sideState.waste.map(c => ({ id: c.id, suit: c.suit, rank: c.rank, up: c.up })),
+        tableau: sideState.tableau.map(pile =>
+          pile.map(c => ({ id: c.id, suit: c.suit, rank: c.rank, up: c.up }))
+        )
+      };
+    } catch (e) {
+      console.warn('[BOT] cloneSideForBot error', e);
+      return { stock: [], waste: [], tableau: [] };
+    }
+  }
+
+  function buildBotSnapshot() {
+    try {
+      return {
+        room: state.room || '',
+        seed: state.seed || '',
+        owner: localOwner,
+        you: cloneSideForBot(state.you),
+        opp: cloneSideForBot(state.opp),
+        foundations: state.foundations.map(f => ({
+          suit: f.suit,
+          cards: f.cards.map(c => ({
+            id: c.id,
+            suit: c.suit,
+            rank: c.rank,
+            up: c.up
+          }))
+        })),
+        moves: state.moves,
+        over: state.over
+      };
+    } catch (e) {
+      console.warn('[BOT] buildBotSnapshot error', e);
+      return null;
+    }
+  }
+
+  function sendBotStateSnapshot(reason) {
+    try {
+      // Nur senden, wenn wir in einem Room sind und eine offene WS-Verbindung haben
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (!state.room) return;
+
+      const snapshot = buildBotSnapshot();
+      if (!snapshot) return;
+
+      sendSys({
+        type: 'bot_state',
+        reason: reason || null,
+        snapshot
+      });
+    } catch (e) {
+      console.warn('[BOT] Konnte bot_state nicht senden:', e);
+    }
+  }
+
   // Neustart-Popup (gleiches Spiel vs. neue Karten) – generelle UI-Helper
   function showRestartPopup() {
     const popup = document.getElementById('restart-popup');
@@ -642,6 +708,10 @@ window.VERSION = VERSION;
         if (announce) state.moves++;
         renderAll();
         if (announce) send(move);
+        // Bot-State nach einem Flip aktualisieren
+        if (typeof sendBotStateSnapshot === 'function') {
+          sendBotStateSnapshot('flip');
+        }
         return;
       }
 
@@ -657,6 +727,10 @@ window.VERSION = VERSION;
         if (announce) state.moves++;
         renderAll();
         if (announce) send(move);
+        // Bot-State nach einem Recycle aktualisieren
+        if (typeof sendBotStateSnapshot === 'function') {
+          sendBotStateSnapshot('recycle');
+        }
         return;
       }
 
@@ -699,6 +773,10 @@ window.VERSION = VERSION;
       renderAll();
       if (announce) send(move);
       checkWin();
+      // Bot-State nach beliebigen anderen Zügen aktualisieren
+      if (typeof sendBotStateSnapshot === 'function') {
+        sendBotStateSnapshot('move:' + (move && move.kind));
+      }
     } catch (err) {
       console.error('applyMove error', err);
       showToast('Move-Fehler: ' + (err?.message || String(err)));
@@ -2139,6 +2217,15 @@ function newGame() {
     }
 
     renderAll();
+
+    // Bot-Integration: Startzustand an einen evtl. vorhandenen Server-Bot senden
+    try {
+      if (typeof sendBotStateSnapshot === 'function') {
+        sendBotStateSnapshot('newGame');
+      }
+    } catch (e) {
+      console.warn('[BOT] newGame bot_state fehlgeschlagen:', e);
+    }
 }
 
   window.addEventListener('DOMContentLoaded', () => {
@@ -2294,6 +2381,15 @@ function newGame() {
         } catch (e) {
           console.warn('[MENU] konnte Startmenü nicht öffnen:', e);
         }
+      });
+    }
+        // Optionaler Button für "Gegen Bot spielen (Server)"
+    const serverBotBtn = document.getElementById('btn-server-bot');
+    if (serverBotBtn && !serverBotBtn._shnBound) {
+      serverBotBtn._shnBound = true;
+      serverBotBtn.addEventListener('click', () => {
+        // Einfachen Standard-Bot (z.B. "normal") anfordern
+        spawnServerBotClient('normal');
       });
     }
   });
@@ -2473,6 +2569,45 @@ function newGame() {
     }
   }
 
+  function spawnServerBotClient(difficulty) {
+    // Server-Bot über den Match-/Lobby-Server starten
+    try {
+      // Sicherstellen, dass wir überhaupt verbunden sind
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        showToast('Nicht verbunden – bitte zuerst verbinden');
+        return;
+      }
+
+      // Nickname stabil ermitteln (nicht "Player", wenn vermeidbar)
+      const name = resolveCurrentNick();
+      state.nick = name;
+      persistNickSafely(name);
+
+      const payload = {
+        type: 'spawn_bot',
+        nick: name
+      };
+
+      // Optional: gewünschte Schwierigkeit mitgeben (kann der Server ignorieren)
+      if (difficulty) {
+        payload.difficulty = String(difficulty);
+      }
+
+      // Optional: aktuelle Room/Seed-Infos mitsenden, falls der Server sie nutzt
+      if (state.room) payload.room = state.room;
+      if (state.seed) payload.seed = state.seed;
+
+      console.log('[BOT] spawn_server_bot payload', payload);
+      sendSys(payload);
+      showToast('Server-Bot wird gestartet …');
+    } catch (e) {
+      console.warn('[BOT] Fehler beim Starten des Server-Bots:', e);
+      showToast('Server-Bot konnte nicht gestartet werden');
+    }
+  }
+
+
+
   // ======================================================
   // 12) SHN-MODULE / ÖFFENTLICHE API
   // ======================================================
@@ -2524,7 +2659,8 @@ function newGame() {
     sendInvite: sendInviteClient,
     acceptInvite: acceptInviteClient,
     declineInvite: declineInviteClient,
-    refreshOnlinePlayers: refreshOnlinePlayersClient
+    refreshOnlinePlayers: refreshOnlinePlayersClient,
+    spawnBotMatch: spawnServerBotClient
   };
 
   // 5) Input-API

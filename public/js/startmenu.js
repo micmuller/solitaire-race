@@ -580,6 +580,13 @@
             </span>
             <span class="shn-startmenu-chip">Offline</span>
           </button>
+          <button type="button" id="shn-startmenu-serverbot" class="shn-startmenu-button">
+            <span class="shn-startmenu-button-label">
+              <span>🤖</span>
+              <span>Bot – Server</span>
+            </span>
+            <span class="shn-startmenu-chip">Online-Bot</span>
+          </button>
         </div>
       </div>
 
@@ -603,6 +610,7 @@
     const btnHuman = dialog.querySelector('#shn-startmenu-human');
     const btnJoinWait = dialog.querySelector('#shn-startmenu-join-wait');
     const btnBot   = dialog.querySelector('#shn-startmenu-bot');
+    const btnServerBot = dialog.querySelector('#shn-startmenu-serverbot');
     const panelHuman = dialog.querySelector('#shn-startmenu-human-panel');
     const roomOut  = dialog.querySelector('#shn-startmenu-room');
     const seedOut  = dialog.querySelector('#shn-startmenu-seed');
@@ -993,6 +1001,42 @@
 
         ui.showToast('Bot-Spiel (Easy) gestartet – du spielst unten, der Bot oben.');
         destroyOverlay();
+      });
+    }
+
+    if (btnServerBot) {
+      btnServerBot.addEventListener('click', () => {
+        // Nickname früh synchronisieren
+        syncNickEarly();
+        const nick = getNickFromMainUi();
+
+        // Für Server-Bot-Duelle verbinden wir uns in die Lobby,
+        // damit der Server das Match dort anlegen kann.
+        const roomIn = document.getElementById('room');
+        if (roomIn && !roomIn.value) {
+          roomIn.value = 'lobby';
+        }
+
+        // Verbindung aufbauen
+        triggerConnectIfPossible();
+
+        const netApi = SHN.net;
+        if (!netApi || typeof netApi.spawnBotMatch !== 'function') {
+          ui.showToast('Server-Bot nicht verfügbar');
+          return;
+        }
+
+        // Warten bis wir online sind, dann Spawn-Request schicken
+        waitForOnlineThen(() => {
+          try {
+            netApi.spawnBotMatch('easy');
+            ui.showToast('Server-Bot Duell wird erstellt …');
+            destroyOverlay();
+          } catch (e) {
+            console.warn('[StartMenu] spawnBotMatch fehlgeschlagen:', e);
+            ui.showToast('Server-Bot Duell konnte nicht gestartet werden');
+          }
+        });
       });
     }
 

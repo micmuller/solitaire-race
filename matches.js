@@ -4,6 +4,11 @@
 
 const matches = new Map(); // key = matchId, value = Match-Objekt
 
+// Optional: Bot-Unterstützung auf Match-Ebene.
+// Ein Bot wird wie ein Spieler in der players-Liste geführt, kann aber
+// zusätzlich mit isBot/difficulty gekennzeichnet werden.
+// v1.1: Bot erweiterungen
+
 function generateMatchId() {
   // Kurzer, menschenlesbarer Code wie "DUEL4"
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -42,13 +47,16 @@ function createMatchForClient(ws, nick, rooms) {
     status: 'waiting', // 'waiting' | 'ready' | 'running' | 'finished'
     createdAt: now,
     lastActivityAt: now,
+    lastGameState: null,
     players: [
       {
         playerId: 'p1',
         clientId: ws.__cid,
         nick: nick || 'Player 1',
         role: 'host',
-        connected: true
+        connected: true,
+        isBot: false,
+        difficulty: null
       }
     ]
   };
@@ -83,7 +91,9 @@ function joinMatchForClient(ws, matchId, nick) {
     clientId: ws.__cid,
     nick: nick || `Player ${match.players.length + 1}`,
     role: match.players.length === 0 ? 'host' : 'guest',
-    connected: true
+    connected: true,
+    isBot: false,
+    difficulty: null
   };
 
   match.players.push(player);
@@ -92,6 +102,47 @@ function joinMatchForClient(ws, matchId, nick) {
 
   ws.__matchId = matchId;
   ws.__playerId = playerId;
+
+  return match;
+}
+
+function addBotToMatch(matchId, difficulty = 'easy') {
+  const match = matches.get(matchId);
+  if (!match) {
+    const err = new Error('match_not_found');
+    err.code = 'match_not_found';
+    throw err;
+  }
+  if (match.players.length >= 2) {
+    const err = new Error('match_full');
+    err.code = 'match_full';
+    throw err;
+  }
+  if (match.status === 'finished') {
+    const err = new Error('match_finished');
+    err.code = 'match_finished';
+    throw err;
+  }
+
+  const playerId = 'bot';
+  const nick =
+    difficulty === 'hard'   ? 'Bot-Hard'   :
+    difficulty === 'medium' ? 'Bot-Medium' :
+    'Bot-Easy';
+
+  const player = {
+    playerId,
+    clientId: null, // Bot hängt nicht an einem echten WebSocket
+    nick,
+    role: match.players.length === 0 ? 'host' : 'guest',
+    connected: true,
+    isBot: true,
+    difficulty
+  };
+
+  match.players.push(player);
+  match.status = 'ready';
+  match.lastActivityAt = Date.now();
 
   return match;
 }
@@ -108,6 +159,17 @@ function markPlayerDisconnected(ws) {
   match.lastActivityAt = Date.now();
 }
 
+function updateMatchGameState(matchId, gameState) {
+  const match = matches.get(matchId);
+  if (!match) return;
+  match.lastGameState = gameState;
+  match.lastActivityAt = Date.now();
+}
+
+function getMatch(matchId) {
+  return matches.get(matchId) || null;
+}
+
 function getPublicMatchView(match) {
   return {
     matchId: match.matchId,
@@ -118,7 +180,9 @@ function getPublicMatchView(match) {
       playerId: p.playerId,
       nick: p.nick,
       role: p.role,
-      connected: !!p.connected
+      connected: !!p.connected,
+      isBot: !!p.isBot,
+      difficulty: p.difficulty || null
     }))
   };
 }
@@ -140,7 +204,10 @@ function cleanupOldMatches(ttlMs = 60 * 60 * 1000) {
 module.exports = {
   createMatchForClient,
   joinMatchForClient,
+  addBotToMatch,
   markPlayerDisconnected,
   getPublicMatchView,
-  cleanupOldMatches
+  cleanupOldMatches,
+  getMatch,
+  updateMatchGameState
 };
