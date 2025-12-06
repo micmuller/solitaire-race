@@ -226,16 +226,10 @@
           return;
         }
 
-        // Nickname VOR dem neuen Connect in Main-UI & State schreiben,
+        // Nickname VOR dem neuen Connect zentral setzen (UI, State, localStorage),
         // damit das erste hello im Match-Raum nicht wieder "Player" sendet.
         try {
-          const mainNickEl = document.getElementById('nick');
-          if (mainNickEl) {
-            mainNickEl.value = nick;
-          }
-          if (SHN.state) {
-            SHN.state.nick = nick;
-          }
+          applyNickEverywhere(nick);
         } catch (e) {
           console.warn('[INVITE] konnte Nick beim Invite-Accept nicht setzen:', e);
         }
@@ -556,6 +550,28 @@
     const inviteTargetCidInput = dialog.querySelector('#shn-startmenu-targetcid');
     const sendInviteLink = dialog.querySelector('#shn-startmenu-send-invite');
 
+    // Zentraler Helper: Nickname in Main-UI, State und localStorage anwenden
+    function applyNickEverywhere(n) {
+      const nick = (n && String(n).trim()) || 'Player';
+      try {
+        const mainNickEl = document.getElementById('nick');
+        if (mainNickEl) {
+          mainNickEl.value = nick;
+        }
+        if (SHN.state) {
+          SHN.state.nick = nick;
+        }
+        if (window.localStorage) {
+          // Sowohl alter als auch neuer Key, damit game.js und ältere Versionen
+          // konsistent denselben Wert sehen.
+          window.localStorage.setItem('shn_nick', nick);
+          window.localStorage.setItem('nick', nick);
+        }
+      } catch (e) {
+        console.warn('[StartMenu] applyNickEverywhere Fehler:', e);
+      }
+    }
+
     // Zentral: Nickname vor jeglichem Connect in State & Main-UI spiegeln
     function syncNickEarly() {
       const overlayNickEl = dialog.querySelector('#shn-startmenu-nick');
@@ -567,21 +583,7 @@
       }
       if (!n) n = 'Player';
 
-      if (mainNickEl) {
-        mainNickEl.value = n;
-      }
-      if (SHN.state) {
-        SHN.state.nick = n;
-      }
-      // Nick auch im localStorage persistent halten, damit Reloads und neue Verbindungen
-      // denselben Spielernamen weiterverwenden können.
-      try {
-        if (window.localStorage) {
-          window.localStorage.setItem('shn_nick', n);
-        }
-      } catch (e) {
-        console.warn('[StartMenu] Konnte Nick nicht in localStorage schreiben:', e);
-      }
+      applyNickEverywhere(n);
     }
 
     // Nickname-Sync: Overlay ⇄ Main UI (inkl. localStorage)
@@ -589,17 +591,26 @@
       const mainNickEl = document.getElementById('nick');
       const overlayNickEl = dialog.querySelector('#shn-startmenu-nick');
 
-      // 0) Aus localStorage vorbefüllen, falls vorhanden
-      try {
+    // 0) Aus localStorage vorbefüllen, falls vorhanden
+    try {
         if (window.localStorage) {
-          const stored = window.localStorage.getItem('shn_nick');
+          // Bevorzugt den neuen Key, fällt aber auf den alten zurück,
+          // falls nur dort etwas gespeichert ist.
+          let stored = window.localStorage.getItem('shn_nick');
+          if (!stored || !stored.trim()) {
+            stored = window.localStorage.getItem('nick');
+          }
           if (stored && stored.trim()) {
+            const trimmed = stored.trim();
             if (overlayNickEl && !overlayNickEl.value.trim()) {
-              overlayNickEl.value = stored.trim();
+              overlayNickEl.value = trimmed;
             }
             if (mainNickEl && !mainNickEl.value.trim()) {
-              mainNickEl.value = stored.trim();
+              mainNickEl.value = trimmed;
             }
+            // Gleichzeitig den konsolidierten Wert überall anwenden,
+            // damit State und beide Keys synchron sind.
+            applyNickEverywhere(trimmed);
           }
         }
       } catch (e) {
@@ -1014,24 +1025,7 @@
         // Verbindung aufbauen
         triggerConnectIfPossible();
         ui.showToast('Verbinde und warte auf Einladung …');
-
-        // Sicherstellen, dass ein hello-SYS mit Nickname gesendet wird,
-        // sobald die Verbindung online ist (zusätzlich zum ws.onopen in game.js).
-        if (typeof waitForOnlineThen === 'function' &&
-            SHN.net &&
-            typeof SHN.net.sendSys === 'function') {
-
-          const finalNick = (document.getElementById('nick')?.value?.trim()) || 'Player';
-
-          waitForOnlineThen(() => {
-            try {
-              SHN.net.sendSys({ type: 'hello', nick: finalNick });
-            } catch (err) {
-              console.warn('[StartMenu] hello(nick) fehlgeschlagen:', err);
-            }
-          });
-        }
-
+      
         destroyOverlay();
       });
     }

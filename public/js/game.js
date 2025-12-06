@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.0.27';   // neue Version
+const VERSION = '3.0.30';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -22,7 +22,7 @@ window.VERSION = VERSION;
    - v3.0.10: Push-Invite SYS-Handler + Invite-Popup
    - v3.0.23: Nickname-Weitergabe im hello-SYS (Startmenü-Nick)
    - v3.0.24: Zusätzliche hello-Syncs nach match_update (Nick-Fix für Guest-Join)
-   - v3.0.27: Nickname-Priorität aus localStorage (Fix für Guest-Join in Match-Room)
+   - v3.0.30: Nickname Fixes (Invite-Accept, Server-hello Throttle)
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -241,6 +241,19 @@ window.VERSION = VERSION;
   // ======================================================
   // 4) GAME STATE & DEAL
   // ======================================================
+
+  // Nickname sicher in localStorage speichern (keine Defaults wie "Player" überschreiben)
+  function persistNickSafely(name) {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const v = String(name || '').trim();
+      if (v && v !== 'Player') {
+        localStorage.setItem('nick', v);
+      }
+    } catch (e) {
+      console.warn('[NICK] Konnte Nick nicht speichern:', e);
+    }
+  }
 
 
   // Hilfsfunktion: aktuellen Nickname aus State / UI / Storage ermitteln
@@ -1524,6 +1537,19 @@ window.VERSION = VERSION;
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ move:m, from:clientId }));
   }
 
+  // Zentrales Hello an den Server, immer mit final aufgelöstem Nick
+  function sendHelloWithResolvedNick() {
+    const nickVal = resolveCurrentNick();
+    console.log('[WS] Using nick:', nickVal);
+    state.nick = nickVal;
+    persistNickSafely(nickVal);
+    try {
+      sendSys({ type: 'hello', nick: nickVal });
+    } catch (e) {
+      console.warn('[HELLO] konnte hello nicht senden:', e);
+    }
+  }
+
   function buildWsUrl() {
     // 1) Vollständige Override-URL via ?ws=...
     const override = url.searchParams.get('ws');
@@ -1570,13 +1596,7 @@ window.VERSION = VERSION;
   const nickBeforeConnect = resolveCurrentNick();
   state.nick = nickBeforeConnect;
   console.log('[WS] connectWS() – final nick =', nickBeforeConnect);
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('nick', nickBeforeConnect);
-    }
-  } catch (e) {
-    console.warn('[WS] Konnte Nick vor connectWS nicht in localStorage speichern:', e);
-  }
+  persistNickSafely(nickBeforeConnect);
 
   const maxAttempts = 4;       // weniger Versuche
   const timeoutMs   = 2000;    // kürzeres Timeout
@@ -1645,21 +1665,8 @@ window.VERSION = VERSION;
 
     showToast('Verbunden');
 
-    // Nickname für hello-SYS einmal zentral ermitteln
-    const nickVal = resolveCurrentNick();
-    console.log('[WS] Using nick:', nickVal);
-
-    // im State merken und persistieren
-    state.nick = nickVal;
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('nick', nickVal);
-      }
-    } catch (e) {
-      console.warn('[NICK] Konnte Nick in localStorage (ws.onopen) nicht speichern:', e);
-    }
-
-    sendSys({ type: 'hello', nick: nickVal });
+    // zentrales Hello mit konsistentem Nick (nicht "Player", wenn bereits ein besserer Nick existiert)
+    sendHelloWithResolvedNick();
     updateOverlay();
 
     pingTimer = setInterval(() => {
@@ -1784,16 +1791,13 @@ window.VERSION = VERSION;
 
           // Nickname-Logik: wenn der Server uns einen Host-Namen liefert,
           // diesen auch lokal übernehmen und per hello an den Server bestätigen.
-          if (hostNick) {
-            if (!state.nick || state.nick === 'Player') {
-              state.nick = hostNick;
-            }
-            try {
-              sendSys({ type: 'hello', nick: state.nick });
-            } catch (e) {
-              console.warn('[MATCH] konnte korrigierendes hello für Host nicht senden:', e);
-            }
+          if (hostNick && (!state.nick || state.nick === 'Player')) {
+            state.nick = hostNick;
+            persistNickSafely(state.nick);
           }
+          // zentrale Hello-Synchronisation: stellt sicher, dass der Server unseren
+          // endgültigen Nick kennt (und nicht auf "Player" hängen bleibt).
+          sendHelloWithResolvedNick();
 
           const label = matchId ? `Match erstellt: ${matchId}` : 'Match erstellt';
           showToast(label);
@@ -1843,19 +1847,15 @@ window.VERSION = VERSION;
           }
 
           // Nickname-Logik für den Joiner: wenn der Server uns einen Guest-Namen
-          // liefert, diesen lokal als state.nick übernehmen und per hello
-          // an den Server bestätigen, damit Logs und weitere SYS-Messages
-          // den korrekten Nick tragen.
-          if (guestNick) {
-            if (!state.nick || state.nick === 'Player') {
-              state.nick = guestNick;
-            }
-            try {
-              sendSys({ type: 'hello', nick: state.nick });
-            } catch (e) {
-              console.warn('[MATCH] konnte korrigierendes hello für Guest nicht senden:', e);
-            }
+          // liefert, diesen lokal als state.nick übernehmen. Persistiere nur,
+          // wenn es kein generischer "Player" ist.
+          if (guestNick && (!state.nick || state.nick === 'Player')) {
+            state.nick = guestNick;
+            persistNickSafely(state.nick);
           }
+          // zentrale Hello-Synchronisation: nach match_joined noch einmal ein hello
+          // mit dem endgültigen Nick schicken (korrigiert evtl. "Player" im Serverzustand).
+          sendHelloWithResolvedNick();
 
           // WICHTIG:
           // Sobald das Match serverseitig bestätigt ist (match_joined),
@@ -1929,17 +1929,8 @@ window.VERSION = VERSION;
 
           // Sicherstellen, dass der Server unseren aktuellen Nick in diesem Room kennt.
           // Gerade beim Guest-Join (Invite-Flows) kann der interne Match-Client sonst
-          // auf "Player" stehen bleiben. Ein erneutes hello mit state.nick korrigiert das.
-          try {
-            if (state.nick && typeof state.nick === 'string') {
-              const trimmedNick = state.nick.trim();
-              if (trimmedNick && trimmedNick !== 'Player' && ws && ws.readyState === WebSocket.OPEN) {
-                sendSys({ type: 'hello', nick: trimmedNick });
-              }
-            }
-          } catch (e) {
-            console.warn('[MATCH] konnte hello nach match_update nicht senden:', e);
-          }
+          // auf "Player" stehen bleiben. Ein erneutes zentrales hello korrigiert das.
+          sendHelloWithResolvedNick();
         }
         else if (msg.sys.type === 'match_error') {
           const m = msg.sys.message || 'Match-Fehler';
@@ -2263,23 +2254,11 @@ function newGame() {
     state.nick = name;
     console.log('[MATCH] createMatchClient nick =', name);
 
-    // Nick persistieren
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('nick', name);
-      }
-    } catch (e) {
-      console.warn('[NICK] Konnte Nick in localStorage (createMatchClient) nicht speichern:', e);
-    }
+    // Nick persistieren (aber niemals generischen "Player" überschreiben lassen)
+    persistNickSafely(name);
 
-    // Korrigierendes hello mit dem endgültigen Nick an den Server senden,
-    // damit Logs und weitere SYS-Messages nicht mehr "Player" enthalten.
-    try {
-      sendSys({ type: 'hello', nick: name });
-    } catch (e) {
-      console.warn('[MATCH] konnte hello für createMatchClient nicht senden:', e);
-    }
-
+    // Nur das create_match senden – das eigentliche hello läuft zentral
+    // über sendHelloWithResolvedNick() (z.B. im connectWS/onopen).
     sendSys({ type: 'create_match', nick: name });
   }
 
@@ -2302,23 +2281,10 @@ function newGame() {
     state.nick = name;
     console.log('[MATCH] joinMatchClient nick =', name);
 
-    // Nick persistieren
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('nick', name);
-      }
-    } catch (e) {
-      console.warn('[NICK] Konnte Nick in localStorage (joinMatchClient) nicht speichern:', e);
-    }
+    // Nick persistieren (aber niemals generischen "Player" überschreiben lassen)
+    persistNickSafely(name);
 
-    // Korrigierendes hello mit dem endgültigen Nick an den Server senden,
-    // damit Logs und weitere SYS-Messages den richtigen Guest-Namen haben.
-    try {
-      sendSys({ type: 'hello', nick: name });
-    } catch (e) {
-      console.warn('[MATCH] konnte hello für joinMatchClient nicht senden:', e);
-    }
-
+    // Nur das join_match senden – das eigentliche hello läuft zentral.
     sendSys({ type: 'join_match', matchId: code, nick: name });
   }
 
@@ -2361,29 +2327,22 @@ function newGame() {
       return;
     }
 
-    const name =
-      (fromNick && String(fromNick).trim()) ||
-      (typeof state.nick === 'string' && state.nick.trim()) ||
-      (document.getElementById('nick')?.value?.trim()) ||
-      'Player';
+    // Lokalen Nickname möglichst stabil aus State/UI/Storage ermitteln
+    // und "Player" nur als allerletzten Fallback akzeptieren.
+    let name = resolveCurrentNick();
+    if (!name || name === 'Player') {
+      name =
+        (typeof state.nick === 'string' && state.nick.trim()) ||
+        (document.getElementById('nick')?.value?.trim()) ||
+        (typeof fromNick === 'string' && fromNick.trim()) ||
+        'Player';
+    }
 
-    // Nick im State fixieren und korrigierendes hello senden
+    // Nick im State fixieren
     state.nick = name;
+    persistNickSafely(name);
 
-    // Nick persistieren
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('nick', name);
-      }
-    } catch (e) {
-      console.warn('[NICK] Konnte Nick in localStorage (acceptInviteClient) nicht speichern:', e);
-    }
-
-    try {
-      sendSys({ type: 'hello', nick: name });
-    } catch (e) {
-      console.warn('[INVITE] konnte hello für acceptInviteClient nicht senden:', e);
-    }
+    // hello läuft zentral über sendHelloWithResolvedNick(), hier kein zusätzliches hello.
 
     // Lokalen Match-State für den Guest sofort aktualisieren,
     // damit das Overlay Host- und Guest-Namen anzeigen kann,
