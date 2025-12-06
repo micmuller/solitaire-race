@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.1.6';   // neue Version
+const VERSION = '3.1.9';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -14,6 +14,9 @@ window.VERSION = VERSION;
    - v3.1.4: Menu Anpassungen
    - v3.1.5: Server-Bot Client-Button & API
    - v3.1.6: Server-Bot snapshot send on every state change
+   - v3.1.7: Server-Bot snapshot nur bei Bot-Spielen
+   - v3.1.8: Server-Bot Snapshot erweitert (Match-/Nick-Metadaten)
+   - v3.1.9: Server-Bot periodische Snapshots (nur bei Bot-Spielen)
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -330,13 +333,17 @@ window.VERSION = VERSION;
       status: 'idle',        // 'idle' | 'waiting' | 'ready' | 'running' | 'finished'
       hostNick: '',
       guestNick: '',
-      playersConnected: 0
+      playersConnected: 0,
+      isBotMatch: false
     },
     // Letzte empfangene Einladung (für UI / Accept/Decline)
     lastInvite: null,
     // Vom Server gemeldete Online-Spieler (Presence / Lobby)
     onlinePlayers: []
   };
+  // Flag: Server-Bot-Modus (wird gesetzt, wenn "Gegen Bot spielen (Server)" gestartet wird)
+  let serverBotMode = false;
+
 
   // ---------- Owner ----------
   let localOwner = 'Y';
@@ -486,6 +493,28 @@ window.VERSION = VERSION;
   }
 
   // --- Bot-Integration: kompakten Spielzustand für den Server-Bot bauen & senden ---
+
+  function isBotGameActive() {
+    try {
+      // Bot ist aktiv, wenn:
+      // 1) explizit über den Client-Button "Gegen Bot spielen (Server)" aktiviert wurde
+      //    ODER
+      // 2) der Match-State vom Server ein Bot-Match kennzeichnet (isBotMatch/bot/botNick).
+      const match = state && state.match ? state.match : null;
+      const serverFlag =
+        match &&
+        (
+          match.isBotMatch === true ||
+          match.bot === true ||
+          !!match.botNick
+        );
+
+      return !!(serverBotMode || serverFlag);
+    } catch {
+      return false;
+    }
+  }
+
   function cloneSideForBot(sideState) {
     try {
       if (!sideState) {
@@ -506,12 +535,26 @@ window.VERSION = VERSION;
 
   function buildBotSnapshot() {
     try {
+      const matchMeta = (state && state.match) ? state.match : null;
+
       return {
+        // Grundlegende Zuordnung
         room: state.room || '',
         seed: state.seed || '',
         owner: localOwner,
+
+        // Match-Metadaten für den Bot (optional, aber hilfreich)
+        matchId: matchMeta && matchMeta.id ? matchMeta.id : (state.room || ''),
+        isBotMatch: !!(matchMeta && matchMeta.isBotMatch),
+        hostNick: matchMeta && matchMeta.hostNick ? matchMeta.hostNick : '',
+        guestNick: matchMeta && matchMeta.guestNick ? matchMeta.guestNick : '',
+        localNick: state.nick || '',
+
+        // Seitenzustand (bereits reduziert auf Suit/Rank/ID/Up)
         you: cloneSideForBot(state.you),
         opp: cloneSideForBot(state.opp),
+
+        // Foundations inkl. Karten
         foundations: state.foundations.map(f => ({
           suit: f.suit,
           cards: f.cards.map(c => ({
@@ -521,6 +564,8 @@ window.VERSION = VERSION;
             up: c.up
           }))
         })),
+
+        // einfache Metriken
         moves: state.moves,
         over: state.over
       };
@@ -532,6 +577,8 @@ window.VERSION = VERSION;
 
   function sendBotStateSnapshot(reason) {
     try {
+      // Nur während eines aktiven Bot-Spiels Snapshots senden
+      if (!isBotGameActive()) return;
       // Nur senden, wenn wir in einem Room sind und eine offene WS-Verbindung haben
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       if (!state.room) return;
@@ -542,7 +589,8 @@ window.VERSION = VERSION;
       sendSys({
         type: 'bot_state',
         reason: reason || null,
-        snapshot
+        state: snapshot,      // Hauptfeld für den Server
+        snapshot              // optionaler Alias für spätere Nutzung
       });
     } catch (e) {
       console.warn('[BOT] Konnte bot_state nicht senden:', e);
@@ -1630,6 +1678,21 @@ window.VERSION = VERSION;
     updateOverlay();
   }, 1000);
 
+  // Bot-State-Ticker: alle 2.5s Snapshot, aber nur bei aktivem Bot-Match
+  setInterval(() => {
+    try {
+      if (typeof sendBotStateSnapshot === 'function') {
+        // sendBotStateSnapshot selbst prüft:
+        // - isBotGameActive()
+        // - offene WS-Verbindung
+        // - vorhandenen Room
+        sendBotStateSnapshot('interval');
+      }
+    } catch (e) {
+      console.warn('[BOT] periodic bot_state failed:', e);
+    }
+  }, 2500);
+
   function clearConnectRetryTimer() {
     if (connectRetryTimer) {
       clearTimeout(connectRetryTimer);
@@ -1866,10 +1929,11 @@ window.VERSION = VERSION;
         }
         // Match-Flow: neue match-bezogene SYS-Handler
         else if (msg.sys.type === 'match_created') {
-          const matchId  = msg.sys.matchId;
-          const seed     = msg.sys.seed;
-          const status   = msg.sys.status;
-          const hostNick = msg.sys.hostNick;
+          const m = msg.sys.match || msg.sys;
+          const matchId  = m.matchId;
+          const seed     = m.seed;
+          const status   = m.status;
+          const hostNick = m.hostNick;
 
           if (matchId) {
             state.room = matchId;
@@ -1890,13 +1954,22 @@ window.VERSION = VERSION;
               status: 'idle',
               hostNick: '',
               guestNick: '',
-              playersConnected: 0
+              playersConnected: 0,
+              isBotMatch: false
             };
           }
           state.match.id = matchId || state.room || state.match.id;
           state.match.status = status || 'waiting';
           if (hostNick) state.match.hostNick = hostNick;
           state.match.playersConnected = 1;
+          // Bot-Match-Flag vom Server übernehmen (verschiedene mögliche Felder unterstützen)
+          const isBotMatchFlag = !!(m.isBotMatch || m.bot === true || m.botNick);
+          state.match.isBotMatch = isBotMatchFlag;
+          console.log('[BOT] match_created isBotMatch =', isBotMatchFlag, 'raw =', {
+            isBotMatch: m.isBotMatch,
+            bot: m.bot,
+            botNick: m.botNick
+          });
 
           // URL aktualisieren, damit Reload denselben Match/Seed hat
           try {
@@ -1923,10 +1996,11 @@ window.VERSION = VERSION;
           console.log('[MATCH] created (client)', msg.sys);
         }
         else if (msg.sys.type === 'match_joined') {
-          const matchId  = msg.sys.matchId;
-          const seed     = msg.sys.seed;
-          const hostNick = msg.sys.hostNick;
-          const guestNick = msg.sys.guestNick;
+          const m = msg.sys.match || msg.sys;
+          const matchId  = m.matchId;
+          const seed     = m.seed;
+          const hostNick = m.hostNick;
+          const guestNick = m.guestNick;
 
           if (matchId) {
             state.room = matchId;
@@ -1947,7 +2021,8 @@ window.VERSION = VERSION;
               status: 'idle',
               hostNick: '',
               guestNick: '',
-              playersConnected: 0
+              playersConnected: 0,
+              isBotMatch: false
             };
           }
           state.match.id = matchId || state.room || state.match.id;
@@ -1955,6 +2030,14 @@ window.VERSION = VERSION;
           if (hostNick) state.match.hostNick = hostNick;
           if (guestNick) state.match.guestNick = guestNick;
           state.match.playersConnected = 2;
+          // Bot-Match-Flag auch für Joiner übernehmen
+          const isBotMatchFlagJ = !!(m.isBotMatch || m.bot === true || m.botNick);
+          state.match.isBotMatch = isBotMatchFlagJ;
+          console.log('[BOT] match_joined isBotMatch =', isBotMatchFlagJ, 'raw =', {
+            isBotMatch: m.isBotMatch,
+            bot: m.bot,
+            botNick: m.botNick
+          });
 
           try {
             const urlObj = new URL(window.location.href);
@@ -2007,7 +2090,8 @@ window.VERSION = VERSION;
               status: 'idle',
               hostNick: '',
               guestNick: '',
-              playersConnected: 0
+              playersConnected: 0,
+              isBotMatch: false
             };
           }
 
@@ -2030,6 +2114,16 @@ window.VERSION = VERSION;
 
           const prevConnected = state.match.playersConnected || 0;
           state.match.playersConnected = connectedCount;
+          // Bot-Match-Flag aus dem Match-Update ableiten, falls vorhanden
+          const isBotMatchUpdate = !!(m.isBotMatch || m.bot === true || m.botNick);
+          if (typeof state.match.isBotMatch === 'boolean') {
+            // nur überschreiben, wenn der Server explizit etwas sendet
+            if (m.isBotMatch !== undefined || m.bot !== undefined || m.botNick !== undefined) {
+              state.match.isBotMatch = isBotMatchUpdate;
+            }
+          } else {
+            state.match.isBotMatch = isBotMatchUpdate;
+          }
 
           // Einfache Lobby-Feedback-Logik:
           // - 1 Spieler connected  → "Warte auf Gegner …"
@@ -2569,7 +2663,7 @@ function newGame() {
     }
   }
 
-  function spawnServerBotClient(difficulty) {
+   function spawnServerBotClient(difficulty) {
     // Server-Bot über den Match-/Lobby-Server starten
     try {
       // Sicherstellen, dass wir überhaupt verbunden sind
@@ -2582,6 +2676,29 @@ function newGame() {
       const name = resolveCurrentNick();
       state.nick = name;
       persistNickSafely(name);
+
+      // Lokalen Match-State initialisieren, falls noch nicht vorhanden
+      if (!state.match) {
+        state.match = {
+          id: state.room || '',
+          status: 'idle',
+          hostNick: name,
+          guestNick: '',
+          playersConnected: 1,
+          isBotMatch: true
+        };
+      } else {
+        if (!state.match.id) {
+          state.match.id = state.room || '';
+        }
+        if (!state.match.hostNick) {
+          state.match.hostNick = name;
+        }
+        state.match.isBotMatch = true;
+      }
+
+      // Lokalen Flag setzen: ab jetzt soll der Client Bot-Snapshots schicken
+      serverBotMode = true;
 
       const payload = {
         type: 'spawn_bot',
