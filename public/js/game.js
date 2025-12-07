@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.1.9';   // neue Version
+const VERSION = '3.2.4';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -17,6 +17,7 @@ window.VERSION = VERSION;
    - v3.1.7: Server-Bot snapshot nur bei Bot-Spielen
    - v3.1.8: Server-Bot Snapshot erweitert (Match-/Nick-Metadaten)
    - v3.1.9: Server-Bot periodische Snapshots (nur bei Bot-Spielen)
+   - v3.2.3: Server-Bot Snapshot v2 (Tick + Metrics für Bot-Engine) & Debug
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -318,31 +319,33 @@ window.VERSION = VERSION;
   }
 
 
-  const state = {
-    nick: loadStoredNick(),
-    seed: url.searchParams.get('seed') || '',
-    room: url.searchParams.get('room') || '',
-    you: { stock: [], waste: [], tableau: [[], [], [], [], [], [], []] },
-    opp: { stock: [], waste: [], tableau: [[], [], [], [], [], [], []] },
-    foundations: Array.from({ length: 8 }, (_, i) => ({ suit: SUITS[i % 4], cards: [] })),
-    moves: 0,
-    over: false,
-    netOnline: false,
-    match: {
-      id: url.searchParams.get('room') || '',
-      status: 'idle',        // 'idle' | 'waiting' | 'ready' | 'running' | 'finished'
-      hostNick: '',
-      guestNick: '',
-      playersConnected: 0,
-      isBotMatch: false
-    },
-    // Letzte empfangene Einladung (für UI / Accept/Decline)
-    lastInvite: null,
-    // Vom Server gemeldete Online-Spieler (Presence / Lobby)
-    onlinePlayers: []
-  };
-  // Flag: Server-Bot-Modus (wird gesetzt, wenn "Gegen Bot spielen (Server)" gestartet wird)
-  let serverBotMode = false;
+const state = {
+  nick: loadStoredNick(),
+  seed: url.searchParams.get('seed') || '',
+  room: url.searchParams.get('room') || '',
+  you: { stock: [], waste: [], tableau: [[], [], [], [], [], [], []] },
+  opp: { stock: [], waste: [], tableau: [[], [], [], [], [], [], []] },
+  foundations: Array.from({ length: 8 }, (_, i) => ({ suit: SUITS[i % 4], cards: [] })),
+  moves: 0,
+  over: false,
+  netOnline: false,
+  match: {
+    id: url.searchParams.get('room') || '',
+    status: 'idle',        // 'idle' | 'waiting' | 'ready' | 'running' | 'finished'
+    hostNick: '',
+    guestNick: '',
+    playersConnected: 0,
+    isBotMatch: false
+  },
+  // Letzte empfangene Einladung (für UI / Accept/Decline)
+  lastInvite: null,
+  // Vom Server gemeldete Online-Spieler (Presence / Lobby)
+  onlinePlayers: []
+};
+// Flag: Server-Bot-Modus (wird gesetzt, wenn "Gegen Bot spielen (Server)" gestartet wird)
+let serverBotMode = false;
+  // Zähler für Bot-State-Snapshots (für Server-Logging & Bot-Engine)
+  let botStateTick = 0;
 
 
   // ---------- Owner ----------
@@ -462,22 +465,34 @@ window.VERSION = VERSION;
         }
       }
     }
-
+    // Debug-Ausgabe für Foundation-Zähler
+    console.debug('[SCORE] computeLocalFoundationCounts', {
+      localOwner,
+      totalFoundations: state.foundations.reduce((a, f) => a + f.cards.length, 0),
+      mine,
+      other
+    });
     return { mine, other };
   }
 
   // Aktualisiert die großen Score-Counter (unten links / oben rechts)
   function updateFoundationCounters() {
+    // Debug-Ausgabe für Score-Anzeige
+    console.debug('[SCORE] updateFoundationCounters called');
     const { mine, other } = computeLocalFoundationCounts();
 
     const youEl = document.getElementById('score-you');
     if (youEl) {
       youEl.textContent = String(mine);
+    } else {
+      console.warn('[SCORE] Element #score-you nicht gefunden');
     }
 
     const oppEl = document.getElementById('score-opp');
     if (oppEl) {
       oppEl.textContent = String(other);
+    } else {
+      console.warn('[SCORE] Element #score-opp nicht gefunden');
     }
   }
 
@@ -494,26 +509,40 @@ window.VERSION = VERSION;
 
   // --- Bot-Integration: kompakten Spielzustand für den Server-Bot bauen & senden ---
 
-  function isBotGameActive() {
-    try {
-      // Bot ist aktiv, wenn:
-      // 1) explizit über den Client-Button "Gegen Bot spielen (Server)" aktiviert wurde
-      //    ODER
-      // 2) der Match-State vom Server ein Bot-Match kennzeichnet (isBotMatch/bot/botNick).
-      const match = state && state.match ? state.match : null;
-      const serverFlag =
-        match &&
-        (
-          match.isBotMatch === true ||
-          match.bot === true ||
-          !!match.botNick
-        );
+function isBotGameActive() {
+  try {
+    const match = state && state.match ? state.match : null;
 
-      return !!(serverBotMode || serverFlag);
-    } catch {
-      return false;
-    }
+    // Zusätzliche Erkennung: Bot-Spiel auch dann, wenn ein Spieler im Match
+    // als isBot=true markiert ist (kommt aus matches.js / Server-Logik).
+    const hasBotPlayer =
+      match &&
+      Array.isArray(match.players) &&
+      match.players.some(p => p && p.isBot);
+
+    const serverFlag =
+      match &&
+      (
+        match.isBotMatch === true ||
+        match.bot === true ||
+        !!match.botNick ||
+        hasBotPlayer
+      );
+
+    const active = !!(serverBotMode || serverFlag);
+    console.debug('[BOT] isBotGameActive =', active, {
+      serverBotMode,
+      matchIsBotMatch: match && match.isBotMatch,
+      matchBot: match && match.bot,
+      matchBotNick: match && match.botNick,
+      hasBotPlayer
+    });
+    return active;
+  } catch (e) {
+    console.warn('[BOT] isBotGameActive Fehler:', e);
+    return false;
   }
+}
 
   function cloneSideForBot(sideState) {
     try {
@@ -537,24 +566,134 @@ window.VERSION = VERSION;
     try {
       const matchMeta = (state && state.match) ? state.match : null;
 
+      // "you" / "opp" aus Sicht des aktuellen Owners bestimmen
+      const youSideKey = ownerToSide(localOwner); // normalerweise "you"
+      const oppSideKey = youSideKey === 'you' ? 'opp' : 'you';
+      const youSide    = state[youSideKey] || { stock: [], waste: [], tableau: [] };
+      const oppSide    = state[oppSideKey] || { stock: [], waste: [], tableau: [] };
+
+      const youTableauPiles = Array.isArray(youSide.tableau) ? youSide.tableau : [];
+      const oppTableauPiles = Array.isArray(oppSide.tableau) ? oppSide.tableau : [];
+
+      // Foundations: gleiche Logik wie für das Score-Overlay, damit die
+      // Zahlen garantiert konsistent sind.
+      const { mine: myFoundationCards, other: oppFoundationCards } = computeLocalFoundationCounts();
+      const foundationsTotalCards = myFoundationCards + oppFoundationCards;
+
+      const foundationsPerSuit = {};
+      const foundationsTopBySuit = {};
+      for (const f of state.foundations) {
+        const s = f.suit || '?';
+        if (!foundationsPerSuit[s]) foundationsPerSuit[s] = 0;
+        foundationsPerSuit[s] += f.cards.length;
+
+        const top = f.cards[f.cards.length - 1];
+        foundationsTopBySuit[s] = top
+          ? { id: top.id, suit: top.suit, rank: top.rank, up: top.up }
+          : null;
+      }
+
+      // Waste-Topkarten (lokal & Gegner)
+      const youWasteTop = youSide.waste.length
+        ? youSide.waste[youSide.waste.length - 1]
+        : null;
+      const oppWasteTop = oppSide.waste.length
+        ? oppSide.waste[oppSide.waste.length - 1]
+        : null;
+
+      // Debug-Ausgabe zur Kontrolle der Array-Strukturen
+      try {
+        console.debug('[BOT] buildBotSnapshot arrays', {
+          localOwner,
+          youSideKey,
+          oppSideKey,
+          youStock: youSide.stock.length,
+          youWaste: youSide.waste.length,
+          youTableauHeights: youTableauPiles.map(p => p.length),
+          oppStock: oppSide.stock.length,
+          oppWaste: oppSide.waste.length,
+          oppTableauHeights: oppTableauPiles.map(p => p.length),
+          foundations: state.foundations.map(f => f.cards.length),
+          myFoundationCards,
+          oppFoundationCards
+        });
+      } catch (e) {
+        console.warn('[BOT-DBG] Fehler in buildBotSnapshot Array-Debug:', e);
+      }
+
+      // --- Neue vollständige Karten-Arrays für die Bot-Engine ---
+
+      // Tableau komplett (7 Piles, jeweils array von Karten)
+      const youTableauCards = youTableauPiles.map(pile =>
+        pile.map(c => ({
+          id: c.id,
+          suit: c.suit,
+          rank: c.rank,
+          up: c.up
+        }))
+      );
+
+      const oppTableauCards = oppTableauPiles.map(pile =>
+        pile.map(c => ({
+          id: c.id,
+          suit: c.suit,
+          rank: c.rank,
+          up: c.up
+        }))
+      );
+
+      // Waste vollständig als Arrays
+      const wasteCardsYou = youSide.waste.map(c => ({
+        id: c.id,
+        suit: c.suit,
+        rank: c.rank,
+        up: c.up
+      }));
+
+      const wasteCardsOpp = oppSide.waste.map(c => ({
+        id: c.id,
+        suit: c.suit,
+        rank: c.rank,
+        up: c.up
+      }));
+
+      // Foundations flach als komplette Liste aller Karten
+      const foundationCardsFlat = [];
+      state.foundations.forEach(f => {
+        f.cards.forEach(c => {
+          foundationCardsFlat.push({
+            id: c.id,
+            suit: c.suit,
+            rank: c.rank,
+            up: c.up,
+            foundation: f.suit
+          });
+        });
+      });
+
+
+
+      // Vollständiger Snapshot für die Bot-Engine
       return {
-        // Grundlegende Zuordnung
+        // Versionierung des Bot-State-Schemas
+        botStateVersion: 2,
+
+        // Grundlegende Zuordnung / Metadaten
         room: state.room || '',
         seed: state.seed || '',
         owner: localOwner,
 
-        // Match-Metadaten für den Bot (optional, aber hilfreich)
         matchId: matchMeta && matchMeta.id ? matchMeta.id : (state.room || ''),
         isBotMatch: !!(matchMeta && matchMeta.isBotMatch),
         hostNick: matchMeta && matchMeta.hostNick ? matchMeta.hostNick : '',
         guestNick: matchMeta && matchMeta.guestNick ? matchMeta.guestNick : '',
         localNick: state.nick || '',
 
-        // Seitenzustand (bereits reduziert auf Suit/Rank/ID/Up)
+        // Seitenzustand in reduzierter Form (Suit/Rank/ID/Up)
         you: cloneSideForBot(state.you),
         opp: cloneSideForBot(state.opp),
 
-        // Foundations inkl. Karten
+        // Foundations inkl. aller Karten
         foundations: state.foundations.map(f => ({
           suit: f.suit,
           cards: f.cards.map(c => ({
@@ -565,9 +704,82 @@ window.VERSION = VERSION;
           }))
         })),
 
-        // einfache Metriken
+        // einfache Top-Level-Werte
         moves: state.moves,
-        over: state.over
+        over: state.over,
+
+        // Veredelte Metriken für den Bot
+        metrics: {
+          timestamp: Date.now(),
+          owner: localOwner,
+          youSide: youSideKey,
+          oppSide: oppSideKey,
+
+          you: {
+            stockCount: youSide.stock.length,
+            wasteCount: youSide.waste.length,
+            wasteTop: youWasteTop
+              ? { id: youWasteTop.id, suit: youWasteTop.suit, rank: youWasteTop.rank, up: youWasteTop.up }
+              : null,
+            tableauPiles: youTableauPiles.map(pile => {
+              const len = pile.length;
+              const top = len ? pile[len - 1] : null;
+              return {
+                len,
+                faceUp: pile.filter(c => c.up).length,
+                top: top
+                  ? { id: top.id, suit: top.suit, rank: top.rank, up: top.up }
+                  : null
+              };
+            })
+          },
+
+          opp: {
+            stockCount: oppSide.stock.length,
+            wasteCount: oppSide.waste.length,
+            wasteTop: oppWasteTop
+              ? { id: oppWasteTop.id, suit: oppWasteTop.suit, rank: oppWasteTop.rank, up: oppWasteTop.up }
+              : null,
+            tableauPiles: oppTableauPiles.map(pile => {
+              const len = pile.length;
+              const top = len ? pile[len - 1] : null;
+              return {
+                len,
+                faceUp: pile.filter(c => c.up).length,
+                top: top
+                  ? { id: top.id, suit: top.suit, rank: top.rank, up: top.up }
+                  : null
+              };
+            })
+          },
+
+          // Foundations-Metriken
+          foundationsTotalCards,
+          foundationsPerSuit,
+          foundationsTopBySuit,
+          myFoundationCards,
+          oppFoundationCards
+        },
+
+        // Legacy / Flattened Metrics für den Server (Backwards-Compat)
+        foundationCards: myFoundationCards,
+        wasteSize: youSide.waste.length,
+        stockCount: youSide.stock.length,
+        tableauPiles: youTableauPiles.length,
+        nonEmptyTableauPiles: youTableauPiles.filter(p => p && p.length > 0).length,
+        score: null,
+
+        // --- Neue detaillierte Arrays ---
+        tableauFull: {
+          you: youTableauCards,
+          opp: oppTableauCards
+        },
+        wasteFull: {
+          you: wasteCardsYou,
+          opp: wasteCardsOpp
+        },
+        foundationFull: foundationCardsFlat,
+
       };
     } catch (e) {
       console.warn('[BOT] buildBotSnapshot error', e);
@@ -577,21 +789,48 @@ window.VERSION = VERSION;
 
   function sendBotStateSnapshot(reason) {
     try {
-      // Nur während eines aktiven Bot-Spiels Snapshots senden
-      if (!isBotGameActive()) return;
-      // Nur senden, wenn wir in einem Room sind und eine offene WS-Verbindung haben
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      if (!state.room) return;
+      const active = isBotGameActive();
+      if (!active) {
+        console.debug('[BOT] bot_state übersprungen – kein Bot-Spiel aktiv');
+        return;
+      }
+
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.debug('[BOT] bot_state übersprungen – WS nicht offen');
+        return;
+      }
+      if (!state.room) {
+        console.debug('[BOT] bot_state übersprungen – kein Room gesetzt');
+        return;
+      }
 
       const snapshot = buildBotSnapshot();
-      if (!snapshot) return;
+      if (!snapshot) {
+        console.debug('[BOT] bot_state übersprungen – kein Snapshot');
+        return;
+      }
 
-      sendSys({
+      // Tick hochzählen und im Snapshot hinterlegen
+      botStateTick += 1;
+      snapshot.tick = botStateTick;
+
+      const envelope = {
         type: 'bot_state',
         reason: reason || null,
-        state: snapshot,      // Hauptfeld für den Server
-        snapshot              // optionaler Alias für spätere Nutzung
+        tick: botStateTick,
+        state: snapshot,
+        snapshot
+      };
+
+      console.debug('[BOT] sending bot_state', {
+        reason: reason || null,
+        tick: botStateTick,
+        moves: snapshot.moves,
+        over: snapshot.over,
+        foundationsTotal: snapshot.metrics && snapshot.metrics.foundationsTotalCards
       });
+
+      sendSys(envelope);
     } catch (e) {
       console.warn('[BOT] Konnte bot_state nicht senden:', e);
     }
@@ -804,9 +1043,28 @@ window.VERSION = VERSION;
       if (!cards.length) return;
 
       if (move.to && move.to.kind === 'found') {
-        state.foundations[move.to.f].cards.push(cards[0]);
+        const targetF = move.to.f;
+        const movedCard = cards[0];
+        state.foundations[targetF].cards.push(movedCard);
+
+        // Debug-Logging für Foundation-Moves
+        try {
+          const totalInThisFoundation = state.foundations[targetF].cards.length;
+          const totalAllFoundations = state.foundations.reduce((a, f) => a + f.cards.length, 0);
+          console.debug('[FOUND] move.toFound applied', {
+            owner: move.owner,
+            cardId: movedCard && movedCard.id,
+            cardLabel: movedCard ? (RANKS[movedCard.rank] + movedCard.suit) : null,
+            targetFoundationIndex: targetF,
+            cardsInThisFoundation: totalInThisFoundation,
+            totalFoundationCardsAll: totalAllFoundations
+          });
+        } catch (e) {
+          console.warn('[FOUND] debug logging error', e);
+        }
+
         // Foundation Glow auch bei Ghost-Moves (remote)
-        try { flashFoundation(move.to.f); } catch {}
+        try { flashFoundation(targetF); } catch {}
       } else if (move.to && move.to.kind === 'pile') {
         const ownerRef = move.to.sideOwner || move.owner;
         const targetSide = ownerToSide(ownerRef);
@@ -2110,20 +2368,29 @@ window.VERSION = VERSION;
             if (guest && guest.nick) state.match.guestNick = guest.nick;
 
             connectedCount = m.players.filter(p => p.connected !== false).length;
+
+            // NEU: komplette Players-Liste im Match-State behalten, damit
+            // isBotGameActive() auch über players[].isBot erkennen kann,
+            // dass es sich um ein Bot-Match handelt.
+            state.match.players = m.players.slice();
           }
 
-          const prevConnected = state.match.playersConnected || 0;
-          state.match.playersConnected = connectedCount;
-          // Bot-Match-Flag aus dem Match-Update ableiten, falls vorhanden
-          const isBotMatchUpdate = !!(m.isBotMatch || m.bot === true || m.botNick);
-          if (typeof state.match.isBotMatch === 'boolean') {
-            // nur überschreiben, wenn der Server explizit etwas sendet
-            if (m.isBotMatch !== undefined || m.bot !== undefined || m.botNick !== undefined) {
+            const prevConnected = state.match.playersConnected || 0;
+            state.match.playersConnected = connectedCount;
+
+            // Bot-Match-Flag aus dem Match-Update ableiten, falls vorhanden
+            const hasBotPlayerUpdate =
+              Array.isArray(m.players) && m.players.some(p => p && p.isBot);
+
+            const isBotMatchUpdate = !!(m.isBotMatch || m.bot === true || m.botNick || hasBotPlayerUpdate);
+            if (typeof state.match.isBotMatch === 'boolean') {
+              // nur überschreiben, wenn der Server explizit etwas sendet
+              if (m.isBotMatch !== undefined || m.bot !== undefined || m.botNick !== undefined || hasBotPlayerUpdate) {
+                state.match.isBotMatch = isBotMatchUpdate;
+              }
+            } else {
               state.match.isBotMatch = isBotMatchUpdate;
             }
-          } else {
-            state.match.isBotMatch = isBotMatchUpdate;
-          }
 
           // Einfache Lobby-Feedback-Logik:
           // - 1 Spieler connected  → "Warte auf Gegner …"
@@ -2666,6 +2933,9 @@ function newGame() {
    function spawnServerBotClient(difficulty) {
     // Server-Bot über den Match-/Lobby-Server starten
     try {
+      // Merken, dass wir explizit ein Server-Bot-Spiel gestartet haben
+      serverBotMode = true;
+      
       // Sicherstellen, dass wir überhaupt verbunden sind
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         showToast('Nicht verbunden – bitte zuerst verbinden');

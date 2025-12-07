@@ -7,6 +7,13 @@
 // -v2.1.5: Invite-System (Push-Einladungen)
 // -v2.2.0: Bot-Grundgerüst (Server-seitige Bot-Registry, Option 1)
 // -v2.2.2: Bot-Logik erstellt.
+// -v2.2.5: Bot-Metrics & stabileres Bot-State-Handling und logging
+// -v2.2.6: Bot-Metrics nutzen aggregierte Snapshot-Felder (foundationsTotal etc.)
+// -v2.2.7: Bot-Entscheidungsbaum nutzt Snapshot-State für einfache Karten-Züge & Debug-Logging
+// -v2.2.10: MOVE-Logging mit vollständigem Payload-Dump
+// -v2.2.12: Bot-Moves werden in das reguläre Client-MOVE-Format (toFound/toPile/flip) gemappt
+// -v2.2.14: Bot nutzt Suit-basierte Foundation-Regeln & nur noch King-auf-leere-Spalte Tableau-Moves (Ping-Pong-Schutz)
+// -v2.2.15: Bot-Foundation-Logik: Ass-Erkennung korrigiert (Ace = rank 0)
 // ================================================================
 
 const http   = require('node:http');
@@ -18,7 +25,7 @@ const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
 // ---------- Version / CLI ----------
-const VERSION = '2.2.4';
+const VERSION = '2.2.15';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -120,8 +127,105 @@ const playerDirectory = new Map();
 // Der Bot ist hier zunächst nur als Metadaten geplant; die eigentliche
 // Entscheidungslogik folgt in einem späteren Schritt.
 const botsByMatch = new Map();
+
 // Letzter bekannter Spielfeld-Zustand pro Match (vom Client gemeldet)
 const botStateByMatch = new Map();
+
+// --- Bot Metrics Helper ---
+function computeBotMetrics(state) {
+  const metrics = {
+    foundationCards: 0,
+    foundationPiles: 0,
+    wasteSize: 0,
+    tableauPiles: 0,
+    nonEmptyTableauPiles: 0,
+    stockCount: 0,
+    movesPlayed: typeof state?.moves === 'number' ? state.moves : null,
+    score: typeof state?.score === 'number' ? state.score : null,
+    timeElapsed: typeof state?.timeElapsed === 'number' ? state.timeElapsed : null
+  };
+
+  if (Array.isArray(state?.foundation)) {
+    metrics.foundationPiles = state.foundation.length;
+    for (const pile of state.foundation) {
+      if (Array.isArray(pile)) {
+        metrics.foundationCards += pile.length;
+      }
+    }
+  }
+
+  if (Array.isArray(state?.waste)) {
+    metrics.wasteSize = state.waste.length;
+  }
+
+  if (Array.isArray(state?.tableau)) {
+    metrics.tableauPiles = state.tableau.length;
+    for (const pile of state.tableau) {
+      if (Array.isArray(pile) && pile.length > 0) {
+        metrics.nonEmptyTableauPiles++;
+      }
+    }
+  }
+
+  if (typeof state?.stockCount === 'number') {
+    metrics.stockCount = state.stockCount;
+  }
+
+  // --- Fallbacks: Aggregierte Snapshot-Felder ---
+  // foundationCards: akzeptiere auch String-Werte und alternative Feldnamen
+  if (!metrics.foundationCards && state && (state.foundationsTotal != null || state.foundationCards != null)) {
+    const raw = state.foundationsTotal != null ? state.foundationsTotal : state.foundationCards;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 0) {
+      metrics.foundationCards = n;
+    }
+  }
+
+  // wasteSize
+  if (!metrics.wasteSize && state && state.wasteSize != null) {
+    const n = Number(state.wasteSize);
+    if (Number.isFinite(n) && n >= 0) {
+      metrics.wasteSize = n;
+    }
+  }
+
+  // tableauPiles
+  if (!metrics.tableauPiles && state && state.tableauPiles != null) {
+    const n = Number(state.tableauPiles);
+    if (Number.isFinite(n) && n >= 0) {
+      metrics.tableauPiles = n;
+    }
+  }
+
+  // nonEmptyTableauPiles
+  if (!metrics.nonEmptyTableauPiles && state && state.nonEmptyTableauPiles != null) {
+    const n = Number(state.nonEmptyTableauPiles);
+    if (Number.isFinite(n) && n >= 0) {
+      metrics.nonEmptyTableauPiles = n;
+    }
+  }
+
+  // stockCount
+  if (!metrics.stockCount && state && state.stockCount != null) {
+    const n = Number(state.stockCount);
+    if (Number.isFinite(n) && n >= 0) {
+      metrics.stockCount = n;
+    }
+  }
+
+  // Optionales Debug-Logging für foundationsTotal / foundationCards,
+  // um Probleme beim Mapping schneller zu sehen
+  if (state && (state.foundationsTotal != null || state.foundationCards != null)) {
+    const raw = state.foundationsTotal != null ? state.foundationsTotal : state.foundationCards;
+    console.log(
+      '[BOT] debug foundations snapshot',
+      'raw=', raw,
+      'metrics.foundationCards=', metrics.foundationCards
+    );
+  }
+
+  return metrics;
+}
 
 function createServerBot(matchId, difficulty = 'easy') {
   const botId = 'bot-' + Math.random().toString(36).slice(2);
@@ -294,12 +398,17 @@ ws.on('message', buf => {
     const raw = buf.toString();
     const data = JSON.parse(raw);
 
-    // MOVE-Logging wie bisher
+    // MOVE-Logging wie bisher + detaillierter Payload-Dump
     if (data?.move) {
       console.log(
         `[MOVE] ${isoNow()} room="${currentRoom}" kind=${data.move.kind} ` +
         `from=${data.from || 'n/a'} cid=${ws.__cid || 'n/a'}`
       );
+      try {
+        console.log('[MOVE-PAYLOAD]', JSON.stringify(data.move));
+      } catch (e) {
+        console.warn('[MOVE-PAYLOAD] JSON stringify failed:', e);
+      }
     }
 
     // SYS-Logging / Handling
@@ -428,10 +537,19 @@ ws.on('message', buf => {
         // Globalen State-Puffer aktualisieren
         botStateByMatch.set(matchId, state);
 
+        // Metriken aus dem State ableiten
+        const metrics = computeBotMetrics(state);
+
         bot.state = state;
         bot.lastSeenStateAt = now;
+        bot.stateMetrics = metrics;
+
         console.log(
-          `[BOT] state update matchId="${matchId}" from cid=${ws.__cid} tick="${sys.tick ?? 'n/a'}" (haveBot=true)`
+          `[BOT] state update matchId="${matchId}" from cid=${ws.__cid} ` +
+          `tick="${sys.tick ?? 'n/a'}" (haveBot=true) ` +
+          `foundationCards=${metrics.foundationCards} ` +
+          `wasteSize=${metrics.wasteSize} stockCount=${metrics.stockCount} ` +
+          `moves=${metrics.movesPlayed ?? 'n/a'} score=${metrics.score ?? 'n/a'}`
         );
         return;
       }
@@ -695,10 +813,7 @@ ws.on('message', buf => {
           );
         }
 
-        // --- BOT AUTO‑TICK (Grundgerüst) ---
-        // Der Bot führt noch keine echten Züge aus,
-        // aber sendet alle 5 Sekunden ein "bot_heartbeat",
-        // damit der Match-Loop später darauf aufbauen kann.
+        // --- BOT AUTO‑TICK (nutzt Snapshot-State für einfache Züge) ---
         if (!bot.__interval) {
           bot.__interval = setInterval(() => {
             const matchBot = getServerBot(matchId);
@@ -712,144 +827,395 @@ ws.on('message', buf => {
               `[BOT] heartbeat botId="${matchBot.id}" matchId="${matchId}" difficulty=${matchBot.difficulty}`
             );
 
+            // Bot-Metriken aus State ableiten und loggen
+            const state =
+              botStateByMatch.get(matchId) ||
+              matchBot.state ||
+              null;
+
+            const metrics = state ? computeBotMetrics(state) : null;
+
+            if (metrics) {
+              console.log(
+                `[BOT] heartbeat metrics matchId="${matchId}" ` +
+                `foundationCards=${metrics.foundationCards} ` +
+                `wasteSize=${metrics.wasteSize} stockCount=${metrics.stockCount} ` +
+                `tableauPiles=${metrics.tableauPiles} nonEmptyTableauPiles=${metrics.nonEmptyTableauPiles}`
+              );
+            } else {
+              console.log(
+                `[BOT] heartbeat metrics matchId="${matchId}" (noch kein Snapshot-State vom Client)`
+              );
+            }
+
             // Verbesserte Bot-Logik (Entscheidungsbaum):
             // 1. Versuche Tableau → Foundation
             // 2. Versuche Waste → Foundation
             // 3. Versuche Waste → Tableau
             // 4. Versuche Tableau → Tableau
             // 5. Fallback: Flip (draw/flip)
-            // Erwartet, dass das Spielfeld im Match-Objekt als "state" vorliegt.
+            // Erwartet, dass das Spielfeld im State-Objekt Arrays mit Karten enthält.
             try {
               // Verwende den zuletzt vom Client gemeldeten Spielzustand (bot_state).
               // Priorität: globale Map -> Bot-intern -> kein State
-              const state =
+              const decisionState =
                 botStateByMatch.get(matchId) ||
                 matchBot.state ||
                 null;
 
               let move = null;
-              // Helper: Send move
-              function sendMove(moveObj, kindLabel) {
-                const moveEnvelope = JSON.stringify({
-                  move: moveObj,
-                  from: matchBot.id
-                });
-                broadcastToRoom(matchId, moveEnvelope, null);
-                matchBot.lastMoveAt = Date.now();
-                console.log(
-                  `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="${kindLabel}"`
+
+              // Aus Sicht des Snapshots ist "you" normalerweise der menschliche Spieler
+              // und "opp" der Bot. Wir leiten daraus die Bot-Seite ab.
+              const humanOwner =
+                (decisionState && typeof decisionState.owner === 'string' && decisionState.owner) ||
+                'Y';
+              const botOwner = humanOwner === 'Y' ? 'O' : 'Y';
+
+              function pickBotSideArrays(snapshot) {
+                if (!snapshot) {
+                  return { tableau: [], waste: [] };
+                }
+                const tFull = snapshot.tableauFull || {};
+                const wFull = snapshot.wasteFull || {};
+                // Bevorzugt die Gegner-Seite ("opp"), fallweise Fallback auf "you",
+                // falls aus irgendeinem Grund kein opp-Array vorhanden ist.
+                const tableau =
+                  Array.isArray(tFull.opp) ? tFull.opp :
+                  Array.isArray(tFull.you) ? tFull.you : [];
+                const waste =
+                  Array.isArray(wFull.opp) ? wFull.opp :
+                  Array.isArray(wFull.you) ? wFull.you : [];
+                return { tableau, waste };
+              }
+
+              function hasDetailedState(s) {
+                return !!(
+                  s &&
+                  s.tableauFull &&
+                  Array.isArray(s.tableauFull.you) &&
+                  s.wasteFull &&
+                  Array.isArray(s.wasteFull.you) &&
+                  Array.isArray(s.foundations)
                 );
               }
 
-              if (state) {
-                // 1. Tableau → Foundation
+              // Hilfsfunktion: Owner aus CardId ableiten ('Y-' oder 'O-')
+              function inferOwnerFromCardId(cardId, fallbackOwner = 'Y') {
+                if (typeof cardId === 'string') {
+                  if (cardId.startsWith('Y-')) return 'Y';
+                  if (cardId.startsWith('O-')) return 'O';
+                }
+                return fallbackOwner;
+              }
+
+              // Helper: Bot-Intent → reguläres Client-MOVE-Format + Senden
+              function sendMove(intent, kindLabel, debugInfo) {
+                // Der Bot soll mit seinen eigenen Karten spielen → owner = botOwner
+                const defaultOwner = botOwner;
+
+                let movePayload = null;
+
+                switch (intent.kind) {
+                  case 'tableau_to_foundation': {
+                    const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
+                    movePayload = {
+                      owner,
+                      kind: 'toFound',
+                      cardId: intent.cardId,
+                      count: 1,
+                      from: {
+                        kind: 'pile',
+                        sideOwner: owner,
+                        uiIndex: intent.from
+                      },
+                      to: {
+                        kind: 'found',
+                        f: intent.to
+                      }
+                    };
+                    break;
+                  }
+
+                  case 'waste_to_foundation': {
+                    const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
+                    movePayload = {
+                      owner,
+                      kind: 'toFound',
+                      cardId: intent.cardId,
+                      count: 1,
+                      from: {
+                        kind: 'pile',
+                        sideOwner: owner,
+                        uiIndex: -1
+                      },
+                      to: {
+                        kind: 'found',
+                        f: intent.to
+                      }
+                    };
+                    break;
+                  }
+
+                  case 'waste_to_tableau': {
+                    const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
+                    movePayload = {
+                      owner,
+                      kind: 'toPile',
+                      cardId: intent.cardId,
+                      count: 1,
+                      from: {
+                        kind: 'pile',
+                        sideOwner: owner,
+                        uiIndex: -1
+                      },
+                      to: {
+                        kind: 'pile',
+                        sideOwner: owner,
+                        uiIndex: intent.to
+                      }
+                    };
+                    break;
+                  }
+
+                  case 'tableau_to_tableau': {
+                    const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
+                    movePayload = {
+                      owner,
+                      kind: 'toPile',
+                      cardId: intent.cardId,
+                      count: 1,
+                      from: {
+                        kind: 'pile',
+                        sideOwner: owner,
+                        uiIndex: intent.from
+                      },
+                      to: {
+                        kind: 'pile',
+                        sideOwner: owner,
+                        uiIndex: intent.to
+                      }
+                    };
+                    break;
+                  }
+
+                  default: {
+                    // Fallback: Intent ist bereits im richtigen Format (z.B. flip)
+                    movePayload = intent;
+                    break;
+                  }
+                }
+
+                const envelope = JSON.stringify({
+                  move: movePayload,
+                  from: matchBot.id
+                });
+                broadcastToRoom(matchId, envelope, null);
+                matchBot.lastMoveAt = Date.now();
+                console.log(
+                  `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="${kindLabel}"` +
+                  (debugInfo ? ` details=${debugInfo}` : '')
+                );
+              }
+
+              if (hasDetailedState(decisionState)) {
+                const s = decisionState;
+
+                // Aus dem Snapshot die relevanten Arrays extrahieren:
+                // - Bot-Seite ("opp" falls vorhanden, sonst "you") für Bot-Entscheidungen
+                // - Foundations werden aus s.foundations[*].cards abgeleitet
+                const { tableau, waste } = pickBotSideArrays(s);
+                const foundations = Array.isArray(s.foundations)
+                  ? s.foundations.map(f => Array.isArray(f.cards) ? f.cards : [])
+                  : [];
+
+                console.log(
+                  `[BOT] decision input matchId="${matchId}" ` +
+                  `foundations=${foundations.length} tableau=${tableau.length} waste=${waste.length}`
+                );
+
+                // 1. Tableau → Foundation (nur gleiche Suit, Ass auf leer oder Folgekarte)
                 outer1:
-                for (let t = 0; t < (state.tableau ? state.tableau.length : 0); t++) {
-                  const pile = state.tableau[t];
+                for (let t = 0; t < tableau.length; t++) {
+                  const pile = tableau[t];
                   if (!pile || !pile.length) continue;
-                  const card = pile[pile.length-1];
-                  for (let f = 0; f < (state.foundation ? state.foundation.length : 0); f++) {
-                    const dest = state.foundation[f];
-                    // Simplified check: move if suit matches and rank is correct
+                  const card = pile[pile.length - 1];
+
+                  for (let f = 0; f < foundations.length; f++) {
+                    const destObj   = s.foundations && s.foundations[f];
+                    if (!destObj) continue;
+                    const destCards = Array.isArray(destObj.cards) ? destObj.cards : [];
+                    const destSuit  = destObj.suit;
+
+                    // Nur Foundations derselben Suit verwenden, um z.B. 2♥ nicht auf eine andere Suit zu legen
+                    if (destSuit && card.suit && destSuit !== card.suit) continue;
+
                     if (
-                      (!dest.length && card.rank === 1) || // Ace to empty foundation
-                      (dest.length &&
-                        dest[dest.length-1].suit === card.suit &&
-                        dest[dest.length-1].rank === card.rank - 1)
+                      (!destCards.length && card.rank === 0) || // Ass auf leere Foundation (Ace ist rank 0)
+                      (destCards.length &&
+                        destCards[destCards.length - 1].suit === card.suit &&
+                        destCards[destCards.length - 1].rank === card.rank - 1)
                     ) {
-                      move = { kind: 'tableau_to_foundation', from: t, to: f, card };
-                      sendMove(move, 'tableau_to_foundation');
+                      move = {
+                        kind: 'tableau_to_foundation',
+                        from: t,
+                        to: f,
+                        cardId: card.id || card.cardId || null
+                      };
+                      sendMove(
+                        move,
+                        'tableau_to_foundation',
+                        `fromTableau=${t} toFoundation=${f} rank=${card.rank} suit=${card.suit}`
+                      );
                       break outer1;
                     }
                   }
                 }
-                // 2. Waste → Foundation
-                if (!move && state.waste && state.waste.length) {
-                  const card = state.waste[state.waste.length-1];
-                  for (let f = 0; f < (state.foundation ? state.foundation.length : 0); f++) {
-                    const dest = state.foundation[f];
+
+                // 2. Waste → Foundation (nur gleiche Suit, Ass auf leer oder Folgekarte)
+                if (!move && Array.isArray(waste) && waste.length) {
+                  const card = waste[waste.length - 1];
+                  for (let f = 0; f < foundations.length; f++) {
+                    const destObj   = s.foundations && s.foundations[f];
+                    if (!destObj) continue;
+                    const destCards = Array.isArray(destObj.cards) ? destObj.cards : [];
+                    const destSuit  = destObj.suit;
+
+                    if (destSuit && card.suit && destSuit !== card.suit) continue;
+
                     if (
-                      (!dest.length && card.rank === 1) ||
-                      (dest.length &&
-                        dest[dest.length-1].suit === card.suit &&
-                        dest[dest.length-1].rank === card.rank - 1)
+                      (!destCards.length && card.rank === 0) || // Ass auf leere Foundation (Ace ist rank 0)
+                      (destCards.length &&
+                        destCards[destCards.length - 1].suit === card.suit &&
+                        destCards[destCards.length - 1].rank === card.rank - 1)
                     ) {
-                      move = { kind: 'waste_to_foundation', to: f, card };
-                      sendMove(move, 'waste_to_foundation');
+                      move = {
+                        kind: 'waste_to_foundation',
+                        to: f,
+                        cardId: card.id || card.cardId || null
+                      };
+                      sendMove(
+                        move,
+                        'waste_to_foundation',
+                        `toFoundation=${f} rank=${card.rank} suit=${card.suit}`
+                      );
                       break;
                     }
                   }
                 }
+
                 // 3. Waste → Tableau
-                if (!move && state.waste && state.waste.length) {
-                  const card = state.waste[state.waste.length-1];
-                  for (let t = 0; t < (state.tableau ? state.tableau.length : 0); t++) {
-                    const dest = state.tableau[t];
+                if (!move && Array.isArray(waste) && waste.length) {
+                  const card = waste[waste.length - 1];
+                  const isRed = c => !!c && (
+                    c.suit === 'hearts' || c.suit === 'diamonds' ||
+                    c.suit === '♥' || c.suit === '♦'
+                  );
+
+                  for (let t = 0; t < tableau.length; t++) {
+                    const dest = tableau[t];
+                    if (!Array.isArray(dest)) continue;
+
                     if (!dest.length) {
-                      if (card.rank === 13) { // King to empty
-                        move = { kind: 'waste_to_tableau', to: t, card };
-                        sendMove(move, 'waste_to_tableau');
+                      // König auf leere Spalte
+                      if (card.rank === 13) {
+                        move = {
+                          kind: 'waste_to_tableau',
+                          to: t,
+                          cardId: card.id || card.cardId || null
+                        };
+                        sendMove(
+                          move,
+                          'waste_to_tableau',
+                          `toTableau=${t} (empty) rank=${card.rank} suit=${card.suit}`
+                        );
                         break;
                       }
                     } else {
-                      const destCard = dest[dest.length-1];
-                      // Different color, one less
-                      const red = c => c.suit === 'hearts' || c.suit === 'diamonds';
+                      const destCard = dest[dest.length - 1];
                       if (
-                        red(card) !== red(destCard) &&
+                        isRed(card) !== isRed(destCard) &&
                         destCard.rank === card.rank + 1
                       ) {
-                        move = { kind: 'waste_to_tableau', to: t, card };
-                        sendMove(move, 'waste_to_tableau');
+                        move = {
+                          kind: 'waste_to_tableau',
+                          to: t,
+                          cardId: card.id || card.cardId || null
+                        };
+                        sendMove(
+                          move,
+                          'waste_to_tableau',
+                          `toTableau=${t} rank=${card.rank} suit=${card.suit} on=${destCard.rank}/${destCard.suit}`
+                        );
                         break;
                       }
                     }
                   }
                 }
-                // 4. Tableau → Tableau
+
+                // 4. Tableau → Tableau (Easy-Mode): nur Könige auf leere Spalten,
+                // um endlose Hin-und-Her-Züge zu vermeiden.
                 if (!move) {
-                  for (let fromT = 0; fromT < (state.tableau ? state.tableau.length : 0); fromT++) {
-                    const pile = state.tableau[fromT];
-                    if (!pile || !pile.length) continue;
-                    const card = pile[pile.length-1];
-                    for (let toT = 0; toT < state.tableau.length; toT++) {
+                  for (let fromT = 0; fromT < tableau.length; fromT++) {
+                    const pile = tableau[fromT];
+                    if (!Array.isArray(pile) || !pile.length) continue;
+                    const card = pile[pile.length - 1];
+
+                    // Nur Könige verschieben
+                    if (card.rank !== 13) continue;
+
+                    for (let toT = 0; toT < tableau.length; toT++) {
                       if (toT === fromT) continue;
-                      const dest = state.tableau[toT];
-                      if (!dest.length) {
-                        if (card.rank === 13) {
-                          move = { kind: 'tableau_to_tableau', from: fromT, to: toT, card };
-                          sendMove(move, 'tableau_to_tableau');
-                          break;
-                        }
-                      } else {
-                        const destCard = dest[dest.length-1];
-                        const red = c => c.suit === 'hearts' || c.suit === 'diamonds';
-                        if (
-                          red(card) !== red(destCard) &&
-                          destCard.rank === card.rank + 1
-                        ) {
-                          move = { kind: 'tableau_to_tableau', from: fromT, to: toT, card };
-                          sendMove(move, 'tableau_to_tableau');
-                          break;
-                        }
-                      }
+                      const dest = tableau[toT];
+                      if (!Array.isArray(dest)) continue;
+                      if (dest.length) continue; // nur leere Spalten
+
+                      move = {
+                        kind: 'tableau_to_tableau',
+                        from: fromT,
+                        to: toT,
+                        cardId: card.id || card.cardId || null
+                      };
+                      sendMove(
+                        move,
+                        'tableau_to_tableau',
+                        `from=${fromT} toEmpty=${toT} rank=${card.rank} suit=${card.suit}`
+                      );
+                      break;
                     }
+
                     if (move) break;
                   }
                 }
+
+                if (!move) {
+                  console.log(
+                    `[BOT] no deterministic card-move found for matchId="${matchId}" – fallback auf Flip`
+                  );
+                }
+              } else if (decisionState) {
+                // Wir haben zwar ein State-Objekt, aber (noch) keine detaillierten Arrays
+                console.log(
+                  `[BOT] decision skipped matchId="${matchId}" – Snapshot enthält keine detaillierten Karten-Arrays`
+                );
               }
-              // 5. Fallback: Flip (draw/flip) — throttled to avoid spam
+
+              // 5. Fallback: Flip (draw/flip) — throttled to avoid Spam
               if (!move) {
                 const nowT = Date.now();
                 if (!matchBot.lastFlipAt || nowT - matchBot.lastFlipAt > 10000) {
-                  const moveEnvelope = JSON.stringify({
-                    move: {
-                      kind: 'flip',
-                      source: 'bot'
-                    },
+                  // Flip soll auf der Bot-Seite passieren
+                  const flipMove = {
+                    owner: botOwner,
+                    kind: 'flip'
+                  };
+
+                  const envelope = JSON.stringify({
+                    move: flipMove,
                     from: matchBot.id
                   });
-                  broadcastToRoom(matchId, moveEnvelope, null);
+
+                  broadcastToRoom(matchId, envelope, null);
                   matchBot.lastMoveAt = nowT;
                   matchBot.lastFlipAt = nowT;
                   console.log(

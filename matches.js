@@ -7,7 +7,7 @@ const matches = new Map(); // key = matchId, value = Match-Objekt
 // Optional: Bot-Unterstützung auf Match-Ebene.
 // Ein Bot wird wie ein Spieler in der players-Liste geführt, kann aber
 // zusätzlich mit isBot/difficulty gekennzeichnet werden.
-// v1.1: Bot erweiterungen
+// v1.2: Bot erweiterungen
 
 function generateMatchId() {
   // Kurzer, menschenlesbarer Code wie "DUEL4"
@@ -48,6 +48,8 @@ function createMatchForClient(ws, nick, rooms) {
     createdAt: now,
     lastActivityAt: now,
     lastGameState: null,
+    botState: null,
+    botStateTick: 0,
     players: [
       {
         playerId: 'p1',
@@ -166,6 +168,62 @@ function updateMatchGameState(matchId, gameState) {
   match.lastActivityAt = Date.now();
 }
 
+function updateBotState(matchId, botState) {
+  const match = matches.get(matchId);
+  if (!match) return;
+  if (!botState || typeof botState !== 'object') return;
+
+  // Normalisierte, für den Bot relevante Sicht auf den Spielzustand speichern.
+  // Erwartete Struktur (vom Client geliefert):
+  // {
+  //   tick: number,
+  //   stockCount: number,
+  //   wasteTop: { rank: number, suit: string } | null,
+  //   foundation: { [suit: string]: number }, // höchste Ränge pro Farbe
+  //   tableauHeights: number[],               // Kartenanzahl pro Tableau-Stack
+  //   movesSinceLastFlip: number
+  // }
+  const prevTick = match.botState && typeof match.botState.tick === 'number'
+    ? match.botState.tick
+    : 0;
+
+  const normalized = {
+    tick: typeof botState.tick === 'number' ? botState.tick : prevTick + 1,
+    stockCount:
+      typeof botState.stockCount === 'number'
+        ? botState.stockCount
+        : null,
+    wasteTop:
+      botState.wasteTop && typeof botState.wasteTop === 'object'
+        ? {
+            rank: botState.wasteTop.rank ?? null,
+            suit: botState.wasteTop.suit ?? null
+          }
+        : null,
+    foundation:
+      botState.foundation && typeof botState.foundation === 'object'
+        ? botState.foundation
+        : null,
+    tableauHeights:
+      Array.isArray(botState.tableauHeights)
+        ? botState.tableauHeights.slice()
+        : null,
+    movesSinceLastFlip:
+      typeof botState.movesSinceLastFlip === 'number'
+        ? botState.movesSinceLastFlip
+        : null
+  };
+
+  match.botState = normalized;
+  match.botStateTick = normalized.tick;
+  match.lastActivityAt = Date.now();
+}
+
+function getBotState(matchId) {
+  const match = matches.get(matchId);
+  return match ? match.botState || null : null;
+}
+
 function getMatch(matchId) {
   return matches.get(matchId) || null;
 }
@@ -209,5 +267,7 @@ module.exports = {
   getPublicMatchView,
   cleanupOldMatches,
   getMatch,
-  updateMatchGameState
+  updateMatchGameState,
+  updateBotState,
+  getBotState
 };
