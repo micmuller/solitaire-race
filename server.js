@@ -15,6 +15,7 @@
 // -v2.2.14: Bot nutzt Suit-basierte Foundation-Regeln & nur noch King-auf-leere-Spalte Tableau-Moves (Ping-Pong-Schutz)
 // -v2.2.15: Bot-Foundation-Logik: Ass-Erkennung korrigiert (Ace = rank 0)
 // -v2.2.16: Bot-Entscheidungslogik in Helper-Funktion runBotDecisionTick() ausgelagert
+// -v2.2.17: ServerBot-Modul (serverbot.js) optional eingebunden + Server-Info für Clients
 // ================================================================
 
 const http   = require('node:http');
@@ -25,8 +26,20 @@ const os     = require('node:os');
 const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
+// ---------- Optional ServerBot module (split bot logic out of server.js) ----------
+let serverbot = null;
+try {
+  // serverbot.js is optional; server.js keeps a compatible fallback implementation.
+  serverbot = require('./serverbot');
+  console.log('[BOT] serverbot.js loaded');
+} catch (e) {
+  serverbot = null;
+  console.log('[BOT] serverbot.js not present – using built-in bot logic');
+}
+
+
 // ---------- Version / CLI ----------
-const VERSION = '2.2.16';
+const VERSION = '2.2.17';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -229,7 +242,7 @@ function computeBotMetrics(state) {
 }
 
 // --- Bot Decision Helper ---
-function runBotDecisionTick(matchId) {
+function runBotDecisionTickBuiltIn(matchId) {
   const matchBot = getServerBot(matchId);
   if (!matchBot) {
     return;
@@ -644,6 +657,27 @@ function runBotDecisionTick(matchId) {
   }
 }
 
+// Wrapper: prefer serverbot.js implementation when available
+function runBotDecisionTick(matchId) {
+  try {
+    if (serverbot && typeof serverbot.runBotDecisionTick === 'function') {
+      // Provide minimal deps so serverbot.js can broadcast moves / compute metrics.
+      // If serverbot.js ignores the 2nd arg, that's fine.
+      return serverbot.runBotDecisionTick(matchId, {
+        getServerBot,
+        botStateByMatch,
+        broadcastToRoom,
+        computeBotMetrics,
+        isoNow
+      });
+    }
+  } catch (e) {
+    console.warn('[BOT] serverbot.runBotDecisionTick failed – falling back to built-in logic:', e);
+  }
+  return runBotDecisionTickBuiltIn(matchId);
+}
+
+
 function createServerBot(matchId, difficulty = 'easy') {
   const botId = 'bot-' + Math.random().toString(36).slice(2);
   const botNick =
@@ -803,6 +837,13 @@ wss.on('connection', (ws, req, room) => {
     nick: 'Player',
     room,
     lastSeen: Date.now()
+  });
+
+// Provide server metadata to the client (game.js can display it in the status overlay)
+  sendSys(ws, {
+   type: 'server_info',
+    version: VERSION,
+    at: isoNow()
   });
   console.log(`[CONNECT] ${isoNow()} room="${room}" ip=${ip} cid=${cid} peers=${peersInRoom(room)}`);
   logStatus(room);

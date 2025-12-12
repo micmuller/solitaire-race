@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.2.4';   // neue Version
+const VERSION = '3.2.5';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -18,6 +18,7 @@ window.VERSION = VERSION;
    - v3.1.8: Server-Bot Snapshot erweitert (Match-/Nick-Metadaten)
    - v3.1.9: Server-Bot periodische Snapshots (nur bei Bot-Spielen)
    - v3.2.3: Server-Bot Snapshot v2 (Tick + Metrics für Bot-Engine) & Debug
+   - v3.2.5: Server-Version im Client-Overlay anzeigen
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -337,6 +338,7 @@ const state = {
     playersConnected: 0,
     isBotMatch: false
   },
+  serverVersion: null,
   // Letzte empfangene Einladung (für UI / Accept/Decline)
   lastInvite: null,
   // Vom Server gemeldete Online-Spieler (Presence / Lobby)
@@ -1849,14 +1851,17 @@ function isBotGameActive() {
   }
 
   function updateOverlay() {
-    const online     = ws && ws.readyState === 1;
-    const connecting = ws && ws.readyState === 0;
+    // Robust online/connect detection and consistent dot/text logic
+    const wsState = ws ? ws.readyState : -1;
+    const online = (wsState === WebSocket.OPEN);
+    const connecting = (wsState === WebSocket.CONNECTING);
     state.netOnline = !!online;
     const dot = document.getElementById('dot');
     const ovSync = document.getElementById('ov-sync');
 
     if (dot) {
-      dot.classList.toggle('ok', !!online);
+      // Grün nur wenn wirklich OPEN, sonst rot.
+      dot.classList.toggle('ok', online);
     }
 
     if (ovSync) {
@@ -1866,14 +1871,30 @@ function isBotGameActive() {
         const attemptSuffix = connecting && connectAttempts > 1
           ? ` (${connectAttempts})`
           : '';
-        ovSync.textContent = online
-          ? 'online'
-          : (connecting ? `verbinden…${attemptSuffix}` : 'offline');
+
+        // Server version and latency display, always include srv-version if known
+        const v = (state.serverVersion && String(state.serverVersion).trim())
+          ? String(state.serverVersion).trim()
+          : '—';
+        const lat = (latencyMs != null)
+          ? `${Math.max(0, Math.round(latencyMs))}ms`
+          : '—';
+
+        if (online) {
+          // Kompakte Anzeige: online · srv <version> · <latency>
+          ovSync.textContent = `online · srv ${v} · ${lat}`;
+        } else {
+          // Offline/Connecting: trotzdem letzte bekannte Server-Version anzeigen
+          ovSync.textContent = connecting
+            ? `verbinden…${attemptSuffix} · srv ${v}`
+            : `offline · srv ${v}`;
+        }
       }
     }
 
     setText('ov-room', state.room || '—');
     setText('ov-seed', state.seed || '—');
+    setText('ov-server', state.serverVersion || '—');
     setText('ov-peers', String(peers.size));
     setText('ov-latency', latencyMs != null ? `${Math.max(0,Math.round(latencyMs))} ms` : '—');
     setText('ov-last', lastMsgAt > 0 ? (Math.floor((Date.now()-lastMsgAt)/1000)||0)+'s ago' : '—');
@@ -2093,6 +2114,14 @@ function isBotGameActive() {
 
     showToast('Verbunden');
 
+    // Server-Version aktiv anfordern (falls server_info nicht automatisch kommt)
+    try {
+      sendSys({ type: 'server_info_request' });
+      sendSys({ type: 'get_server_info' });
+    } catch (e) {
+      console.warn('[WS] server_info request failed:', e);
+    }
+
     // zentrales Hello mit konsistentem Nick (nicht "Player", wenn bereits ein besserer Nick existiert)
     sendHelloWithResolvedNick();
     updateOverlay();
@@ -2124,6 +2153,12 @@ function isBotGameActive() {
 
       // ------ SYS ------
       if (msg.sys) {
+
+        if (msg.sys.type === 'server_info') {
+          // Server-Version für Overlay merken
+          state.serverVersion = msg.sys.version || 'unknown';
+          updateOverlay();
+        }
 
         // Eigene hello/hello-ack ignorieren
         if (msg.from === clientId &&
