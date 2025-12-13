@@ -17,6 +17,8 @@
 // -v2.2.16: Bot-Entscheidungslogik in Helper-Funktion runBotDecisionTick() ausgelagert
 // -v2.2.17: ServerBot-Modul (serverbot.js) optional eingebunden + Server-Info für Clients
 // -v2.2.18: Serverbot Logik ausgelagert
+// -v2.2.19: Server.js delegiert Bot-State/Decisions vollständig an serverbot.js (keine Bot-Logik mehr im server.js)
+// -v2.2.21: broken, bot Startet nicht mehr....
 // ================================================================
 
 const http   = require('node:http');
@@ -28,19 +30,30 @@ const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
 // ---------- Optional ServerBot module (split bot logic out of server.js) ----------
-// NOTE: All bot decision logic lives in serverbot.js; server.js only wires state + transport.
+// NOTE: All bot decision logic lives in serverbot.js; server.js only wires transport + match lifecycle.
 let serverbot = null;
+let serverbotOk = false;
 try {
   serverbot = require('./serverbot');
-  console.log('[BOT] serverbot.js loaded');
+  serverbotOk = !!serverbot &&
+    typeof serverbot.createServerBot === 'function' &&
+    typeof serverbot.getServerBot === 'function' &&
+    typeof serverbot.handleBotStateUpdate === 'function' &&
+    typeof serverbot.runBotHeartbeatTick === 'function';
+
+  console.log(serverbotOk
+    ? '[BOT] serverbot.js loaded'
+    : '[BOT] serverbot.js loaded but missing required exports'
+  );
 } catch (e) {
   serverbot = null;
-  console.log('[BOT] serverbot.js not present – using built-in bot logic');
+  serverbotOk = false;
+  console.log('[BOT] serverbot.js missing – bot features disabled');
 }
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.2.18';
+const VERSION = '2.2.21';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -138,168 +151,6 @@ const clientsById = new Map(); // cid -> ws
 // cid -> { cid, nick, room, lastSeen }
 const playerDirectory = new Map();
 
-// Einfache Bot-Registry (Option 1): matchId -> Bot-Metadaten
-// Der Bot ist hier zunächst nur als Metadaten geplant; die eigentliche
-// Entscheidungslogik folgt in einem späteren Schritt.
-const botsByMatch = new Map();
-
-// Letzter bekannter Spielfeld-Zustand pro Match (vom Client gemeldet)
-const botStateByMatch = new Map();
-
-// --- Bot Metrics Helper ---
-function computeBotMetrics(state) {
-  const metrics = {
-    foundationCards: 0,
-    foundationPiles: 0,
-    wasteSize: 0,
-    tableauPiles: 0,
-    nonEmptyTableauPiles: 0,
-    stockCount: 0,
-    movesPlayed: typeof state?.moves === 'number' ? state.moves : null,
-    score: typeof state?.score === 'number' ? state.score : null,
-    timeElapsed: typeof state?.timeElapsed === 'number' ? state.timeElapsed : null
-  };
-
-  if (Array.isArray(state?.foundation)) {
-    metrics.foundationPiles = state.foundation.length;
-    for (const pile of state.foundation) {
-      if (Array.isArray(pile)) {
-        metrics.foundationCards += pile.length;
-      }
-    }
-  }
-
-  if (Array.isArray(state?.waste)) {
-    metrics.wasteSize = state.waste.length;
-  }
-
-  if (Array.isArray(state?.tableau)) {
-    metrics.tableauPiles = state.tableau.length;
-    for (const pile of state.tableau) {
-      if (Array.isArray(pile) && pile.length > 0) {
-        metrics.nonEmptyTableauPiles++;
-      }
-    }
-  }
-
-  if (typeof state?.stockCount === 'number') {
-    metrics.stockCount = state.stockCount;
-  }
-
-  // --- Fallbacks: Aggregierte Snapshot-Felder ---
-  // foundationCards: akzeptiere auch String-Werte und alternative Feldnamen
-  if (!metrics.foundationCards && state && (state.foundationsTotal != null || state.foundationCards != null)) {
-    const raw = state.foundationsTotal != null ? state.foundationsTotal : state.foundationCards;
-    const n = Number(raw);
-    if (Number.isFinite(n) && n >= 0) {
-      metrics.foundationCards = n;
-    }
-  }
-
-  // wasteSize
-  if (!metrics.wasteSize && state && state.wasteSize != null) {
-    const n = Number(state.wasteSize);
-    if (Number.isFinite(n) && n >= 0) {
-      metrics.wasteSize = n;
-    }
-  }
-
-  // tableauPiles
-  if (!metrics.tableauPiles && state && state.tableauPiles != null) {
-    const n = Number(state.tableauPiles);
-    if (Number.isFinite(n) && n >= 0) {
-      metrics.tableauPiles = n;
-    }
-  }
-
-  // nonEmptyTableauPiles
-  if (!metrics.nonEmptyTableauPiles && state && state.nonEmptyTableauPiles != null) {
-    const n = Number(state.nonEmptyTableauPiles);
-    if (Number.isFinite(n) && n >= 0) {
-      metrics.nonEmptyTableauPiles = n;
-    }
-  }
-
-  // stockCount
-  if (!metrics.stockCount && state && state.stockCount != null) {
-    const n = Number(state.stockCount);
-    if (Number.isFinite(n) && n >= 0) {
-      metrics.stockCount = n;
-    }
-  }
-
-  // Optionales Debug-Logging für foundationsTotal / foundationCards,
-  // um Probleme beim Mapping schneller zu sehen
-  if (state && (state.foundationsTotal != null || state.foundationCards != null)) {
-    const raw = state.foundationsTotal != null ? state.foundationsTotal : state.foundationCards;
-    console.log(
-      '[BOT] debug foundations snapshot',
-      'raw=', raw,
-      'metrics.foundationCards=', metrics.foundationCards
-    );
-  }
-
-  return metrics;
-}
-
-// --- Bot Decision Helper ---
-function runBotDecisionTickBuiltIn(matchId) {
-  // Built-in bot logic has been fully removed.
-  // This stub remains only for backward compatibility.
-  console.warn('[BOT] built-in bot logic is disabled; serverbot.js must handle decisions.');
-}
-
-function runBotDecisionTick(matchId) {
-  if (!serverbot || typeof serverbot.runBotDecisionTick !== 'function') {
-    console.warn('[BOT] serverbot.js missing or invalid – no bot decisions will be made.');
-    return;
-  }
-  return serverbot.runBotDecisionTick(matchId, {
-    getServerBot,
-    botStateByMatch,
-    broadcastToRoom,
-    computeBotMetrics,
-    isoNow
-  });
-}
-
-
-function createServerBot(matchId, difficulty = 'easy') {
-  const botId = 'bot-' + Math.random().toString(36).slice(2);
-  const botNick =
-    difficulty === 'hard'   ? 'Bot-Hard'   :
-    difficulty === 'medium' ? 'Bot-Medium' :
-    'Bot-Easy';
-
-  const bot = {
-    id: botId,
-    matchId,
-    difficulty,
-    nick: botNick,
-    createdAt: Date.now(),
-    lastMoveAt: 0,
-    state: null,
-    lastSeenStateAt: 0
-  };
-
-  botsByMatch.set(matchId, bot);
-
-  console.log(
-    `[BOT] created botId="${botId}" matchId="${matchId}" difficulty=${difficulty} nick="${botNick}"`
-  );
-
-  return bot;
-}
-
-function getServerBot(matchId) {
-  return botsByMatch.get(matchId) || null;
-}
-
-function removeServerBot(matchId) {
-  if (botsByMatch.delete(matchId)) {
-    console.log(`[BOT] removed bot for matchId="${matchId}"`);
-  }
-}
 
 const {
   createMatchForClient,
@@ -561,40 +412,38 @@ ws.on('message', buf => {
           return;
         }
 
-        const bot = getServerBot(matchId);
-        // WICHTIG: Nur wenn ein Server-Bot für dieses Match existiert, interessiert uns der State.
-        // In normalen Mensch-gegen-Mensch-Spielen wird bot_state damit still ignoriert und
-        // erzeugt keine Log-Spam mehr.
+        if (!serverbotOk) {
+          return;
+        }
+
+        // Only accept bot_state for matches that actually have a server-bot registered.
+        const bot = serverbot.getServerBot(matchId);
         if (!bot) {
           return;
         }
 
-        const state = sys.state;
+        // --- Debug log for bot_state reception ---
+        console.log(
+          `[BOT] bot_state received matchId="${matchId}" tick=${sys.tick || 'n/a'}`
+        );
 
-        if (!state || typeof state !== 'object') {
-          console.log(
-            `[BOT] state update ignored matchId="${matchId}" (no or non-object state)`
-          );
+        // sys.state ist der eigentliche Snapshot aus game.js (botStateVersion, metrics, tableauFull, ...)
+        // serverbot.js erwartet genau dieses Objekt.
+        const snap = (sys.state && typeof sys.state === 'object') ? sys.state : null;
+        if (!snap) {
+          console.log(`[BOT] bot_state ignored matchId="${matchId}" (missing sys.state snapshot)`);
           return;
         }
 
-        // Globalen State-Puffer aktualisieren
-        botStateByMatch.set(matchId, state);
+        // Tick aus dem Envelope in den Snapshot spiegeln (falls im Snapshot selbst nicht vorhanden)
+        if (sys.tick != null && snap.tick == null) snap.tick = sys.tick;
 
-        // Metriken aus dem State ableiten
-        const metrics = computeBotMetrics(state);
+        // Minimal-Metadaten ergänzen (hilft beim Debuggen; bricht keine Logik)
+        if (snap.matchId == null) snap.matchId = matchId;
+        if (snap.__fromCid == null) snap.__fromCid = ws.__cid;
+        if (snap.__at == null) snap.__at = isoNow();
 
-        bot.state = state;
-        bot.lastSeenStateAt = now;
-        bot.stateMetrics = metrics;
-
-        console.log(
-          `[BOT] state update matchId="${matchId}" from cid=${ws.__cid} ` +
-          `tick="${sys.tick ?? 'n/a'}" (haveBot=true) ` +
-          `foundationCards=${metrics.foundationCards} ` +
-          `wasteSize=${metrics.wasteSize} stockCount=${metrics.stockCount} ` +
-          `moves=${metrics.movesPlayed ?? 'n/a'} score=${metrics.score ?? 'n/a'}`
-        );
+        serverbot.handleBotStateUpdate(matchId, snap);
         return;
       }
 
@@ -775,6 +624,20 @@ ws.on('message', buf => {
             console.log(
               `[MATCH] created (bot) matchId="${match.matchId}" seed="${match.seed}" hostNick="${effectiveNick}" cid=${ws.__cid}`
             );
+            // --- ensure ServerBot exists for this bot match (auto-start) ---
+            if (serverbotOk && !serverbot.getServerBot(match.matchId)) {
+              const bot = serverbot.createServerBot(match.matchId, difficulty || 'easy');
+              console.log(`[BOT] created botId="${bot.id}" matchId="${match.matchId}" difficulty=${bot.difficulty} nick="${bot.nick}"`);
+              // Start heartbeat immediately so ticks are generated even without explicit spawn_bot follow-up
+              bot.__interval = setInterval(() => {
+                try {
+                  serverbot.runBotHeartbeatTick(match.matchId, (envelope) => broadcastToRoom(match.matchId, envelope));
+                } catch (e) {
+                  console.error('[BOT] heartbeat tick failed', e);
+                }
+              }, 3000);
+              console.log(`[BOT] auto-started serverbot for matchId="${match.matchId}"`);
+            }
           } catch (err) {
             console.error('[BOT MATCH ERROR] spawn_bot create_match failed', err);
             sendSys(ws, {
@@ -798,10 +661,75 @@ ws.on('message', buf => {
           return;
         }
 
+        if (!serverbotOk) {
+          sendSys(ws, {
+            type: 'bot_error',
+            for: 'spawn_bot',
+            code: 'serverbot_missing',
+            message: 'serverbot.js fehlt oder ist ungültig – Bot kann nicht gestartet werden.'
+          });
+          return;
+        }
+
         // Prüfen, ob bereits ein Bot für dieses Match existiert
-        const existing = getServerBot(matchId);
+        const existing = serverbot.getServerBot(matchId);
         if (existing) {
-          // Bereits ein Bot registriert – wir schicken nur die Info zurück
+          // Heartbeat sicherstellen
+          if (!existing.__interval) {
+            existing.__interval = setInterval(() => {
+              try {
+                serverbot.runBotHeartbeatTick(matchId, (envelope) => broadcastToRoom(matchId, envelope));
+              } catch (e) {
+                console.error('[BOT] heartbeat tick failed', e);
+              }
+            }, 3000);
+            console.log(`[BOT] heartbeat interval started for matchId="${matchId}"`);
+          }
+
+          // WICHTIG: Wenn wir in diesem spawn_bot-Aufruf gerade ein neues Match erzeugt haben,
+          // müssen wir den bestehenden Bot auch im Match-Model eintragen und das Match starten.
+          if (match) {
+            const nowMs = Date.now();
+            if (!Array.isArray(match.players)) {
+              match.players = match.players ? [match.players] : [];
+            }
+
+            const alreadyInPlayers = match.players.some(p => p && p.isBot && (p.id === existing.id || p.nick === existing.nick));
+            if (!alreadyInPlayers) {
+              match.players.push({
+                id: existing.id,
+                nick: existing.nick,
+                isBot: true,
+                joinedAt: nowMs,
+                lastSeen: nowMs
+              });
+            }
+
+            match.status = 'ready';
+            match.lastActivityAt = nowMs;
+
+            const publicAfter = getPublicMatchView(match);
+            sendSys(ws, {
+              type: 'match_update',
+              matchId: match.matchId,
+              status: match.status,
+              players: publicAfter.players
+            }, { matchId: match.matchId });
+
+            broadcastSysToRoom(match.matchId, {
+              type: 'reset',
+              matchId: match.matchId,
+              seed: match.seed
+            });
+
+            match.status = 'running';
+            match.lastActivityAt = Date.now();
+
+            console.log(
+              `[MATCH] auto-start bot matchId="${match.matchId}" seed="${match.seed}" hostNick="${effectiveNick}" botNick="${existing.nick}"`
+            );
+          }
+
           sendSys(ws, {
             type: 'bot_spawned',
             matchId,
@@ -812,8 +740,21 @@ ws.on('message', buf => {
           return;
         }
 
-        // Neuen Bot registrieren
-        const bot = createServerBot(matchId, difficulty);
+        // Neuen Bot registrieren (Logik liegt im serverbot.js)
+        const bot = serverbot.createServerBot(matchId, difficulty);
+        console.log(`[BOT] created botId="${bot.id}" matchId="${matchId}" difficulty=${bot.difficulty} nick="${bot.nick}"`);
+
+        // --- ensure serverbot heartbeat is running ---
+        if (!bot.__interval) {
+          bot.__interval = setInterval(() => {
+            try {
+              serverbot.runBotHeartbeatTick(matchId, (envelope) => broadcastToRoom(matchId, envelope));
+            } catch (e) {
+              console.error('[BOT] heartbeat tick failed', e);
+            }
+          }, 3000);
+          console.log(`[BOT] heartbeat interval started for matchId="${matchId}"`);
+        }
 
         // Bot im Match-Modell sichtbar machen, falls wir einen Match-Ref haben
         if (match) {
@@ -855,13 +796,6 @@ ws.on('message', buf => {
           console.log(
             `[MATCH] auto-start bot matchId="${match.matchId}" seed="${match.seed}" hostNick="${effectiveNick}" botNick="${bot.nick}"`
           );
-        }
-
-        // --- BOT AUTO‑TICK (nutzt Snapshot-State für einfache Züge) ---
-        if (!bot.__interval) {
-          bot.__interval = setInterval(() => {
-            runBotDecisionTick(matchId);
-          }, 5000);
         }
 
         // Rückmeldung an den Host, dass der Bot aktiv ist
