@@ -11,6 +11,16 @@
 const botsByMatch = new Map();     // matchId -> bot
 const botStateByMatch = new Map(); // matchId -> letzter Snapshot-State
 
+const SERVERBOT_API_VERSION = 1;
+
+function log(...args) {
+  console.log(...args);
+}
+
+function warn(...args) {
+  console.warn(...args);
+}
+
 function isoNow() {
   return new Date().toISOString();
 }
@@ -96,7 +106,7 @@ function computeBotMetrics(state) {
   // Debug für Foundations
   if (state && (state.foundationsTotal != null || state.foundationCards != null)) {
     const raw = state.foundationsTotal != null ? state.foundationsTotal : state.foundationCards;
-    console.log(
+    log(
       '[BOT] debug foundations snapshot',
       'raw=', raw,
       'metrics.foundationCards=', metrics.foundationCards
@@ -129,7 +139,7 @@ function createServerBot(matchId, difficulty = 'easy') {
 
   botsByMatch.set(matchId, bot);
 
-  console.log(
+  log(
     `[BOT] created botId="${botId}" matchId="${matchId}" difficulty=${difficulty} nick="${botNick}"`
   );
 
@@ -143,7 +153,7 @@ function getServerBot(matchId) {
 function removeServerBot(matchId) {
   if (botsByMatch.delete(matchId)) {
     botStateByMatch.delete(matchId);
-    console.log(`[BOT] removed bot for matchId="${matchId}"`);
+    log(`[BOT] removed bot for matchId="${matchId}"`);
   }
 }
 
@@ -156,7 +166,7 @@ function handleBotStateUpdate(matchId, state, cid, tickValue) {
   }
 
   if (!state || typeof state !== 'object') {
-    console.log(
+    log(
       `[BOT] state update ignored matchId="${matchId}" (no or non-object state)`
     );
     return;
@@ -172,7 +182,7 @@ function handleBotStateUpdate(matchId, state, cid, tickValue) {
 
   const tick = tickValue ?? state.tick ?? 'n/a';
 
-  console.log(
+  log(
     `[BOT] state update matchId="${matchId}" from cid=${cid} ` +
     `tick="${tick}" (haveBot=true) ` +
     `foundationCards=${metrics.foundationCards} ` +
@@ -224,12 +234,21 @@ function isRedCard(c) {
   );
 }
 
-// --- Herzstück: ein Heartbeat-Tick für einen Bot ---
-function runBotHeartbeatTick(matchId, broadcastFn) {
+// --- Herzstück: ein Decision-Tick für einen Bot (exported as runBotDecisionTick) ---
+function runBotDecisionTick(matchId, deps) {
+  const broadcastFn = deps && typeof deps.broadcastToRoom === 'function'
+    ? deps.broadcastToRoom
+    : null;
+
+  if (!broadcastFn) {
+    warn('[BOT] serverbot.runBotDecisionTick: deps.broadcastToRoom missing (cannot send moves)');
+    return;
+  }
+
   const matchBot = getServerBot(matchId);
   if (!matchBot) return;
 
-  console.log(
+  log(
     `[BOT] heartbeat botId="${matchBot.id}" matchId="${matchId}" difficulty=${matchBot.difficulty}`
   );
 
@@ -241,14 +260,14 @@ function runBotHeartbeatTick(matchId, broadcastFn) {
   const metrics = state ? computeBotMetrics(state) : null;
 
   if (metrics) {
-    console.log(
+    log(
       `[BOT] heartbeat metrics matchId="${matchId}" ` +
       `foundationCards=${metrics.foundationCards} ` +
       `wasteSize=${metrics.wasteSize} stockCount=${metrics.stockCount} ` +
       `tableauPiles=${metrics.tableauPiles} nonEmptyTableauPiles=${metrics.nonEmptyTableauPiles}`
     );
   } else {
-    console.log(
+    log(
       `[BOT] heartbeat metrics matchId="${matchId}" (noch kein Snapshot-State vom Client)`
     );
   }
@@ -367,7 +386,7 @@ function runBotHeartbeatTick(matchId, broadcastFn) {
       });
       broadcastFn(envelope);
       matchBot.lastMoveAt = Date.now();
-      console.log(
+      log(
         `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="${kindLabel}"` +
         (debugInfo ? ` details=${debugInfo}` : '')
       );
@@ -380,7 +399,7 @@ function runBotHeartbeatTick(matchId, broadcastFn) {
         ? s.foundations.map(f => Array.isArray(f.cards) ? f.cards : [])
         : [];
 
-      console.log(
+      log(
         `[BOT] decision input matchId="${matchId}" ` +
         `foundations=${foundations.length} tableau=${tableau.length} waste=${waste.length}`
       );
@@ -531,12 +550,12 @@ function runBotHeartbeatTick(matchId, broadcastFn) {
       }
 
       if (!move) {
-        console.log(
+        log(
           `[BOT] no deterministic card-move found for matchId="${matchId}" – fallback auf Flip`
         );
       }
     } else if (decisionState) {
-      console.log(
+      log(
         `[BOT] decision skipped matchId="${matchId}" – Snapshot enthält keine detaillierten Karten-Arrays`
       );
     }
@@ -556,13 +575,13 @@ function runBotHeartbeatTick(matchId, broadcastFn) {
         broadcastFn(envelope);
         matchBot.lastMoveAt = nowT;
         matchBot.lastFlipAt = nowT;
-        console.log(
+        log(
           `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="flip (throttled)"`
         );
       }
     }
   } catch (err) {
-    console.warn(
+    warn(
       `[BOT] error while sending move for matchId="${matchId}":`,
       err
     );
@@ -570,9 +589,24 @@ function runBotHeartbeatTick(matchId, broadcastFn) {
 }
 
 module.exports = {
+  // API metadata
+  SERVERBOT_API_VERSION,
+
+  // Registry
   createServerBot,
   getServerBot,
   removeServerBot,
+
+  // State ingest
   handleBotStateUpdate,
-  runBotHeartbeatTick
+
+  // Decision tick (what server.js expects)
+  runBotDecisionTick,
+
+  // Expose internal maps for debugging/advanced use (optional)
+  botsByMatch,
+  botStateByMatch,
+
+  // Utilities (optional)
+  computeBotMetrics
 };

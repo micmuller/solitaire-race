@@ -16,6 +16,7 @@
 // -v2.2.15: Bot-Foundation-Logik: Ass-Erkennung korrigiert (Ace = rank 0)
 // -v2.2.16: Bot-Entscheidungslogik in Helper-Funktion runBotDecisionTick() ausgelagert
 // -v2.2.17: ServerBot-Modul (serverbot.js) optional eingebunden + Server-Info für Clients
+// -v2.2.18: Serverbot Logik ausgelagert
 // ================================================================
 
 const http   = require('node:http');
@@ -27,9 +28,9 @@ const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
 // ---------- Optional ServerBot module (split bot logic out of server.js) ----------
+// NOTE: All bot decision logic lives in serverbot.js; server.js only wires state + transport.
 let serverbot = null;
 try {
-  // serverbot.js is optional; server.js keeps a compatible fallback implementation.
   serverbot = require('./serverbot');
   console.log('[BOT] serverbot.js loaded');
 } catch (e) {
@@ -39,7 +40,7 @@ try {
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.2.17';
+const VERSION = '2.2.18';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -243,438 +244,23 @@ function computeBotMetrics(state) {
 
 // --- Bot Decision Helper ---
 function runBotDecisionTickBuiltIn(matchId) {
-  const matchBot = getServerBot(matchId);
-  if (!matchBot) {
-    return;
-  }
-
-  // Basis-Logging des Heartbeats
-  console.log(
-    `[BOT] heartbeat botId="${matchBot.id}" matchId="${matchId}" difficulty=${matchBot.difficulty}`
-  );
-
-  // Bot-Metriken aus State ableiten und loggen
-  const state =
-    botStateByMatch.get(matchId) ||
-    matchBot.state ||
-    null;
-
-  const metrics = state ? computeBotMetrics(state) : null;
-
-  if (metrics) {
-    console.log(
-      `[BOT] heartbeat metrics matchId="${matchId}" ` +
-      `foundationCards=${metrics.foundationCards} ` +
-      `wasteSize=${metrics.wasteSize} stockCount=${metrics.stockCount} ` +
-      `tableauPiles=${metrics.tableauPiles} nonEmptyTableauPiles=${metrics.nonEmptyTableauPiles}`
-    );
-  } else {
-    console.log(
-      `[BOT] heartbeat metrics matchId="${matchId}" (noch kein Snapshot-State vom Client)`
-    );
-  }
-
-  // Verbesserte Bot-Logik (Entscheidungsbaum):
-  // 1. Versuche Tableau → Foundation
-  // 2. Versuche Waste → Foundation
-  // 3. Versuche Waste → Tableau
-  // 4. Versuche Tableau → Tableau
-  // 5. Fallback: Flip (draw/flip)
-  // Erwartet, dass das Spielfeld im State-Objekt Arrays mit Karten enthält.
-  try {
-    // Verwende den zuletzt vom Client gemeldeten Spielzustand (bot_state).
-    // Priorität: globale Map -> Bot-intern -> kein State
-    const decisionState =
-      botStateByMatch.get(matchId) ||
-      matchBot.state ||
-      null;
-
-    let move = null;
-
-    // Aus Sicht des Snapshots ist "you" normalerweise der menschliche Spieler
-    // und "opp" der Bot. Wir leiten daraus die Bot-Seite ab.
-    const humanOwner =
-      (decisionState && typeof decisionState.owner === 'string' && decisionState.owner) ||
-      'Y';
-    const botOwner = humanOwner === 'Y' ? 'O' : 'Y';
-
-    function pickBotSideArrays(snapshot) {
-      if (!snapshot) {
-        return { tableau: [], waste: [] };
-      }
-      const tFull = snapshot.tableauFull || {};
-      const wFull = snapshot.wasteFull || {};
-      // Bevorzugt die Gegner-Seite ("opp"), fallweise Fallback auf "you",
-      // falls aus irgendeinem Grund kein opp-Array vorhanden ist.
-      const tableau =
-        Array.isArray(tFull.opp) ? tFull.opp :
-        Array.isArray(tFull.you) ? tFull.you : [];
-      const waste =
-        Array.isArray(wFull.opp) ? wFull.opp :
-        Array.isArray(wFull.you) ? wFull.you : [];
-      return { tableau, waste };
-    }
-
-    function hasDetailedState(s) {
-      return !!(
-        s &&
-        s.tableauFull &&
-        Array.isArray(s.tableauFull.you) &&
-        s.wasteFull &&
-        Array.isArray(s.wasteFull.you) &&
-        Array.isArray(s.foundations)
-      );
-    }
-
-    // Hilfsfunktion: Owner aus CardId ableiten ('Y-' oder 'O-')
-    function inferOwnerFromCardId(cardId, fallbackOwner = 'Y') {
-      if (typeof cardId === 'string') {
-        if (cardId.startsWith('Y-')) return 'Y';
-        if (cardId.startsWith('O-')) return 'O';
-      }
-      return fallbackOwner;
-    }
-
-    // Helper: Bot-Intent → reguläres Client-MOVE-Format + Senden
-    function sendMove(intent, kindLabel, debugInfo) {
-      // Der Bot soll mit seinen eigenen Karten spielen → owner = botOwner
-      const defaultOwner = botOwner;
-
-      let movePayload = null;
-
-      switch (intent.kind) {
-        case 'tableau_to_foundation': {
-          const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
-          movePayload = {
-            owner,
-            kind: 'toFound',
-            cardId: intent.cardId,
-            count: 1,
-            from: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: intent.from
-            },
-            to: {
-              kind: 'found',
-              f: intent.to
-            }
-          };
-          break;
-        }
-
-        case 'waste_to_foundation': {
-          const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
-          movePayload = {
-            owner,
-            kind: 'toFound',
-            cardId: intent.cardId,
-            count: 1,
-            from: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: -1
-            },
-            to: {
-              kind: 'found',
-              f: intent.to
-            }
-          };
-          break;
-        }
-
-        case 'waste_to_tableau': {
-          const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
-          movePayload = {
-            owner,
-            kind: 'toPile',
-            cardId: intent.cardId,
-            count: 1,
-            from: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: -1
-            },
-            to: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: intent.to
-            }
-          };
-          break;
-        }
-
-        case 'tableau_to_tableau': {
-          const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
-          movePayload = {
-            owner,
-            kind: 'toPile',
-            cardId: intent.cardId,
-            count: 1,
-            from: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: intent.from
-            },
-            to: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: intent.to
-            }
-          };
-          break;
-        }
-
-        default: {
-          // Fallback: Intent ist bereits im richtigen Format (z.B. flip)
-          movePayload = intent;
-          break;
-        }
-      }
-
-      const envelope = JSON.stringify({
-        move: movePayload,
-        from: matchBot.id
-      });
-      broadcastToRoom(matchId, envelope, null);
-      matchBot.lastMoveAt = Date.now();
-      console.log(
-        `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="${kindLabel}"` +
-        (debugInfo ? ` details=${debugInfo}` : '')
-      );
-    }
-
-    if (hasDetailedState(decisionState)) {
-      const s = decisionState;
-
-      // Aus dem Snapshot die relevanten Arrays extrahieren:
-      // - Bot-Seite ("opp" falls vorhanden, sonst "you") für Bot-Entscheidungen
-      // - Foundations werden aus s.foundations[*].cards abgeleitet
-      const { tableau, waste } = pickBotSideArrays(s);
-      const foundations = Array.isArray(s.foundations)
-        ? s.foundations.map(f => Array.isArray(f.cards) ? f.cards : [])
-        : [];
-
-      console.log(
-        `[BOT] decision input matchId="${matchId}" ` +
-        `foundations=${foundations.length} tableau=${tableau.length} waste=${waste.length}`
-      );
-
-      // 1. Tableau → Foundation (nur gleiche Suit, Ass auf leer oder Folgekarte)
-      outer1:
-      for (let t = 0; t < tableau.length; t++) {
-        const pile = tableau[t];
-        if (!pile || !pile.length) continue;
-        const card = pile[pile.length - 1];
-
-        for (let f = 0; f < foundations.length; f++) {
-          const destObj   = s.foundations && s.foundations[f];
-          if (!destObj) continue;
-          const destCards = Array.isArray(destObj.cards) ? destObj.cards : [];
-          const destSuit  = destObj.suit;
-
-          // Nur Foundations derselben Suit verwenden, um z.B. 2♥ nicht auf eine andere Suit zu legen
-          if (destSuit && card.suit && destSuit !== card.suit) continue;
-
-          if (
-            (!destCards.length && card.rank === 0) || // Ass auf leere Foundation (Ace ist rank 0)
-            (destCards.length &&
-              destCards[destCards.length - 1].suit === card.suit &&
-              destCards[destCards.length - 1].rank === card.rank - 1)
-          ) {
-            move = {
-              kind: 'tableau_to_foundation',
-              from: t,
-              to: f,
-              cardId: card.id || card.cardId || null
-            };
-            sendMove(
-              move,
-              'tableau_to_foundation',
-              `fromTableau=${t} toFoundation=${f} rank=${card.rank} suit=${card.suit}`
-            );
-            break outer1;
-          }
-        }
-      }
-
-      // 2. Waste → Foundation (nur gleiche Suit, Ass auf leer oder Folgekarte)
-      if (!move && Array.isArray(waste) && waste.length) {
-        const card = waste[waste.length - 1];
-        for (let f = 0; f < foundations.length; f++) {
-          const destObj   = s.foundations && s.foundations[f];
-          if (!destObj) continue;
-          const destCards = Array.isArray(destObj.cards) ? destObj.cards : [];
-          const destSuit  = destObj.suit;
-
-          if (destSuit && card.suit && destSuit !== card.suit) continue;
-
-          if (
-            (!destCards.length && card.rank === 0) || // Ass auf leere Foundation (Ace ist rank 0)
-            (destCards.length &&
-              destCards[destCards.length - 1].suit === card.suit &&
-              destCards[destCards.length - 1].rank === card.rank - 1)
-          ) {
-            move = {
-              kind: 'waste_to_foundation',
-              to: f,
-              cardId: card.id || card.cardId || null
-            };
-            sendMove(
-              move,
-              'waste_to_foundation',
-              `toFoundation=${f} rank=${card.rank} suit=${card.suit}`
-            );
-            break;
-          }
-        }
-      }
-
-      // 3. Waste → Tableau
-      if (!move && Array.isArray(waste) && waste.length) {
-        const card = waste[waste.length - 1];
-        const isRed = c => !!c && (
-          c.suit === 'hearts' || c.suit === 'diamonds' ||
-          c.suit === '♥' || c.suit === '♦'
-        );
-
-        for (let t = 0; t < tableau.length; t++) {
-          const dest = tableau[t];
-          if (!Array.isArray(dest)) continue;
-
-          if (!dest.length) {
-            // König auf leere Spalte
-            if (card.rank === 13) {
-              move = {
-                kind: 'waste_to_tableau',
-                to: t,
-                cardId: card.id || card.cardId || null
-              };
-              sendMove(
-                move,
-                'waste_to_tableau',
-                `toTableau=${t} (empty) rank=${card.rank} suit=${card.suit}`
-              );
-              break;
-            }
-          } else {
-            const destCard = dest[dest.length - 1];
-            if (
-              isRed(card) !== isRed(destCard) &&
-              destCard.rank === card.rank + 1
-            ) {
-              move = {
-                kind: 'waste_to_tableau',
-                to: t,
-                cardId: card.id || card.cardId || null
-              };
-              sendMove(
-                move,
-                'waste_to_tableau',
-                `toTableau=${t} rank=${card.rank} suit=${card.suit} on=${destCard.rank}/${destCard.suit}`
-              );
-              break;
-            }
-          }
-        }
-      }
-
-      // 4. Tableau → Tableau (Easy-Mode): nur Könige auf leere Spalten,
-      // um endlose Hin-und-Her-Züge zu vermeiden.
-      if (!move) {
-        for (let fromT = 0; fromT < tableau.length; fromT++) {
-          const pile = tableau[fromT];
-          if (!Array.isArray(pile) || !pile.length) continue;
-          const card = pile[pile.length - 1];
-
-          // Nur Könige verschieben
-          if (card.rank !== 13) continue;
-
-          for (let toT = 0; toT < tableau.length; toT++) {
-            if (toT === fromT) continue;
-            const dest = tableau[toT];
-            if (!Array.isArray(dest)) continue;
-            if (dest.length) continue; // nur leere Spalten
-
-            move = {
-              kind: 'tableau_to_tableau',
-              from: fromT,
-              to: toT,
-              cardId: card.id || card.cardId || null
-            };
-            sendMove(
-              move,
-              'tableau_to_tableau',
-              `from=${fromT} toEmpty=${toT} rank=${card.rank} suit=${card.suit}`
-            );
-            break;
-          }
-
-          if (move) break;
-        }
-      }
-
-      if (!move) {
-        console.log(
-          `[BOT] no deterministic card-move found for matchId="${matchId}" – fallback auf Flip`
-        );
-      }
-    } else if (decisionState) {
-      // Wir haben zwar ein State-Objekt, aber (noch) keine detaillierten Arrays
-      console.log(
-        `[BOT] decision skipped matchId="${matchId}" – Snapshot enthält keine detaillierten Karten-Arrays`
-      );
-    }
-
-    // 5. Fallback: Flip (draw/flip) — throttled to avoid Spam
-    if (!move) {
-      const nowT = Date.now();
-      if (!matchBot.lastFlipAt || nowT - matchBot.lastFlipAt > 10000) {
-        // Flip soll auf der Bot-Seite passieren
-        const flipMove = {
-          owner: botOwner,
-          kind: 'flip'
-        };
-
-        const envelope = JSON.stringify({
-          move: flipMove,
-          from: matchBot.id
-        });
-
-        broadcastToRoom(matchId, envelope, null);
-        matchBot.lastMoveAt = nowT;
-        matchBot.lastFlipAt = nowT;
-        console.log(
-          `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="flip (throttled)"`
-        );
-      }
-    }
-  } catch (err) {
-    console.warn(
-      `[BOT] error while sending move for matchId="${matchId}":`,
-      err
-    );
-  }
+  // Built-in bot logic has been fully removed.
+  // This stub remains only for backward compatibility.
+  console.warn('[BOT] built-in bot logic is disabled; serverbot.js must handle decisions.');
 }
 
-// Wrapper: prefer serverbot.js implementation when available
 function runBotDecisionTick(matchId) {
-  try {
-    if (serverbot && typeof serverbot.runBotDecisionTick === 'function') {
-      // Provide minimal deps so serverbot.js can broadcast moves / compute metrics.
-      // If serverbot.js ignores the 2nd arg, that's fine.
-      return serverbot.runBotDecisionTick(matchId, {
-        getServerBot,
-        botStateByMatch,
-        broadcastToRoom,
-        computeBotMetrics,
-        isoNow
-      });
-    }
-  } catch (e) {
-    console.warn('[BOT] serverbot.runBotDecisionTick failed – falling back to built-in logic:', e);
+  if (!serverbot || typeof serverbot.runBotDecisionTick !== 'function') {
+    console.warn('[BOT] serverbot.js missing or invalid – no bot decisions will be made.');
+    return;
   }
-  return runBotDecisionTickBuiltIn(matchId);
+  return serverbot.runBotDecisionTick(matchId, {
+    getServerBot,
+    botStateByMatch,
+    broadcastToRoom,
+    computeBotMetrics,
+    isoNow
+  });
 }
 
 
