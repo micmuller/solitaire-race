@@ -8,7 +8,7 @@
 //   - Entscheidungslogik & Move-Mapping
 // ================================================================
 // Changelog:
-// -v1.3: Fix recycle logic (bot-side stock/waste), foundation progression, and robust rank parsing
+// -v1.4: Fix recycle logic (bot-side stock/waste), foundation progression, and robust rank parsing
 // ================================================================
 
 
@@ -523,16 +523,59 @@ function runBotDecisionTick(matchId, deps) {
     );
   }
 
-  function foundationRangesForOwner(_owner, total, _foundationsArr) {
-    // Foundations are shared between bot and player.
-    // We therefore always consider the full range and never split by owner.
-    return [{ start: 0, end: total, base: 0, label: 'shared' }];
-  }
-  function toClientFoundationIndex(_range, globalIndex) {
-    // Client expects f in 0..3 (foundation column index).
-    // Some snapshots expose 8 foundation slots (duplicated per side); map to 0..3.
+  // Foundations are SHARED between bot and player.
+  // The client move protocol uses `to.f` as a foundation column index (0..3).
+  // Some snapshots expose 8 foundation entries (4 duplicated). We therefore
+  // evaluate foundations per *column* by merging duplicates.
+  function toClientFoundationColumn(globalIndex) {
     if (!Number.isFinite(globalIndex)) return 0;
     return (globalIndex % 4 + 4) % 4;
+  }
+
+  function buildFoundationColumns(foundationsArr) {
+    const cols = [[], [], [], []];
+    for (let i = 0; i < foundationsArr.length; i++) {
+      cols[toClientFoundationColumn(i)].push(i);
+    }
+    return cols;
+  }
+
+  function bestFoundationObjForCardInCol(foundationsArr, colIndices, card, scheme) {
+    const cardSuit = normalizeSuit(card && card.suit);
+
+    let bestObj = null;
+    let bestTopR = -1;
+    let bestLen = -1;
+
+    for (const idx of colIndices) {
+      const fObj = foundationsArr[idx];
+      if (!fObj) continue;
+
+      const destSuit = normalizeSuit(fObj.suit);
+      // If the foundation declares a suit, it must match the card suit.
+      if (destSuit && cardSuit && destSuit !== cardSuit) continue;
+
+      const cards = Array.isArray(fObj.cards) ? fObj.cards : [];
+      const top = cards.length ? cards[cards.length - 1] : null;
+      const topR = top ? (rankN(top) ?? -1) : -1;
+
+      // Prefer progressed (non-empty) foundations and higher top attracts next card.
+      if (cards.length > bestLen || (cards.length === bestLen && topR > bestTopR)) {
+        bestObj = fObj;
+        bestLen = cards.length;
+        bestTopR = topR;
+      }
+    }
+
+    // If we found a suitable candidate foundation in this column, return it.
+    if (bestObj) return bestObj;
+
+    // Otherwise, treat this column as an empty foundation of the card's suit.
+    // This allows ONLY an Ace to start the sequence.
+    return {
+      suit: cardSuit,
+      cards: []
+    };
   }
 
   let decided = false;
@@ -541,66 +584,39 @@ function runBotDecisionTick(matchId, deps) {
     const s = state;
     const { tableau, waste } = pickBotSideArrays(s, botSideKey);
     const foundations = Array.isArray(s.foundations) ? s.foundations : [];
-    const fRanges = foundationRangesForOwner(botOwner, foundations.length, foundations);
+    const foundationCols = buildFoundationColumns(foundations);
 
-    // In some layouts we have 8 foundation slots (4 per owner). If the snapshot foundation objects
-    // don't carry a reliable `suit`, we can still validate by index ordering.
-    const FOUNDATION_ORDER = ['♣', '♦', '♥', '♠'];
-    function expectedSuitForFoundationIndex(globalIndex, total) {
-      if (!Number.isFinite(globalIndex)) return null;
-      // Even if snapshot exposes 8 slots, the suit order repeats every 4.
-      if (total >= 4) return FOUNDATION_ORDER[globalIndex % 4] || null;
-      return null;
-    }
-
+    // Decide which foundation column (0..3) a card can go to.
+    // IMPORTANT: foundations are shared; if the snapshot contains duplicates, we merge by column.
     function findFoundationDestination(card) {
-      const cardSuit = normalizeSuit(card && card.suit);
+      if (!card) return null;
 
-      let best = null;
+      const cardSuit = normalizeSuit(card.suit);
+      if (!cardSuit) return null;
 
-      for (const range of fRanges) {
-        for (let f = range.start; f < range.end; f++) {
-          const destObj = foundations[f];
-          if (!destObj) continue;
+      let bestCol = null;
+      let bestTopR = -1;
+      let bestLen = -1;
 
-          // Extra guard: if foundation suit is missing/unknown, enforce expected suit by index
-          const expectedSuit = expectedSuitForFoundationIndex(f, foundations.length);
-          const destSuit = normalizeSuit(destObj && destObj.suit);
-          if (cardSuit && expectedSuit && !destSuit && cardSuit !== expectedSuit) continue;
+      for (let col = 0; col < 4; col++) {
+        const indices = foundationCols[col] || [];
+        const fObjMerged = bestFoundationObjForCardInCol(foundations, indices, card, scheme);
 
-          const destCards = Array.isArray(destObj && destObj.cards) ? destObj.cards : [];
-          const destTop = destCards.length ? destCards[destCards.length - 1] : null;
+        if (!canPlaceOnFoundation(card, fObjMerged, scheme)) continue;
 
-          // Never place an Ace onto a non-empty foundation.
-          if (destTop && isAceCard(card, scheme)) continue;
+        const cards = Array.isArray(fObjMerged.cards) ? fObjMerged.cards : [];
+        const top = cards.length ? cards[cards.length - 1] : null;
+        const topR = top ? (rankN(top) ?? -1) : -1;
 
-          if (!canPlaceOnFoundation(card, destObj, scheme)) continue;
-
-          // Prefer destinations that are already progressed (non-empty) and with higher top rank,
-          // to avoid choosing the wrong duplicate slot when snapshot exposes 8 foundations.
-          const topR = destTop ? (rankN(destTop) ?? -1) : -1;
-          const isEmpty = destCards.length === 0;
-
-          const candidate = {
-            localIndex: toClientFoundationIndex(range, f),
-            rangeLabel: range.label,
-            globalIndex: f,
-            topR,
-            isEmpty
-          };
-
-          if (!best) {
-            best = candidate;
-          } else {
-            // Prefer non-empty over empty; then higher top rank; then smaller global index (stable)
-            if (best.isEmpty && !candidate.isEmpty) best = candidate;
-            else if (best.isEmpty === candidate.isEmpty && candidate.topR > best.topR) best = candidate;
-            else if (best.isEmpty === candidate.isEmpty && candidate.topR === best.topR && candidate.globalIndex < best.globalIndex) best = candidate;
-          }
+        // Prefer continuing an existing pile (non-empty), then higher top rank.
+        if (cards.length > bestLen || (cards.length === bestLen && topR > bestTopR)) {
+          bestCol = col;
+          bestLen = cards.length;
+          bestTopR = topR;
         }
       }
 
-      return best ? { localIndex: best.localIndex, rangeLabel: best.rangeLabel, globalIndex: best.globalIndex } : null;
+      return (bestCol != null) ? { localIndex: bestCol, rangeLabel: 'shared', globalIndex: bestCol } : null;
     }
 
     // 1) Aces first (tableau → foundation, then waste → foundation)
