@@ -7,6 +7,10 @@
 //   - Metrics-Berechnung
 //   - Entscheidungslogik & Move-Mapping
 // ================================================================
+// Changelog:
+// -v1.1: Erste Version, Basis-Funktionalität easy Bot - brocken
+// ================================================================
+
 
 const botsByMatch = new Map();     // matchId -> bot
 const botStateByMatch = new Map(); // matchId -> letzter Snapshot-State
@@ -14,7 +18,169 @@ const botStateByMatch = new Map(); // matchId -> letzter Snapshot-State
 const SERVERBOT_API_VERSION = 1;
 
 const BOT_DEBUG = process.env.BOT_DEBUG === '1';
+
 const BOT_LOG_THROTTLE_MS = Number(process.env.BOT_LOG_THROTTLE_MS || 5000);
+
+// Decision pacing (ms) – keep bot moves human-like
+const BOT_MOVE_DELAY_MIN_MS = Number(process.env.BOT_MOVE_DELAY_MIN_MS || 2000);
+const BOT_MOVE_DELAY_MAX_MS = Number(process.env.BOT_MOVE_DELAY_MAX_MS || 5000);
+
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
+}
+
+function randInt(min, max) {
+  const a = Math.floor(min);
+  const b = Math.floor(max);
+  if (b <= a) return a;
+  return a + Math.floor(Math.random() * (b - a + 1));
+}
+
+function nextMoveDelayMs(bot) {
+  // Difficulty can later scale this; for now, configurable and shared
+  const min = clamp(BOT_MOVE_DELAY_MIN_MS, 250, 60000);
+  const max = clamp(BOT_MOVE_DELAY_MAX_MS, min, 60000);
+  return randInt(min, max);
+}
+
+function scheduleNextAction(bot) {
+  bot.nextActionAt = Date.now() + nextMoveDelayMs(bot);
+}
+
+function normalizeSuit(s) {
+  if (!s) return '';
+  // Accept both symbol and word forms
+  switch (s) {
+    case '♥': case 'hearts': return '♥';
+    case '♦': case 'diamonds': return '♦';
+    case '♣': case 'clubs': return '♣';
+    case '♠': case 'spades': return '♠';
+    default: return String(s);
+  }
+}
+
+function rankN(c) {
+  const n = Number(c && c.rank);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Infer whether the client uses 0-based ranks (A=0..K=12) or 1-based (A=1..K=13)
+function inferRankSchemeFromSnapshot(snapshot) {
+  try {
+    const ranks = [];
+
+    // Detailed arrays preferred
+    if (snapshot && snapshot.tableauFull) {
+      const tFull = snapshot.tableauFull;
+      const piles = ([])
+        .concat(Array.isArray(tFull.you) ? tFull.you : [])
+        .concat(Array.isArray(tFull.opp) ? tFull.opp : []);
+      for (const pile of piles) {
+        if (!Array.isArray(pile)) continue;
+        for (const c of pile) {
+          const r = rankN(c);
+          if (r != null) ranks.push(r);
+        }
+      }
+    }
+
+    if (snapshot && snapshot.wasteFull) {
+      const wFull = snapshot.wasteFull;
+      const cards = ([])
+        .concat(Array.isArray(wFull.you) ? wFull.you : [])
+        .concat(Array.isArray(wFull.opp) ? wFull.opp : []);
+      for (const c of cards) {
+        const r = rankN(c);
+        if (r != null) ranks.push(r);
+      }
+    }
+
+    if (snapshot && Array.isArray(snapshot.foundations)) {
+      for (const f of snapshot.foundations) {
+        const cards = Array.isArray(f && f.cards) ? f.cards : [];
+        for (const c of cards) {
+          const r = rankN(c);
+          if (r != null) ranks.push(r);
+        }
+      }
+    }
+
+    // If we didn't see ranks, fall back to unknown
+    if (!ranks.length) return 'unknown';
+
+    const min = Math.min(...ranks);
+    const max = Math.max(...ranks);
+
+    // Strong signals
+    if (min === 0) return 'zeroBased';
+    if (max === 13) return 'oneBased';
+
+    // Heuristic fallback: if we never see 0, but see values >= 12 a lot, assume oneBased
+    if (min >= 1 && max <= 13) return 'oneBased';
+
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function isAceCard(c, scheme = 'unknown') {
+  const r = rankN(c);
+  if (r == null) return false;
+  if (scheme === 'zeroBased') return r === 0;
+  if (scheme === 'oneBased') return r === 1;
+  // Unknown: be conservative (prefer not to treat rank 1 as Ace, to avoid playing 2 first in zeroBased games)
+  return r === 0;
+}
+
+function isKingCard(c, scheme = 'unknown') {
+  const r = rankN(c);
+  if (r == null) return false;
+  if (scheme === 'zeroBased') return r === 12;
+  if (scheme === 'oneBased') return r === 13;
+  // Unknown conservative
+  return r === 12;
+}
+
+function canPlaceOnFoundation(card, foundationObj, scheme = 'unknown') {
+  if (!card || !foundationObj) return false;
+  const destCards = Array.isArray(foundationObj.cards) ? foundationObj.cards : [];
+  const destSuit  = normalizeSuit(foundationObj.suit);
+  const cardSuit  = normalizeSuit(card.suit);
+
+  // If foundation has a declared suit, it must match.
+  if (destSuit && cardSuit && destSuit !== cardSuit) return false;
+
+  // Empty foundation: ONLY an Ace can start (Ace may be rank 0 or 1 depending on client)
+  if (!destCards.length) return isAceCard(card, scheme);
+
+  const top = destCards[destCards.length - 1];
+  const topSuit = normalizeSuit(top && top.suit);
+  if (topSuit && cardSuit && topSuit !== cardSuit) return false;
+
+  const topR = rankN(top);
+  const cardR = rankN(card);
+  if (topR == null || cardR == null) return false;
+
+  // Standard ascending-by-1 within same suit (works for both 0..12 and 1..13 rank schemes)
+  return cardR === topR + 1;
+}
+
+function canPlaceOnTableau(card, destTop, scheme = 'unknown') {
+  if (!card) return false;
+
+  const cardR = rankN(card);
+  if (cardR == null) return false;
+
+  // Empty tableau pile: only King (can be 12 or 13 depending on client)
+  if (!destTop) return isKingCard(card, scheme);
+
+  const destR = rankN(destTop);
+  if (destR == null) return false;
+
+  // Alternating colors & descending by 1
+  return (isRedCard(card) !== isRedCard(destTop)) && (destR === cardR + 1);
+}
 
 function log(...args) {
   console.log(...args);
@@ -137,6 +303,10 @@ function createServerBot(matchId, difficulty = 'easy', opts = {}) {
     ,lastHeartbeatLogAt: 0
     ,lastMetricsLogAt: 0
     ,lastStateLogAt: 0
+    ,nextActionAt: 0
+    ,lastWasteResetAt: 0
+    ,rankScheme: 'unknown'
+    ,recentMoveSigs: []
   };
 
   botsByMatch.set(matchId, bot);
@@ -255,6 +425,23 @@ function runBotDecisionTick(matchId, deps) {
   const matchBot = getServerBot(matchId);
   if (!matchBot) return;
 
+  // Infer/carry rank scheme (0-based vs 1-based) to avoid mis-identifying 2 as Ace
+  const snapshotForScheme = botStateByMatch.get(matchId) || matchBot.state || null;
+  const inferredScheme = inferRankSchemeFromSnapshot(snapshotForScheme);
+  if (inferredScheme !== 'unknown') {
+    matchBot.rankScheme = inferredScheme;
+  }
+  const scheme = matchBot.rankScheme || 'unknown';
+
+  // Allow recycle clicks (stock empty) to proceed even if we are within the normal pacing window.
+  const st = botStateByMatch.get(matchId) || matchBot.state || null;
+  const mx = st ? computeBotMetrics(st) : null;
+  const recycleFastPath = mx && mx.stockCount === 0 && mx.wasteSize > 0;
+
+  if (!recycleFastPath && matchBot.nextActionAt && Date.now() < matchBot.nextActionAt) {
+    return;
+  }
+
   const nowHb = Date.now();
   if (BOT_DEBUG || !matchBot.lastHeartbeatLogAt || (nowHb - matchBot.lastHeartbeatLogAt) >= BOT_LOG_THROTTLE_MS) {
     matchBot.lastHeartbeatLogAt = nowHb;
@@ -294,6 +481,27 @@ function runBotDecisionTick(matchId, deps) {
       (decisionState && typeof decisionState.owner === 'string' && decisionState.owner) ||
       'Y';
     const botOwner = humanOwner === 'Y' ? 'O' : 'Y';
+
+    // Foundations are sent as 8 piles (4 per player). Client move payload expects f=0..3 per owner.
+    // Convention: indices 0..3 belong to owner 'Y', indices 4..7 belong to owner 'O'.
+    function foundationBaseForOwner(owner, total) {
+      if (total >= 8) return owner === 'O' ? 4 : 0;
+      // Fallback (older snapshots): treat as single 4-pile set
+      return 0;
+    }
+
+    function ownerFoundationRange(owner, total) {
+      if (total >= 8) {
+        const base = foundationBaseForOwner(owner, total);
+        return { base, start: base, end: base + 4 };
+      }
+      return { base: 0, start: 0, end: total };
+    }
+
+    function toLocalFoundationIndex(owner, globalIndex, total) {
+      const base = foundationBaseForOwner(owner, total);
+      return Math.max(0, globalIndex - base);
+    }
 
     // Helper: "Intent" → Move-Payload + Broadcast
     function sendMove(intent, kindLabel, debugInfo) {
@@ -393,8 +601,22 @@ function runBotDecisionTick(matchId, deps) {
         move: movePayload,
         from: matchBot.id
       });
+
+      // Loop protection: remember recent move signatures to avoid ping-pong
+      try {
+        const sig = `${movePayload.kind}:${movePayload.cardId || ''}:${(movePayload.from && movePayload.from.uiIndex) ?? ''}->${(movePayload.to && (movePayload.to.uiIndex ?? movePayload.to.f)) ?? ''}`;
+        const now = Date.now();
+        if (!Array.isArray(matchBot.recentMoveSigs)) matchBot.recentMoveSigs = [];
+        matchBot.recentMoveSigs.push({ sig, at: now });
+        // keep last ~10 entries within 20s
+        matchBot.recentMoveSigs = matchBot.recentMoveSigs
+          .filter(x => x && (now - x.at) < 20000)
+          .slice(-10);
+      } catch {}
+
       broadcastFn(envelope);
       matchBot.lastMoveAt = Date.now();
+      scheduleNextAction(matchBot);
       log(
         `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="${kindLabel}"` +
         (debugInfo ? ` details=${debugInfo}` : '')
@@ -404,159 +626,211 @@ function runBotDecisionTick(matchId, deps) {
     if (hasDetailedState(decisionState)) {
       const s = decisionState;
       const { tableau, waste } = pickBotSideArrays(s);
-      const foundations = Array.isArray(s.foundations)
-        ? s.foundations.map(f => Array.isArray(f.cards) ? f.cards : [])
-        : [];
+      const foundations = Array.isArray(s.foundations) ? s.foundations : [];
+      const fRange = ownerFoundationRange(botOwner, foundations.length);
 
       if (BOT_DEBUG) {
-        log(`[BOT] decision input matchId="${matchId}" foundations=${foundations.length} tableau=${tableau.length} waste=${waste.length}`);
+        log(`[BOT] decision input matchId="${matchId}" foundations=${foundations.length} (ownerRange=${fRange.start}-${fRange.end-1}) tableau=${tableau.length} waste=${waste.length}`);
       }
 
-      // 1. Tableau → Foundation (Suit-Regeln, nur Ass oder Folgekarte)
-      outer1:
+      // 1) Priority: any ACE to foundation (tableau first, then waste)
+      outerAceTableau:
       for (let t = 0; t < tableau.length; t++) {
         const pile = tableau[t];
-        if (!pile || !pile.length) continue;
+        if (!Array.isArray(pile) || !pile.length) continue;
         const card = pile[pile.length - 1];
+        if (!card || card.up === false) continue;
+        if (!isAceCard(card, scheme)) continue;
 
-        for (let f = 0; f < foundations.length; f++) {
-          const destObj   = s.foundations && s.foundations[f];
+        for (let f = fRange.start; f < fRange.end; f++) {
+          const destObj = foundations[f];
           if (!destObj) continue;
-          const destCards = Array.isArray(destObj.cards) ? destObj.cards : [];
-          const destSuit  = destObj.suit;
+          if (!canPlaceOnFoundation(card, destObj, scheme)) continue;
 
-          if (destSuit && card.suit && destSuit !== card.suit) continue;
+          const toLocal = toLocalFoundationIndex(botOwner, f, foundations.length);
+          move = {
+            kind: 'tableau_to_foundation',
+            from: t,
+            to: toLocal,
+            cardId: card.id || card.cardId || null
+          };
+          sendMove(move, 'tableau_to_foundation', `ACE fromTableau=${t} toFoundation=${toLocal} suit=${card.suit}`);
+          break outerAceTableau;
+        }
+      }
 
-          if (
-            (!destCards.length && card.rank === 1) || // Ass auf leere passende Foundation
-            (destCards.length &&
-              destCards[destCards.length - 1].suit === card.suit &&
-              destCards[destCards.length - 1].rank === card.rank - 1)
-          ) {
+      if (!move && Array.isArray(waste) && waste.length) {
+        const card = waste[waste.length - 1];
+        if (card && card.up !== false && isAceCard(card, scheme)) {
+          for (let f = fRange.start; f < fRange.end; f++) {
+            const destObj = foundations[f];
+            if (!destObj) continue;
+            if (!canPlaceOnFoundation(card, destObj, scheme)) continue;
+
+            const toLocal = toLocalFoundationIndex(botOwner, f, foundations.length);
+            move = {
+              kind: 'waste_to_foundation',
+              to: toLocal,
+              cardId: card.id || card.cardId || null
+            };
+            sendMove(move, 'waste_to_foundation', `ACE toFoundation=${toLocal} suit=${card.suit}`);
+            break;
+          }
+        }
+      }
+
+      // 2) Foundation progress (non-ACE): tableau/waste to foundation ONLY if legal sequence
+      if (!move) {
+        outerFoundTableau:
+        for (let t = 0; t < tableau.length; t++) {
+          const pile = tableau[t];
+          if (!Array.isArray(pile) || !pile.length) continue;
+          const card = pile[pile.length - 1];
+          if (!card || card.up === false) continue;
+
+          for (let f = fRange.start; f < fRange.end; f++) {
+            const destObj = foundations[f];
+            if (!destObj) continue;
+            if (!canPlaceOnFoundation(card, destObj, scheme)) continue;
+
+            const toLocal = toLocalFoundationIndex(botOwner, f, foundations.length);
             move = {
               kind: 'tableau_to_foundation',
               from: t,
-              to: f,
+              to: toLocal,
               cardId: card.id || card.cardId || null
             };
             sendMove(
               move,
               'tableau_to_foundation',
-              `fromTableau=${t} toFoundation=${f} rank=${card.rank} suit=${card.suit}`
+              `fromTableau=${t} toFoundation=${toLocal} rank=${card.rank} suit=${card.suit}`
             );
-            break outer1;
+            break outerFoundTableau;
           }
         }
       }
 
-      // 2. Waste → Foundation (Suit-Regeln, nur Ass oder Folgekarte)
       if (!move && Array.isArray(waste) && waste.length) {
         const card = waste[waste.length - 1];
-        for (let f = 0; f < foundations.length; f++) {
-          const destObj   = s.foundations && s.foundations[f];
-          if (!destObj) continue;
-          const destCards = Array.isArray(destObj.cards) ? destObj.cards : [];
-          const destSuit  = destObj.suit;
+        if (card && card.up !== false) {
+          for (let f = fRange.start; f < fRange.end; f++) {
+            const destObj = foundations[f];
+            if (!destObj) continue;
+            if (!canPlaceOnFoundation(card, destObj, scheme)) continue;
 
-          if (destSuit && card.suit && destSuit !== card.suit) continue;
-
-          if (
-            (!destCards.length && card.rank === 1) ||
-            (destCards.length &&
-              destCards[destCards.length - 1].suit === card.suit &&
-              destCards[destCards.length - 1].rank === card.rank - 1)
-          ) {
+            const toLocal = toLocalFoundationIndex(botOwner, f, foundations.length);
             move = {
               kind: 'waste_to_foundation',
-              to: f,
+              to: toLocal,
               cardId: card.id || card.cardId || null
             };
             sendMove(
               move,
               'waste_to_foundation',
-              `toFoundation=${f} rank=${card.rank} suit=${card.suit}`
+              `toFoundation=${toLocal} rank=${card.rank} suit=${card.suit}`
             );
             break;
           }
         }
       }
 
-      // 3. Waste → Tableau (König auf leer, sonst absteigend & Farbe abwechselnd)
-      if (!move && Array.isArray(waste) && waste.length) {
-        const card = waste[waste.length - 1];
-        for (let t = 0; t < tableau.length; t++) {
-          const dest = tableau[t];
-          if (!Array.isArray(dest)) continue;
-
-          if (!dest.length) {
-            if (card.rank === 13) {
-              move = {
-                kind: 'waste_to_tableau',
-                to: t,
-                cardId: card.id || card.cardId || null
-              };
-              sendMove(
-                move,
-                'waste_to_tableau',
-                `toTableau=${t} (empty) rank=${card.rank} suit=${card.suit}`
-              );
-              break;
-            }
-          } else {
-            const destCard = dest[dest.length - 1];
-            if (
-              isRedCard(card) !== isRedCard(destCard) &&
-              destCard.rank === card.rank + 1
-            ) {
-              move = {
-                kind: 'waste_to_tableau',
-                to: t,
-                cardId: card.id || card.cardId || null
-              };
-              sendMove(
-                move,
-                'waste_to_tableau',
-                `toTableau=${t} rank=${card.rank} suit=${card.suit} on=${destCard.rank}/${destCard.suit}`
-              );
-              break;
-            }
-          }
-        }
-      }
-
-      // 4. Tableau → Tableau (Easy-Mode: nur Könige auf leere Spalten, um Ping-Pong zu vermeiden)
+      // 3) Tableau cleanup/uncovering: move top cards to other tableau piles if it reveals a face-down
+      //    (we keep it conservative to avoid ping-pong). No stock/waste here.
       if (!move) {
+        let best = null;
+
         for (let fromT = 0; fromT < tableau.length; fromT++) {
           const pile = tableau[fromT];
-          if (!Array.isArray(pile) || !pile.length) continue;
+          if (!Array.isArray(pile) || pile.length < 1) continue;
           const card = pile[pile.length - 1];
+          if (!card || card.up === false) continue;
 
-          if (card.rank !== 13) continue;
+          // Heuristic: prefer moves that would reveal a face-down card beneath the moved card
+          const wouldRevealFaceDown = (pile.length >= 2) && (pile[pile.length - 2].up === false);
 
           for (let toT = 0; toT < tableau.length; toT++) {
             if (toT === fromT) continue;
             const dest = tableau[toT];
             if (!Array.isArray(dest)) continue;
-            if (dest.length) continue;
+            const destTop = dest.length ? dest[dest.length - 1] : null;
+            if (!canPlaceOnTableau(card, destTop, scheme)) continue;
+            // Avoid immediate ping-pong: if we just moved this card from toT -> fromT recently, skip
+            try {
+              const recent = Array.isArray(matchBot.recentMoveSigs) ? matchBot.recentMoveSigs : [];
+              const reverseSig = `toPile:${card.id || card.cardId || ''}:${toT}->${fromT}`;
+              const now = Date.now();
+              const seenReverse = recent.some(x => x && x.sig === reverseSig && (now - x.at) < 8000);
+              if (seenReverse) continue;
+            } catch {}
+
+            const score = (wouldRevealFaceDown ? 100 : 0) + (destTop ? 10 : 0) + (13 - card.rank);
+            if (!best || score > best.score) {
+              best = {
+                score,
+                fromT,
+                toT,
+                card
+              };
+            }
+          }
+        }
+
+        if (best) {
+          move = {
+            kind: 'tableau_to_tableau',
+            from: best.fromT,
+            to: best.toT,
+            cardId: best.card.id || best.card.cardId || null
+          };
+          sendMove(
+            move,
+            'tableau_to_tableau',
+            `from=${best.fromT} to=${best.toT} rank=${best.card.rank} suit=${best.card.suit}`
+          );
+        }
+      }
+
+      // 4) Waste usage as LAST resort: waste → tableau (to reduce waste) when no better moves exist
+      if (!move && Array.isArray(waste) && waste.length) {
+        const card = waste[waste.length - 1];
+        if (card && card.up !== false) {
+          for (let t = 0; t < tableau.length; t++) {
+            const dest = tableau[t];
+            if (!Array.isArray(dest)) continue;
+            const destTop = dest.length ? dest[dest.length - 1] : null;
+            if (!canPlaceOnTableau(card, destTop, scheme)) continue;
 
             move = {
-              kind: 'tableau_to_tableau',
-              from: fromT,
-              to: toT,
+              kind: 'waste_to_tableau',
+              to: t,
               cardId: card.id || card.cardId || null
             };
             sendMove(
               move,
-              'tableau_to_tableau',
-              `from=${fromT} toEmpty=${toT} rank=${card.rank} suit=${card.suit}`
+              'waste_to_tableau',
+              `toTableau=${t} rank=${card.rank} suit=${card.suit}`
             );
             break;
           }
-
-          if (move) break;
         }
       }
 
+      // If we are stuck repeating moves, break the loop by preferring a flip
+      try {
+        const recent = Array.isArray(matchBot.recentMoveSigs) ? matchBot.recentMoveSigs : [];
+        const now = Date.now();
+        const last10 = recent.filter(x => x && (now - x.at) < 20000);
+        const freq = new Map();
+        for (const x of last10) {
+          if (!x.sig) continue;
+          freq.set(x.sig, (freq.get(x.sig) || 0) + 1);
+        }
+        const maxRepeat = Math.max(0, ...Array.from(freq.values()));
+        if (maxRepeat >= 3 && BOT_DEBUG) {
+          log(`[BOT] loop-breaker engaged for matchId="${matchId}" (maxRepeat=${maxRepeat})`);
+        }
+        // No direct action here; the flip fallback below will fire.
+      } catch {}
       if (!move) {
         if (BOT_DEBUG) {
           log(`[BOT] no deterministic move for matchId="${matchId}" → fallback Flip`);
@@ -568,24 +842,36 @@ function runBotDecisionTick(matchId, deps) {
       );
     }
 
-    // 5. Fallback: Flip (throttled)
+    // 5) Stock/Waste as last resort:
+    //    - Flip when no other moves exist.
+    //    - If stock is empty but waste still has cards, keep flipping to force the client-side reset/recycle.
     if (!move) {
       const nowT = Date.now();
-      if (!matchBot.lastFlipAt || nowT - matchBot.lastFlipAt > 10000) {
-        const flipMove = {
-          owner: botOwner,
-          kind: 'flip'
-        };
-        const envelope = JSON.stringify({
-          move: flipMove,
-          from: matchBot.id
-        });
+      const stockCount = (metrics && typeof metrics.stockCount === 'number') ? metrics.stockCount : null;
+      const wasteSize  = (metrics && typeof metrics.wasteSize === 'number') ? metrics.wasteSize : null;
+
+      const wantsRecycle = (stockCount === 0) && (wasteSize != null && wasteSize > 0);
+
+      // When stock is empty but waste still has cards, we must actively trigger the client's recycle by flipping.
+      // Use a shorter cooldown and DO NOT let nextActionAt stall recycle for too long.
+      const minFlipCooldown = wantsRecycle ? 1500 : 4000;
+      const canFlipNow = !matchBot.lastFlipAt || (nowT - matchBot.lastFlipAt) > minFlipCooldown;
+
+      if (canFlipNow) {
+        const flipMove = { owner: botOwner, kind: 'flip' };
+        const envelope = JSON.stringify({ move: flipMove, from: matchBot.id });
         broadcastFn(envelope);
         matchBot.lastMoveAt = nowT;
         matchBot.lastFlipAt = nowT;
-        log(
-          `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="flip (throttled)"`
-        );
+
+        // For recycle attempts, schedule the next action sooner so we keep clicking until stock refills.
+        if (wantsRecycle) {
+          matchBot.nextActionAt = nowT + randInt(900, 1800);
+        } else {
+          scheduleNextAction(matchBot);
+        }
+
+        log(`[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="flip"` + (wantsRecycle ? ' (recycle)' : ''));
       }
     }
   } catch (err) {
