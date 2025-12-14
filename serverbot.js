@@ -13,6 +13,9 @@ const botStateByMatch = new Map(); // matchId -> letzter Snapshot-State
 
 const SERVERBOT_API_VERSION = 1;
 
+const BOT_DEBUG = process.env.BOT_DEBUG === '1';
+const BOT_LOG_THROTTLE_MS = Number(process.env.BOT_LOG_THROTTLE_MS || 5000);
+
 function log(...args) {
   console.log(...args);
 }
@@ -103,21 +106,17 @@ function computeBotMetrics(state) {
     }
   }
 
-  // Debug für Foundations
-  if (state && (state.foundationsTotal != null || state.foundationCards != null)) {
+  // Debug für Foundations (nur bei BOT_DEBUG)
+  if (BOT_DEBUG && state && (state.foundationsTotal != null || state.foundationCards != null)) {
     const raw = state.foundationsTotal != null ? state.foundationsTotal : state.foundationCards;
-    log(
-      '[BOT] debug foundations snapshot',
-      'raw=', raw,
-      'metrics.foundationCards=', metrics.foundationCards
-    );
+    log('[BOT] debug foundations snapshot raw=', raw, 'metrics.foundationCards=', metrics.foundationCards);
   }
 
   return metrics;
 }
 
 // --- Bot-Registry ---
-function createServerBot(matchId, difficulty = 'easy') {
+function createServerBot(matchId, difficulty = 'easy', opts = {}) {
   const botId = 'bot-' + Math.random().toString(36).slice(2);
   const botNick =
     difficulty === 'hard'   ? 'Bot-Hard'   :
@@ -135,13 +134,19 @@ function createServerBot(matchId, difficulty = 'easy') {
     state: null,
     stateMetrics: null,
     lastSeenStateAt: 0
+    ,lastHeartbeatLogAt: 0
+    ,lastMetricsLogAt: 0
+    ,lastStateLogAt: 0
   };
 
   botsByMatch.set(matchId, bot);
 
-  log(
-    `[BOT] created botId="${botId}" matchId="${matchId}" difficulty=${difficulty} nick="${botNick}"`
-  );
+  if (!opts || opts.silent !== true) {
+    // Klarer, damit man es von server.js Logs unterscheiden kann
+    log(
+      `[BOT] serverbot created botId="${botId}" matchId="${matchId}" difficulty=${difficulty} nick="${botNick}"`
+    );
+  }
 
   return bot;
 }
@@ -182,13 +187,15 @@ function handleBotStateUpdate(matchId, state, cid, tickValue) {
 
   const tick = tickValue ?? state.tick ?? 'n/a';
 
-  log(
-    `[BOT] state update matchId="${matchId}" from cid=${cid} ` +
-    `tick="${tick}" (haveBot=true) ` +
-    `foundationCards=${metrics.foundationCards} ` +
-    `wasteSize=${metrics.wasteSize} stockCount=${metrics.stockCount} ` +
-    `moves=${metrics.movesPlayed ?? 'n/a'} score=${metrics.score ?? 'n/a'}`
-  );
+  const now = Date.now();
+  if (BOT_DEBUG || !bot.lastStateLogAt || (now - bot.lastStateLogAt) >= BOT_LOG_THROTTLE_MS) {
+    bot.lastStateLogAt = now;
+    log(
+      `[BOT] state update matchId="${matchId}" cid=${cid} tick="${tick}" ` +
+      `f=${metrics.foundationCards} w=${metrics.wasteSize} s=${metrics.stockCount} ` +
+      `moves=${metrics.movesPlayed ?? 'n/a'} score=${metrics.score ?? 'n/a'}`
+    );
+  }
 }
 
 // --- Hilfsfunktionen für die Entscheidungslogik ---
@@ -248,9 +255,11 @@ function runBotDecisionTick(matchId, deps) {
   const matchBot = getServerBot(matchId);
   if (!matchBot) return;
 
-  log(
-    `[BOT] heartbeat botId="${matchBot.id}" matchId="${matchId}" difficulty=${matchBot.difficulty}`
-  );
+  const nowHb = Date.now();
+  if (BOT_DEBUG || !matchBot.lastHeartbeatLogAt || (nowHb - matchBot.lastHeartbeatLogAt) >= BOT_LOG_THROTTLE_MS) {
+    matchBot.lastHeartbeatLogAt = nowHb;
+    log(`[BOT] heartbeat matchId="${matchId}" botId="${matchBot.id}" diff=${matchBot.difficulty}`);
+  }
 
   const state =
     botStateByMatch.get(matchId) ||
@@ -259,17 +268,17 @@ function runBotDecisionTick(matchId, deps) {
 
   const metrics = state ? computeBotMetrics(state) : null;
 
-  if (metrics) {
-    log(
-      `[BOT] heartbeat metrics matchId="${matchId}" ` +
-      `foundationCards=${metrics.foundationCards} ` +
-      `wasteSize=${metrics.wasteSize} stockCount=${metrics.stockCount} ` +
-      `tableauPiles=${metrics.tableauPiles} nonEmptyTableauPiles=${metrics.nonEmptyTableauPiles}`
-    );
-  } else {
-    log(
-      `[BOT] heartbeat metrics matchId="${matchId}" (noch kein Snapshot-State vom Client)`
-    );
+  const nowMx = Date.now();
+  if (BOT_DEBUG || !matchBot.lastMetricsLogAt || (nowMx - matchBot.lastMetricsLogAt) >= BOT_LOG_THROTTLE_MS) {
+    matchBot.lastMetricsLogAt = nowMx;
+    if (metrics) {
+      log(
+        `[BOT] metrics matchId="${matchId}" f=${metrics.foundationCards} w=${metrics.wasteSize} s=${metrics.stockCount} ` +
+        `t=${metrics.tableauPiles} nt=${metrics.nonEmptyTableauPiles}`
+      );
+    } else {
+      log(`[BOT] metrics matchId="${matchId}" (noch kein Snapshot vom Client)`);
+    }
   }
 
   try {
@@ -399,10 +408,9 @@ function runBotDecisionTick(matchId, deps) {
         ? s.foundations.map(f => Array.isArray(f.cards) ? f.cards : [])
         : [];
 
-      log(
-        `[BOT] decision input matchId="${matchId}" ` +
-        `foundations=${foundations.length} tableau=${tableau.length} waste=${waste.length}`
-      );
+      if (BOT_DEBUG) {
+        log(`[BOT] decision input matchId="${matchId}" foundations=${foundations.length} tableau=${tableau.length} waste=${waste.length}`);
+      }
 
       // 1. Tableau → Foundation (Suit-Regeln, nur Ass oder Folgekarte)
       outer1:
@@ -550,9 +558,9 @@ function runBotDecisionTick(matchId, deps) {
       }
 
       if (!move) {
-        log(
-          `[BOT] no deterministic card-move found for matchId="${matchId}" – fallback auf Flip`
-        );
+        if (BOT_DEBUG) {
+          log(`[BOT] no deterministic move for matchId="${matchId}" → fallback Flip`);
+        }
       }
     } else if (decisionState) {
       log(
@@ -588,6 +596,11 @@ function runBotDecisionTick(matchId, deps) {
   }
 }
 
+function runBotHeartbeatTick(matchId, broadcastCb) {
+  // Backwards-compatible alias: wrap legacy signature into the new deps signature
+  return runBotDecisionTick(matchId, { broadcastToRoom: broadcastCb });
+}
+
 module.exports = {
   // API metadata
   SERVERBOT_API_VERSION,
@@ -602,6 +615,9 @@ module.exports = {
 
   // Decision tick (what server.js expects)
   runBotDecisionTick,
+
+  // legacy alias
+  runBotHeartbeatTick,
 
   // Expose internal maps for debugging/advanced use (optional)
   botsByMatch,

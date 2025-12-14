@@ -19,6 +19,7 @@
 // -v2.2.18: Serverbot Logik ausgelagert
 // -v2.2.19: Server.js delegiert Bot-State/Decisions vollständig an serverbot.js (keine Bot-Logik mehr im server.js)
 // -v2.2.21: broken, bot Startet nicht mehr....
+// -v2.2.22: patched version für Modul serverbot.js
 // ================================================================
 
 const http   = require('node:http');
@@ -29,31 +30,9 @@ const os     = require('node:os');
 const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
-// ---------- Optional ServerBot module (split bot logic out of server.js) ----------
-// NOTE: All bot decision logic lives in serverbot.js; server.js only wires transport + match lifecycle.
-let serverbot = null;
-let serverbotOk = false;
-try {
-  serverbot = require('./serverbot');
-  serverbotOk = !!serverbot &&
-    typeof serverbot.createServerBot === 'function' &&
-    typeof serverbot.getServerBot === 'function' &&
-    typeof serverbot.handleBotStateUpdate === 'function' &&
-    typeof serverbot.runBotHeartbeatTick === 'function';
-
-  console.log(serverbotOk
-    ? '[BOT] serverbot.js loaded'
-    : '[BOT] serverbot.js loaded but missing required exports'
-  );
-} catch (e) {
-  serverbot = null;
-  serverbotOk = false;
-  console.log('[BOT] serverbot.js missing – bot features disabled');
-}
-
 
 // ---------- Version / CLI ----------
-const VERSION = '2.2.21';
+const VERSION = '2.2.22';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -77,6 +56,60 @@ if (portIdx > -1 && process.argv[portIdx + 1]) {
   const n = parseInt(process.argv[portIdx + 1], 10);
   if (!isNaN(n)) PORT = n;
 }
+
+
+// ---------- Optional ServerBot module (split bot logic out of server.js) ----------
+// NOTE: All bot decision logic lives in serverbot.js; server.js only wires transport + match lifecycle.
+let serverbot = null;
+let serverbotOk = false;
+
+try {
+  // Allow both './serverbot.js' and './serverbot'
+  serverbot = require('./serverbot');
+
+  const hasCreate = !!(serverbot && typeof serverbot.createServerBot === 'function');
+  const hasIngest = !!(serverbot && typeof serverbot.handleBotStateUpdate === 'function');
+  const hasTick = !!(serverbot && (
+    typeof serverbot.runBotDecisionTick === 'function' ||
+    typeof serverbot.runBotHeartbeatTick === 'function'
+  ));
+
+  serverbotOk = hasCreate && hasIngest && hasTick;
+
+  if (serverbotOk) {
+    console.log('[BOT] ServerBot module loaded.');
+  } else {
+    console.log('[BOT] serverbot.js loaded but missing required exports (createServerBot + handleBotStateUpdate + tick) – ServerBot disabled.');
+    serverbot = null;
+  }
+} catch (e) {
+  serverbotOk = false;
+  serverbot = null;
+  console.log('[BOT] serverbot.js missing or invalid – ServerBot disabled.');
+}
+
+
+
+
+// Unified tick wrapper (supports both serverbot APIs)
+function runServerBotTick(matchId) {
+  if (!serverbotOk || !serverbot) return;
+  try {
+    if (typeof serverbot.runBotDecisionTick === 'function') {
+      serverbot.runBotDecisionTick(matchId, {
+        broadcastToRoom: (payload) => broadcastToRoom(matchId, payload)
+      });
+      return;
+    }
+    if (typeof serverbot.runBotHeartbeatTick === 'function') {
+      serverbot.runBotDecisionTick(matchId, (envelope) => broadcastToRoom(matchId, envelope));
+      return;
+    }
+  } catch (e) {
+    console.error('[BOT] ServerBot tick failed:', e);
+  }
+}
+
 
 // ================================================================
 //  HTTP REQUEST HANDLER (STATIC FILES)
@@ -443,7 +476,12 @@ ws.on('message', buf => {
         if (snap.__fromCid == null) snap.__fromCid = ws.__cid;
         if (snap.__at == null) snap.__at = isoNow();
 
-        serverbot.handleBotStateUpdate(matchId, snap);
+        // tick robust aus Envelope oder Snapshot ableiten
+        const tickValue = (sys.tick != null)
+          ? sys.tick
+          : (snap && snap.tick != null ? snap.tick : null);
+
+        serverbot.handleBotStateUpdate(matchId, snap, ws.__cid, tickValue);
         return;
       }
 
@@ -627,14 +665,10 @@ ws.on('message', buf => {
             // --- ensure ServerBot exists for this bot match (auto-start) ---
             if (serverbotOk && !serverbot.getServerBot(match.matchId)) {
               const bot = serverbot.createServerBot(match.matchId, difficulty || 'easy');
-              console.log(`[BOT] created botId="${bot.id}" matchId="${match.matchId}" difficulty=${bot.difficulty} nick="${bot.nick}"`);
+              console.log(`[BOT] serverbot registered matchId="${match.matchId}" botId="${bot.id}" difficulty=${bot.difficulty} nick="${bot.nick}"`);
               // Start heartbeat immediately so ticks are generated even without explicit spawn_bot follow-up
               bot.__interval = setInterval(() => {
-                try {
-                  serverbot.runBotHeartbeatTick(match.matchId, (envelope) => broadcastToRoom(match.matchId, envelope));
-                } catch (e) {
-                  console.error('[BOT] heartbeat tick failed', e);
-                }
+                runServerBotTick(match.matchId);
               }, 3000);
               console.log(`[BOT] auto-started serverbot for matchId="${match.matchId}"`);
             }
@@ -678,7 +712,7 @@ ws.on('message', buf => {
           if (!existing.__interval) {
             existing.__interval = setInterval(() => {
               try {
-                serverbot.runBotHeartbeatTick(matchId, (envelope) => broadcastToRoom(matchId, envelope));
+                serverbot.runBotDecisionTick(matchId, (envelope) => broadcastToRoom(matchId, envelope));
               } catch (e) {
                 console.error('[BOT] heartbeat tick failed', e);
               }
@@ -748,7 +782,7 @@ ws.on('message', buf => {
         if (!bot.__interval) {
           bot.__interval = setInterval(() => {
             try {
-              serverbot.runBotHeartbeatTick(matchId, (envelope) => broadcastToRoom(matchId, envelope));
+              serverbot.runBotDecisionTick(matchId, (envelope) => broadcastToRoom(matchId, envelope));
             } catch (e) {
               console.error('[BOT] heartbeat tick failed', e);
             }
