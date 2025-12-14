@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.2.5';   // neue Version
+const VERSION = '3.2.6';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -19,6 +19,7 @@ window.VERSION = VERSION;
    - v3.1.9: Server-Bot periodische Snapshots (nur bei Bot-Spielen)
    - v3.2.3: Server-Bot Snapshot v2 (Tick + Metrics für Bot-Engine) & Debug
    - v3.2.5: Server-Version im Client-Overlay anzeigen
+   - v3.2.6: Foundation -moves Zähler für bot snapshots
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -936,8 +937,11 @@ function isBotGameActive() {
     return under.rank === card.rank + 1 && alt;
   }
   function canPlaceOnFoundation(f, card) {
-    if (f.cards.length === 0) return card.rank === 0;
-    const top = f.cards[f.cards.length-1];
+    if (f.cards.length === 0) {
+      // Leere Foundation: nur ein Ass und nur passend zum Foundation-Suit
+      return card.rank === 0 && card.suit === f.suit;
+    }
+    const top = f.cards[f.cards.length - 1];
     return top && top.suit === card.suit && card.rank === top.rank + 1;
   }
   function locOfCard(id) {
@@ -1028,6 +1032,56 @@ function isBotGameActive() {
       if (announce && loc.side !== ownerToSide(move.owner)) return;
 
       if (!announce) console.debug('[NET] move', move);
+
+      // --- Guard: validate foundation target before mutating state ---
+      if (move.to && move.to.kind === 'found') {
+        const targetF = move.to.f;
+        if (typeof targetF !== 'number' || targetF < 0 || targetF >= state.foundations.length) {
+          console.warn('[FOUND] invalid target foundation index', targetF);
+          return;
+        }
+
+        // Only single-card moves to foundation are supported
+        const count = move.count || 1;
+        if (count !== 1) {
+          console.warn('[FOUND] invalid foundation move count', count);
+          return;
+        }
+
+        // Peek the moved card from current location (do not remove yet)
+        let candidate = null;
+        if (loc.type === 'waste') {
+          const w = state[loc.side].waste;
+          if (loc.idx !== w.length - 1) return;
+          candidate = w[loc.idx];
+        } else if (loc.type === 'pile') {
+          const pile = state[loc.side].tableau[loc.pile];
+          if (loc.idx !== pile.length - 1) return;
+          candidate = pile[loc.idx];
+        } else if (loc.type === 'found') {
+          const f = state.foundations[loc.f];
+          if (loc.idx !== f.cards.length - 1) return;
+          candidate = f.cards[loc.idx];
+        }
+
+        if (!candidate || !candidate.up) return;
+
+        const targetFoundation = state.foundations[targetF];
+        if (!canPlaceOnFoundation(targetFoundation, candidate)) {
+          console.debug('[FOUND] rejected illegal toFound move', {
+            owner: move.owner,
+            cardId: candidate && candidate.id,
+            targetFoundationIndex: targetF,
+            foundationSuit: targetFoundation && targetFoundation.suit,
+            candidateSuit: candidate && candidate.suit,
+            candidateRank: candidate && candidate.rank,
+            foundationTop: targetFoundation && targetFoundation.cards.length
+              ? targetFoundation.cards[targetFoundation.cards.length - 1]
+              : null
+          });
+          return;
+        }
+      }
 
       let cards = [];
       if (loc.type === 'waste') {
