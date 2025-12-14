@@ -8,14 +8,14 @@
 //   - Entscheidungslogik & Move-Mapping
 // ================================================================
 // Changelog:
-// -v1.1: Erste Version, Basis-Funktionalität easy Bot - brocken
+// -v1.3: Fix recycle logic (bot-side stock/waste), foundation progression, and robust rank parsing
 // ================================================================
 
 
 const botsByMatch = new Map();     // matchId -> bot
 const botStateByMatch = new Map(); // matchId -> letzter Snapshot-State
 
-const SERVERBOT_API_VERSION = 1;
+const SERVERBOT_API_VERSION = 2;
 
 const BOT_DEBUG = process.env.BOT_DEBUG === '1';
 
@@ -49,19 +49,39 @@ function scheduleNextAction(bot) {
 
 function normalizeSuit(s) {
   if (!s) return '';
-  // Accept both symbol and word forms
+  // Accept both symbol and word forms (singular and plural)
   switch (s) {
-    case '♥': case 'hearts': return '♥';
-    case '♦': case 'diamonds': return '♦';
-    case '♣': case 'clubs': return '♣';
-    case '♠': case 'spades': return '♠';
+    case '♥': case 'hearts': case 'heart': return '♥';
+    case '♦': case 'diamonds': case 'diamond': return '♦';
+    case '♣': case 'clubs': case 'club': return '♣';
+    case '♠': case 'spades': case 'spade': return '♠';
     default: return String(s);
   }
 }
 
+function parseRankValue(v) {
+  if (v == null) return null;
+
+  // If it's already numeric, keep it.
+  const n = Number(v);
+  if (Number.isFinite(n)) return n;
+
+  // For face cards, use ONE-BASED values (A=1..K=13). This avoids
+  // mis-inferring zeroBased when ranks are provided as strings.
+  const s = String(v).trim().toUpperCase();
+  if (!s) return null;
+  if (s === 'A' || s === 'ACE') return 1;
+  if (s === 'J' || s === 'JACK') return 11;
+  if (s === 'Q' || s === 'QUEEN') return 12;
+  if (s === 'K' || s === 'KING') return 13;
+
+  // For numeric strings that weren't finite above (e.g. weird formats), try parseInt.
+  const i = parseInt(s, 10);
+  return Number.isFinite(i) ? i : null;
+}
+
 function rankN(c) {
-  const n = Number(c && c.rank);
-  return Number.isFinite(n) ? n : null;
+  return parseRankValue(c && c.rank);
 }
 
 // Infer whether the client uses 0-based ranks (A=0..K=12) or 1-based (A=1..K=13)
@@ -112,10 +132,12 @@ function inferRankSchemeFromSnapshot(snapshot) {
     const max = Math.max(...ranks);
 
     // Strong signals
-    if (min === 0) return 'zeroBased';
-    if (max === 13) return 'oneBased';
+    // - zeroBased clients typically use 0..12 (A=0, K=12)
+    // - oneBased clients typically use 1..13 (A=1, K=13)
+    if (ranks.includes(0) || min === 0) return 'zeroBased';
+    if (ranks.includes(13) || max === 13) return 'oneBased';
 
-    // Heuristic fallback: if we never see 0, but see values >= 12 a lot, assume oneBased
+    // If we only see 1..12, default to oneBased (safer for foundation progression: A(1)->2(2)).
     if (min >= 1 && max <= 13) return 'oneBased';
 
     return 'unknown';
@@ -129,8 +151,9 @@ function isAceCard(c, scheme = 'unknown') {
   if (r == null) return false;
   if (scheme === 'zeroBased') return r === 0;
   if (scheme === 'oneBased') return r === 1;
-  // Unknown: be conservative (prefer not to treat rank 1 as Ace, to avoid playing 2 first in zeroBased games)
-  return r === 0;
+  // Unknown: prefer oneBased (A=1) because it enables correct foundation progression (A->2).
+  // zeroBased will be inferred as soon as we see any 0-rank numeric cards.
+  return r === 1;
 }
 
 function isKingCard(c, scheme = 'unknown') {
@@ -153,6 +176,9 @@ function canPlaceOnFoundation(card, foundationObj, scheme = 'unknown') {
 
   // Empty foundation: ONLY an Ace can start (Ace may be rank 0 or 1 depending on client)
   if (!destCards.length) return isAceCard(card, scheme);
+
+  // Safety: never allow an Ace onto a non-empty foundation (guards against bad rank-scheme inference)
+  if (isAceCard(card, scheme)) return false;
 
   const top = destCards[destCards.length - 1];
   const topSuit = normalizeSuit(top && top.suit);
@@ -381,18 +407,16 @@ function hasDetailedState(s) {
   );
 }
 
-function pickBotSideArrays(snapshot) {
-  if (!snapshot) {
-    return { tableau: [], waste: [] };
-  }
+function pickBotSideArrays(snapshot, botSideKey) {
+  if (!snapshot) return { tableau: [], waste: [] };
   const tFull = snapshot.tableauFull || {};
   const wFull = snapshot.wasteFull || {};
-  const tableau =
-    Array.isArray(tFull.opp) ? tFull.opp :
-    Array.isArray(tFull.you) ? tFull.you : [];
-  const waste =
-    Array.isArray(wFull.opp) ? wFull.opp :
-    Array.isArray(wFull.you) ? wFull.you : [];
+
+  const t = (botSideKey === 'opp') ? tFull.opp : tFull.you;
+  const w = (botSideKey === 'opp') ? wFull.opp : wFull.you;
+
+  const tableau = Array.isArray(t) ? t : [];
+  const waste   = Array.isArray(w) ? w : [];
   return { tableau, waste };
 }
 
@@ -405,10 +429,8 @@ function inferOwnerFromCardId(cardId, fallbackOwner = 'Y') {
 }
 
 function isRedCard(c) {
-  return !!c && (
-    c.suit === 'hearts' || c.suit === 'diamonds' ||
-    c.suit === '♥' || c.suit === '♦'
-  );
+  const s = normalizeSuit(c && c.suit);
+  return s === '♥' || s === '♦';
 }
 
 // --- Herzstück: ein Decision-Tick für einen Bot (exported as runBotDecisionTick) ---
@@ -425,22 +447,39 @@ function runBotDecisionTick(matchId, deps) {
   const matchBot = getServerBot(matchId);
   if (!matchBot) return;
 
-  // Infer/carry rank scheme (0-based vs 1-based) to avoid mis-identifying 2 as Ace
-  const snapshotForScheme = botStateByMatch.get(matchId) || matchBot.state || null;
-  const inferredScheme = inferRankSchemeFromSnapshot(snapshotForScheme);
-  if (inferredScheme !== 'unknown') {
-    matchBot.rankScheme = inferredScheme;
-  }
+  const state = botStateByMatch.get(matchId) || matchBot.state || null;
+
+  // Infer/carry rank scheme (0-based vs 1-based) so we don't mis-detect A/2.
+  const inferredScheme = inferRankSchemeFromSnapshot(state);
+  if (inferredScheme !== 'unknown') matchBot.rankScheme = inferredScheme;
   const scheme = matchBot.rankScheme || 'unknown';
 
-  // Allow recycle clicks (stock empty) to proceed even if we are within the normal pacing window.
-  const st = botStateByMatch.get(matchId) || matchBot.state || null;
-  const mx = st ? computeBotMetrics(st) : null;
-  const recycleFastPath = mx && mx.stockCount === 0 && mx.wasteSize > 0;
+  // snapshot.owner is the "local" player (human host on this device)
+  const humanOwner = (state && typeof state.owner === 'string' && state.owner) ? state.owner : 'Y';
+  const botOwner   = humanOwner === 'Y' ? 'O' : 'Y';
 
-  if (!recycleFastPath && matchBot.nextActionAt && Date.now() < matchBot.nextActionAt) {
-    return;
-  }
+  // In the client snapshot, `owner` denotes the local/human owner on that device.
+  // The bot is the opponent of that local owner.
+  const botSideKey = botOwner === 'O' ? 'opp' : 'you';
+
+  // Prefer authoritative counts from detailed arrays (bot side), then fall back to metrics.
+  const botSide = (state && state[botSideKey] && typeof state[botSideKey] === 'object') ? state[botSideKey] : null;
+
+  const botStockCount = (botSide && Array.isArray(botSide.stock))
+    ? botSide.stock.length
+    : (state && state.metrics && state.metrics[botSideKey] && Number.isFinite(Number(state.metrics[botSideKey].stockCount))
+        ? Number(state.metrics[botSideKey].stockCount)
+        : 0);
+
+  const botWasteCount = (botSide && Array.isArray(botSide.waste))
+    ? botSide.waste.length
+    : (state && state.metrics && state.metrics[botSideKey] && Number.isFinite(Number(state.metrics[botSideKey].wasteCount))
+        ? Number(state.metrics[botSideKey].wasteCount)
+        : 0);
+
+  // Allow recycle to bypass pacing if bot stock is empty but bot waste still has cards
+  const wantsRecycleFastPath = (botStockCount === 0) && (botWasteCount > 0);
+  if (!wantsRecycleFastPath && matchBot.nextActionAt && Date.now() < matchBot.nextActionAt) return;
 
   const nowHb = Date.now();
   if (BOT_DEBUG || !matchBot.lastHeartbeatLogAt || (nowHb - matchBot.lastHeartbeatLogAt) >= BOT_LOG_THROTTLE_MS) {
@@ -448,437 +487,332 @@ function runBotDecisionTick(matchId, deps) {
     log(`[BOT] heartbeat matchId="${matchId}" botId="${matchBot.id}" diff=${matchBot.difficulty}`);
   }
 
-  const state =
-    botStateByMatch.get(matchId) ||
-    matchBot.state ||
-    null;
-
   const metrics = state ? computeBotMetrics(state) : null;
-
   const nowMx = Date.now();
   if (BOT_DEBUG || !matchBot.lastMetricsLogAt || (nowMx - matchBot.lastMetricsLogAt) >= BOT_LOG_THROTTLE_MS) {
     matchBot.lastMetricsLogAt = nowMx;
     if (metrics) {
       log(
         `[BOT] metrics matchId="${matchId}" f=${metrics.foundationCards} w=${metrics.wasteSize} s=${metrics.stockCount} ` +
-        `t=${metrics.tableauPiles} nt=${metrics.nonEmptyTableauPiles}`
+        `t=${metrics.tableauPiles} nt=${metrics.nonEmptyTableauPiles} ` +
+        `| botSide=${botSideKey} botStock=${botStockCount ?? 'n/a'} botWaste=${botWasteCount ?? 'n/a'}`
       );
     } else {
       log(`[BOT] metrics matchId="${matchId}" (noch kein Snapshot vom Client)`);
     }
   }
 
-  try {
-    const decisionState =
-      botStateByMatch.get(matchId) ||
-      matchBot.state ||
-      null;
+  function sendMovePayload(movePayload, kindLabel, debugInfo) {
+    const envelope = JSON.stringify({ move: movePayload, from: matchBot.id });
+    broadcastFn(envelope);
 
-    let move = null;
+    try {
+      const sig = `${movePayload.kind}:${movePayload.cardId || ''}:${(movePayload.from && movePayload.from.uiIndex) ?? ''}->${(movePayload.to && (movePayload.to.uiIndex ?? movePayload.to.f)) ?? ''}`;
+      const now = Date.now();
+      if (!Array.isArray(matchBot.recentMoveSigs)) matchBot.recentMoveSigs = [];
+      matchBot.recentMoveSigs.push({ sig, at: now });
+      matchBot.recentMoveSigs = matchBot.recentMoveSigs.filter(x => x && (now - x.at) < 20000).slice(-10);
+    } catch {}
 
-    // Aus Sicht des Snapshots ist "you" normalerweise der Mensch, "opp" der Bot
-    const humanOwner =
-      (decisionState && typeof decisionState.owner === 'string' && decisionState.owner) ||
-      'Y';
-    const botOwner = humanOwner === 'Y' ? 'O' : 'Y';
+    matchBot.lastMoveAt = Date.now();
+    scheduleNextAction(matchBot);
 
-    // Foundations are sent as 8 piles (4 per player). Client move payload expects f=0..3 per owner.
-    // Convention: indices 0..3 belong to owner 'Y', indices 4..7 belong to owner 'O'.
-    function foundationBaseForOwner(owner, total) {
-      if (total >= 8) return owner === 'O' ? 4 : 0;
-      // Fallback (older snapshots): treat as single 4-pile set
-      return 0;
+    log(
+      `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="${kindLabel}"` +
+      (debugInfo ? ` details=${debugInfo}` : '')
+    );
+  }
+
+  function foundationRangesForOwner(_owner, total, _foundationsArr) {
+    // Foundations are shared between bot and player.
+    // We therefore always consider the full range and never split by owner.
+    return [{ start: 0, end: total, base: 0, label: 'shared' }];
+  }
+  function toClientFoundationIndex(_range, globalIndex) {
+    // Client expects f in 0..3 (foundation column index).
+    // Some snapshots expose 8 foundation slots (duplicated per side); map to 0..3.
+    if (!Number.isFinite(globalIndex)) return 0;
+    return (globalIndex % 4 + 4) % 4;
+  }
+
+  let decided = false;
+
+  if (state && hasDetailedState(state)) {
+    const s = state;
+    const { tableau, waste } = pickBotSideArrays(s, botSideKey);
+    const foundations = Array.isArray(s.foundations) ? s.foundations : [];
+    const fRanges = foundationRangesForOwner(botOwner, foundations.length, foundations);
+
+    // In some layouts we have 8 foundation slots (4 per owner). If the snapshot foundation objects
+    // don't carry a reliable `suit`, we can still validate by index ordering.
+    const FOUNDATION_ORDER = ['♣', '♦', '♥', '♠'];
+    function expectedSuitForFoundationIndex(globalIndex, total) {
+      if (!Number.isFinite(globalIndex)) return null;
+      // Even if snapshot exposes 8 slots, the suit order repeats every 4.
+      if (total >= 4) return FOUNDATION_ORDER[globalIndex % 4] || null;
+      return null;
     }
 
-    function ownerFoundationRange(owner, total) {
-      if (total >= 8) {
-        const base = foundationBaseForOwner(owner, total);
-        return { base, start: base, end: base + 4 };
-      }
-      return { base: 0, start: 0, end: total };
-    }
+    function findFoundationDestination(card) {
+      const cardSuit = normalizeSuit(card && card.suit);
 
-    function toLocalFoundationIndex(owner, globalIndex, total) {
-      const base = foundationBaseForOwner(owner, total);
-      return Math.max(0, globalIndex - base);
-    }
+      let best = null;
 
-    // Helper: "Intent" → Move-Payload + Broadcast
-    function sendMove(intent, kindLabel, debugInfo) {
-      const defaultOwner = botOwner;
-      let movePayload = null;
-
-      switch (intent.kind) {
-        case 'tableau_to_foundation': {
-          const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
-          movePayload = {
-            owner,
-            kind: 'toFound',
-            cardId: intent.cardId,
-            count: 1,
-            from: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: intent.from
-            },
-            to: {
-              kind: 'found',
-              f: intent.to
-            }
-          };
-          break;
-        }
-
-        case 'waste_to_foundation': {
-          const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
-          movePayload = {
-            owner,
-            kind: 'toFound',
-            cardId: intent.cardId,
-            count: 1,
-            from: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: -1
-            },
-            to: {
-              kind: 'found',
-              f: intent.to
-            }
-          };
-          break;
-        }
-
-        case 'waste_to_tableau': {
-          const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
-          movePayload = {
-            owner,
-            kind: 'toPile',
-            cardId: intent.cardId,
-            count: 1,
-            from: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: -1
-            },
-            to: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: intent.to
-            }
-          };
-          break;
-        }
-
-        case 'tableau_to_tableau': {
-          const owner = inferOwnerFromCardId(intent.cardId, defaultOwner);
-          movePayload = {
-            owner,
-            kind: 'toPile',
-            cardId: intent.cardId,
-            count: 1,
-            from: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: intent.from
-            },
-            to: {
-              kind: 'pile',
-              sideOwner: owner,
-              uiIndex: intent.to
-            }
-          };
-          break;
-        }
-
-        default: {
-          movePayload = intent;
-          break;
-        }
-      }
-
-      const envelope = JSON.stringify({
-        move: movePayload,
-        from: matchBot.id
-      });
-
-      // Loop protection: remember recent move signatures to avoid ping-pong
-      try {
-        const sig = `${movePayload.kind}:${movePayload.cardId || ''}:${(movePayload.from && movePayload.from.uiIndex) ?? ''}->${(movePayload.to && (movePayload.to.uiIndex ?? movePayload.to.f)) ?? ''}`;
-        const now = Date.now();
-        if (!Array.isArray(matchBot.recentMoveSigs)) matchBot.recentMoveSigs = [];
-        matchBot.recentMoveSigs.push({ sig, at: now });
-        // keep last ~10 entries within 20s
-        matchBot.recentMoveSigs = matchBot.recentMoveSigs
-          .filter(x => x && (now - x.at) < 20000)
-          .slice(-10);
-      } catch {}
-
-      broadcastFn(envelope);
-      matchBot.lastMoveAt = Date.now();
-      scheduleNextAction(matchBot);
-      log(
-        `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="${kindLabel}"` +
-        (debugInfo ? ` details=${debugInfo}` : '')
-      );
-    }
-
-    if (hasDetailedState(decisionState)) {
-      const s = decisionState;
-      const { tableau, waste } = pickBotSideArrays(s);
-      const foundations = Array.isArray(s.foundations) ? s.foundations : [];
-      const fRange = ownerFoundationRange(botOwner, foundations.length);
-
-      if (BOT_DEBUG) {
-        log(`[BOT] decision input matchId="${matchId}" foundations=${foundations.length} (ownerRange=${fRange.start}-${fRange.end-1}) tableau=${tableau.length} waste=${waste.length}`);
-      }
-
-      // 1) Priority: any ACE to foundation (tableau first, then waste)
-      outerAceTableau:
-      for (let t = 0; t < tableau.length; t++) {
-        const pile = tableau[t];
-        if (!Array.isArray(pile) || !pile.length) continue;
-        const card = pile[pile.length - 1];
-        if (!card || card.up === false) continue;
-        if (!isAceCard(card, scheme)) continue;
-
-        for (let f = fRange.start; f < fRange.end; f++) {
+      for (const range of fRanges) {
+        for (let f = range.start; f < range.end; f++) {
           const destObj = foundations[f];
           if (!destObj) continue;
+
+          // Extra guard: if foundation suit is missing/unknown, enforce expected suit by index
+          const expectedSuit = expectedSuitForFoundationIndex(f, foundations.length);
+          const destSuit = normalizeSuit(destObj && destObj.suit);
+          if (cardSuit && expectedSuit && !destSuit && cardSuit !== expectedSuit) continue;
+
+          const destCards = Array.isArray(destObj && destObj.cards) ? destObj.cards : [];
+          const destTop = destCards.length ? destCards[destCards.length - 1] : null;
+
+          // Never place an Ace onto a non-empty foundation.
+          if (destTop && isAceCard(card, scheme)) continue;
+
           if (!canPlaceOnFoundation(card, destObj, scheme)) continue;
 
-          const toLocal = toLocalFoundationIndex(botOwner, f, foundations.length);
-          move = {
-            kind: 'tableau_to_foundation',
-            from: t,
-            to: toLocal,
-            cardId: card.id || card.cardId || null
+          // Prefer destinations that are already progressed (non-empty) and with higher top rank,
+          // to avoid choosing the wrong duplicate slot when snapshot exposes 8 foundations.
+          const topR = destTop ? (rankN(destTop) ?? -1) : -1;
+          const isEmpty = destCards.length === 0;
+
+          const candidate = {
+            localIndex: toClientFoundationIndex(range, f),
+            rangeLabel: range.label,
+            globalIndex: f,
+            topR,
+            isEmpty
           };
-          sendMove(move, 'tableau_to_foundation', `ACE fromTableau=${t} toFoundation=${toLocal} suit=${card.suit}`);
-          break outerAceTableau;
-        }
-      }
 
-      if (!move && Array.isArray(waste) && waste.length) {
-        const card = waste[waste.length - 1];
-        if (card && card.up !== false && isAceCard(card, scheme)) {
-          for (let f = fRange.start; f < fRange.end; f++) {
-            const destObj = foundations[f];
-            if (!destObj) continue;
-            if (!canPlaceOnFoundation(card, destObj, scheme)) continue;
-
-            const toLocal = toLocalFoundationIndex(botOwner, f, foundations.length);
-            move = {
-              kind: 'waste_to_foundation',
-              to: toLocal,
-              cardId: card.id || card.cardId || null
-            };
-            sendMove(move, 'waste_to_foundation', `ACE toFoundation=${toLocal} suit=${card.suit}`);
-            break;
+          if (!best) {
+            best = candidate;
+          } else {
+            // Prefer non-empty over empty; then higher top rank; then smaller global index (stable)
+            if (best.isEmpty && !candidate.isEmpty) best = candidate;
+            else if (best.isEmpty === candidate.isEmpty && candidate.topR > best.topR) best = candidate;
+            else if (best.isEmpty === candidate.isEmpty && candidate.topR === best.topR && candidate.globalIndex < best.globalIndex) best = candidate;
           }
         }
       }
 
-      // 2) Foundation progress (non-ACE): tableau/waste to foundation ONLY if legal sequence
-      if (!move) {
-        outerFoundTableau:
+      return best ? { localIndex: best.localIndex, rangeLabel: best.rangeLabel, globalIndex: best.globalIndex } : null;
+    }
+
+    // 1) Aces first (tableau → foundation, then waste → foundation)
+    for (let t = 0; t < tableau.length && !decided; t++) {
+      const pile = tableau[t];
+      if (!Array.isArray(pile) || !pile.length) continue;
+      const card = pile[pile.length - 1];
+      if (!card || card.up === false) continue;
+      if (!isAceCard(card, scheme)) continue;
+
+      const dest = findFoundationDestination(card);
+      if (!dest) continue;
+
+      const cardId = card.id || card.cardId;
+      const owner = inferOwnerFromCardId(cardId, botOwner);
+
+      sendMovePayload({
+        owner,
+        kind: 'toFound',
+        cardId,
+        count: 1,
+        from: { kind: 'pile', sideOwner: owner, uiIndex: t },
+        to: { kind: 'found', f: dest.localIndex }
+      }, 'toFound', `ACE fromTableau=${t} f=${dest.localIndex} (${dest.rangeLabel}) suit=${card.suit}`);
+
+      decided = true;
+    }
+
+    if (!decided && Array.isArray(waste) && waste.length) {
+      const card = waste[waste.length - 1];
+      if (card && card.up !== false && isAceCard(card, scheme)) {
+        const dest = findFoundationDestination(card);
+        if (dest) {
+          const cardId = card.id || card.cardId;
+          const owner = inferOwnerFromCardId(cardId, botOwner);
+
+          sendMovePayload({
+            owner,
+            kind: 'toFound',
+            cardId,
+            count: 1,
+            from: { kind: 'pile', sideOwner: owner, uiIndex: -1 },
+            to: { kind: 'found', f: dest.localIndex }
+          }, 'toFound', `ACE fromWaste f=${dest.localIndex} (${dest.rangeLabel}) suit=${card.suit}`);
+
+          decided = true;
+        }
+      }
+    }
+
+    // 2) Foundation progress (legal sequence)
+    for (let t = 0; t < tableau.length && !decided; t++) {
+      const pile = tableau[t];
+      if (!Array.isArray(pile) || !pile.length) continue;
+      const card = pile[pile.length - 1];
+      if (!card || card.up === false) continue;
+
+      const dest = findFoundationDestination(card);
+      if (!dest) continue;
+
+      const cardId = card.id || card.cardId;
+      const owner = inferOwnerFromCardId(cardId, botOwner);
+
+      sendMovePayload({
+        owner,
+        kind: 'toFound',
+        cardId,
+        count: 1,
+        from: { kind: 'pile', sideOwner: owner, uiIndex: t },
+        to: { kind: 'found', f: dest.localIndex }
+      }, 'toFound', `fromTableau=${t} f=${dest.localIndex} rank=${card.rank} suit=${card.suit}`);
+
+      decided = true;
+    }
+
+    if (!decided && Array.isArray(waste) && waste.length) {
+      const card = waste[waste.length - 1];
+      if (card && card.up !== false) {
+        const dest = findFoundationDestination(card);
+        if (dest) {
+          const cardId = card.id || card.cardId;
+          const owner = inferOwnerFromCardId(cardId, botOwner);
+
+          sendMovePayload({
+            owner,
+            kind: 'toFound',
+            cardId,
+            count: 1,
+            from: { kind: 'pile', sideOwner: owner, uiIndex: -1 },
+            to: { kind: 'found', f: dest.localIndex }
+          }, 'toFound', `fromWaste f=${dest.localIndex} rank=${card.rank} suit=${card.suit}`);
+
+          decided = true;
+        }
+      }
+    }
+
+    // 3) Tableau cleanup/uncover (avoid ping-pong)
+    if (!decided) {
+      let best = null;
+
+      for (let fromT = 0; fromT < tableau.length; fromT++) {
+        const pile = tableau[fromT];
+        if (!Array.isArray(pile) || pile.length < 1) continue;
+        const card = pile[pile.length - 1];
+        if (!card || card.up === false) continue;
+
+        // If this card can already be placed onto a foundation, don't waste moves bouncing it in tableau.
+        // The foundation-progress step will take it.
+        if (findFoundationDestination(card)) continue;
+
+        const wouldRevealFaceDown = (pile.length >= 2) && (pile[pile.length - 2].up === false);
+
+        for (let toT = 0; toT < tableau.length; toT++) {
+          if (toT === fromT) continue;
+          const dest = tableau[toT];
+          if (!Array.isArray(dest)) continue;
+
+          const destTop = dest.length ? dest[dest.length - 1] : null;
+          if (!canPlaceOnTableau(card, destTop, scheme)) continue;
+
+          try {
+            const recent = Array.isArray(matchBot.recentMoveSigs) ? matchBot.recentMoveSigs : [];
+            const reverseSig = `toPile:${card.id || card.cardId || ''}:${toT}->${fromT}`;
+            const now = Date.now();
+            const seenReverse = recent.some(x => x && x.sig === reverseSig && (now - x.at) < 8000);
+            if (seenReverse) continue;
+          } catch {}
+
+          const r = rankN(card) ?? 99;
+          const score = (wouldRevealFaceDown ? 100 : 0) + (destTop ? 10 : 0) + (20 - r);
+          if (!best || score > best.score) best = { score, fromT, toT, card };
+        }
+      }
+
+      if (best) {
+        const cardId = best.card.id || best.card.cardId;
+        const owner = inferOwnerFromCardId(cardId, botOwner);
+
+        sendMovePayload({
+          owner,
+          kind: 'toPile',
+          cardId,
+          count: 1,
+          from: { kind: 'pile', sideOwner: owner, uiIndex: best.fromT },
+          to: { kind: 'pile', sideOwner: owner, uiIndex: best.toT }
+        }, 'toPile', `tableau from=${best.fromT} to=${best.toT} rank=${best.card.rank} suit=${best.card.suit}`);
+
+        decided = true;
+      }
+    }
+
+    // 4) Waste → tableau last
+    if (!decided && Array.isArray(waste) && waste.length) {
+      const card = waste[waste.length - 1];
+      if (card && card.up !== false) {
         for (let t = 0; t < tableau.length; t++) {
-          const pile = tableau[t];
-          if (!Array.isArray(pile) || !pile.length) continue;
-          const card = pile[pile.length - 1];
-          if (!card || card.up === false) continue;
+          const dest = tableau[t];
+          if (!Array.isArray(dest)) continue;
+          const destTop = dest.length ? dest[dest.length - 1] : null;
+          if (!canPlaceOnTableau(card, destTop, scheme)) continue;
 
-          for (let f = fRange.start; f < fRange.end; f++) {
-            const destObj = foundations[f];
-            if (!destObj) continue;
-            if (!canPlaceOnFoundation(card, destObj, scheme)) continue;
+          const cardId = card.id || card.cardId;
+          const owner = inferOwnerFromCardId(cardId, botOwner);
 
-            const toLocal = toLocalFoundationIndex(botOwner, f, foundations.length);
-            move = {
-              kind: 'tableau_to_foundation',
-              from: t,
-              to: toLocal,
-              cardId: card.id || card.cardId || null
-            };
-            sendMove(
-              move,
-              'tableau_to_foundation',
-              `fromTableau=${t} toFoundation=${toLocal} rank=${card.rank} suit=${card.suit}`
-            );
-            break outerFoundTableau;
-          }
+          sendMovePayload({
+            owner,
+            kind: 'toPile',
+            cardId,
+            count: 1,
+            from: { kind: 'pile', sideOwner: owner, uiIndex: -1 },
+            to: { kind: 'pile', sideOwner: owner, uiIndex: t }
+          }, 'toPile', `waste toTableau=${t} rank=${card.rank} suit=${card.suit}`);
+
+          decided = true;
+          break;
         }
-      }
-
-      if (!move && Array.isArray(waste) && waste.length) {
-        const card = waste[waste.length - 1];
-        if (card && card.up !== false) {
-          for (let f = fRange.start; f < fRange.end; f++) {
-            const destObj = foundations[f];
-            if (!destObj) continue;
-            if (!canPlaceOnFoundation(card, destObj, scheme)) continue;
-
-            const toLocal = toLocalFoundationIndex(botOwner, f, foundations.length);
-            move = {
-              kind: 'waste_to_foundation',
-              to: toLocal,
-              cardId: card.id || card.cardId || null
-            };
-            sendMove(
-              move,
-              'waste_to_foundation',
-              `toFoundation=${toLocal} rank=${card.rank} suit=${card.suit}`
-            );
-            break;
-          }
-        }
-      }
-
-      // 3) Tableau cleanup/uncovering: move top cards to other tableau piles if it reveals a face-down
-      //    (we keep it conservative to avoid ping-pong). No stock/waste here.
-      if (!move) {
-        let best = null;
-
-        for (let fromT = 0; fromT < tableau.length; fromT++) {
-          const pile = tableau[fromT];
-          if (!Array.isArray(pile) || pile.length < 1) continue;
-          const card = pile[pile.length - 1];
-          if (!card || card.up === false) continue;
-
-          // Heuristic: prefer moves that would reveal a face-down card beneath the moved card
-          const wouldRevealFaceDown = (pile.length >= 2) && (pile[pile.length - 2].up === false);
-
-          for (let toT = 0; toT < tableau.length; toT++) {
-            if (toT === fromT) continue;
-            const dest = tableau[toT];
-            if (!Array.isArray(dest)) continue;
-            const destTop = dest.length ? dest[dest.length - 1] : null;
-            if (!canPlaceOnTableau(card, destTop, scheme)) continue;
-            // Avoid immediate ping-pong: if we just moved this card from toT -> fromT recently, skip
-            try {
-              const recent = Array.isArray(matchBot.recentMoveSigs) ? matchBot.recentMoveSigs : [];
-              const reverseSig = `toPile:${card.id || card.cardId || ''}:${toT}->${fromT}`;
-              const now = Date.now();
-              const seenReverse = recent.some(x => x && x.sig === reverseSig && (now - x.at) < 8000);
-              if (seenReverse) continue;
-            } catch {}
-
-            const score = (wouldRevealFaceDown ? 100 : 0) + (destTop ? 10 : 0) + (13 - card.rank);
-            if (!best || score > best.score) {
-              best = {
-                score,
-                fromT,
-                toT,
-                card
-              };
-            }
-          }
-        }
-
-        if (best) {
-          move = {
-            kind: 'tableau_to_tableau',
-            from: best.fromT,
-            to: best.toT,
-            cardId: best.card.id || best.card.cardId || null
-          };
-          sendMove(
-            move,
-            'tableau_to_tableau',
-            `from=${best.fromT} to=${best.toT} rank=${best.card.rank} suit=${best.card.suit}`
-          );
-        }
-      }
-
-      // 4) Waste usage as LAST resort: waste → tableau (to reduce waste) when no better moves exist
-      if (!move && Array.isArray(waste) && waste.length) {
-        const card = waste[waste.length - 1];
-        if (card && card.up !== false) {
-          for (let t = 0; t < tableau.length; t++) {
-            const dest = tableau[t];
-            if (!Array.isArray(dest)) continue;
-            const destTop = dest.length ? dest[dest.length - 1] : null;
-            if (!canPlaceOnTableau(card, destTop, scheme)) continue;
-
-            move = {
-              kind: 'waste_to_tableau',
-              to: t,
-              cardId: card.id || card.cardId || null
-            };
-            sendMove(
-              move,
-              'waste_to_tableau',
-              `toTableau=${t} rank=${card.rank} suit=${card.suit}`
-            );
-            break;
-          }
-        }
-      }
-
-      // If we are stuck repeating moves, break the loop by preferring a flip
-      try {
-        const recent = Array.isArray(matchBot.recentMoveSigs) ? matchBot.recentMoveSigs : [];
-        const now = Date.now();
-        const last10 = recent.filter(x => x && (now - x.at) < 20000);
-        const freq = new Map();
-        for (const x of last10) {
-          if (!x.sig) continue;
-          freq.set(x.sig, (freq.get(x.sig) || 0) + 1);
-        }
-        const maxRepeat = Math.max(0, ...Array.from(freq.values()));
-        if (maxRepeat >= 3 && BOT_DEBUG) {
-          log(`[BOT] loop-breaker engaged for matchId="${matchId}" (maxRepeat=${maxRepeat})`);
-        }
-        // No direct action here; the flip fallback below will fire.
-      } catch {}
-      if (!move) {
-        if (BOT_DEBUG) {
-          log(`[BOT] no deterministic move for matchId="${matchId}" → fallback Flip`);
-        }
-      }
-    } else if (decisionState) {
-      log(
-        `[BOT] decision skipped matchId="${matchId}" – Snapshot enthält keine detaillierten Karten-Arrays`
-      );
-    }
-
-    // 5) Stock/Waste as last resort:
-    //    - Flip when no other moves exist.
-    //    - If stock is empty but waste still has cards, keep flipping to force the client-side reset/recycle.
-    if (!move) {
-      const nowT = Date.now();
-      const stockCount = (metrics && typeof metrics.stockCount === 'number') ? metrics.stockCount : null;
-      const wasteSize  = (metrics && typeof metrics.wasteSize === 'number') ? metrics.wasteSize : null;
-
-      const wantsRecycle = (stockCount === 0) && (wasteSize != null && wasteSize > 0);
-
-      // When stock is empty but waste still has cards, we must actively trigger the client's recycle by flipping.
-      // Use a shorter cooldown and DO NOT let nextActionAt stall recycle for too long.
-      const minFlipCooldown = wantsRecycle ? 1500 : 4000;
-      const canFlipNow = !matchBot.lastFlipAt || (nowT - matchBot.lastFlipAt) > minFlipCooldown;
-
-      if (canFlipNow) {
-        const flipMove = { owner: botOwner, kind: 'flip' };
-        const envelope = JSON.stringify({ move: flipMove, from: matchBot.id });
-        broadcastFn(envelope);
-        matchBot.lastMoveAt = nowT;
-        matchBot.lastFlipAt = nowT;
-
-        // For recycle attempts, schedule the next action sooner so we keep clicking until stock refills.
-        if (wantsRecycle) {
-          matchBot.nextActionAt = nowT + randInt(900, 1800);
-        } else {
-          scheduleNextAction(matchBot);
-        }
-
-        log(`[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="flip"` + (wantsRecycle ? ' (recycle)' : ''));
       }
     }
-  } catch (err) {
-    warn(
-      `[BOT] error while sending move for matchId="${matchId}":`,
-      err
-    );
+  } else if (state) {
+    log(`[BOT] decision skipped matchId="${matchId}" – Snapshot enthält keine detaillierten Karten-Arrays`);
+  }
+
+  // Stock/Waste as last resort:
+  // - if bot stock has cards: flip
+  // - else if bot waste has cards: recycle
+  // - else: do nothing (tableau-only endgame)
+  if (!decided) {
+    const nowT = Date.now();
+
+    const wantsRecycle = (botStockCount === 0) && (botWasteCount > 0);
+    const wantsFlip    = (botStockCount > 0);
+
+    // throttle:
+    const minCooldown = wantsRecycle ? 1200 : 2500;
+    const canActNow = !matchBot.lastFlipAt || (nowT - matchBot.lastFlipAt) > minCooldown;
+
+    if (canActNow && (wantsFlip || wantsRecycle)) {
+      const kind = wantsRecycle ? 'recycle' : 'flip';
+      const move = { owner: botOwner, kind };
+      broadcastFn(JSON.stringify({ move, from: matchBot.id }));
+
+      matchBot.lastMoveAt = nowT;
+      matchBot.lastFlipAt = nowT;
+
+      // After recycle, act again sooner to start flipping from refreshed stock.
+      matchBot.nextActionAt = wantsRecycle
+        ? (nowT + randInt(700, 1400))
+        : (nowT + nextMoveDelayMs(matchBot));
+
+      log(`[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="${kind}"`);
+    }
   }
 }
 
