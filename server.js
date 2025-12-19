@@ -20,6 +20,8 @@
 // -v2.2.19: Server.js delegiert Bot-State/Decisions vollständig an serverbot.js (keine Bot-Logik mehr im server.js)
 // -v2.2.21: broken, bot Startet nicht mehr....
 // -v2.2.22: patched version für Modul serverbot.js
+// -v2.2.23: https Environment Variable
+// -v2.3.1: Auto-Join Compatibility für IOS eingefügt
 // ================================================================
 
 const http   = require('node:http');
@@ -32,7 +34,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.2.22';
+const VERSION = '2.3.1';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -403,6 +405,64 @@ ws.on('message', buf => {
         console.log(
           `[SYS-HELLO] ${isoNow()} room="${roomName}" cid=${cid} nick="${nick}"`
         );
+      }
+
+      // ------------------------------------------------------------------
+      // Auto-Join Compatibility: If a client connects directly to a match room
+      // (room name == matchId) and sends hello, treat it like join_match.
+      // This helps PWA flows that switch rooms via reconnect without sending
+      // an explicit join_match sys message.
+      // ------------------------------------------------------------------
+      if (sys.type === 'hello') {
+        const roomName = getRoomOf(ws) || currentRoom || 'lobby';
+        const isLobbyLike = (roomName === 'lobby' || roomName === 'default');
+
+        // Only try once per connection (join_match sets ws.__playerId)
+        if (!isLobbyLike && !ws.__playerId) {
+          const nick = ws.__nick || sys.nick || 'Player';
+          try {
+            const match = joinMatchForClient(ws, roomName, nick);
+            const publicMatch = getPublicMatchView(match);
+
+            // Reply to the joining client (same shape as explicit join_match)
+            sendSys(ws, {
+              type: 'match_joined',
+              matchId: match.matchId,
+              seed: match.seed,
+              playerId: ws.__playerId,
+              role: 'guest',
+              status: match.status,
+              hostNick: publicMatch.players[0]?.nick || 'Host'
+            }, { matchId: match.matchId });
+
+            // match_update to all players in the match room
+            broadcastSysToRoom(match.matchId, {
+              type: 'match_update',
+              matchId: match.matchId,
+              status: match.status,
+              players: publicMatch.players
+            });
+
+            console.log(
+              `[MATCH] auto-join via hello matchId="${match.matchId}" guestNick="${nick}" cid=${ws.__cid}`
+            );
+
+            // Auto-start when 2 players are present
+            if (match.players.length === 2 && match.status === 'ready') {
+              broadcastSysToRoom(match.matchId, {
+                type: 'reset',
+                matchId: match.matchId,
+                seed: match.seed
+              });
+              match.status = 'running';
+              match.lastActivityAt = Date.now();
+              console.log(`[MATCH] auto-start (auto-join) matchId="${match.matchId}" seed="${match.seed}"`);
+            }
+          } catch (err) {
+            // Ignore if this room isn't a valid/active match
+            // (match_not_found, match_full, match_finished, etc.)
+          }
+        }
       }
 
       // Presence-Abfrage: Wer ist online?
@@ -1005,7 +1065,7 @@ function getLocalIPs() {
 function startServer(server, label) {
   const ips = getLocalIPs();
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n=== Solitaire HighNoon Server v${VERSION} (${label.toUpperCase()}) ===`);
+    console.log(`\n=== Solitaire HighNoon Server v${VERSION} (${label.toUpperCase()}) — ${label} ACTIVE ===`);
     console.log(`Startzeit: ${isoNow()}`);
     console.log(`Serving from: ${PUBLIC_DIR}`);
     console.log(`Listening on 0.0.0.0:${PORT}`);
@@ -1017,20 +1077,74 @@ function startServer(server, label) {
   });
 }
 
-// ---- HTTPS optional ----
-const keyPath = path.join(__dirname, 'key.pem');
-const certPath = path.join(__dirname, 'cert.pem');
-if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-  try {
-    const options = { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) };
-    const httpsServer = https.createServer(options, handleRequest);
-    attachUpgradeHandler(httpsServer);
-    startServer(httpsServer, 'https');
-  } catch (err) {
-    console.error('[SSL ERROR]', err);
-    console.log('Fallback auf HTTP...');
+// ---- HTTPS optional (configurable) ----
+const defaultKey  = path.join(__dirname, 'server.key');
+const defaultCert = path.join(__dirname, 'server.crt');
+
+const keyPath  = process.env.SSL_KEY_PATH  || defaultKey;
+const certPath = process.env.SSL_CERT_PATH || defaultCert;
+const caPath   = process.env.SSL_CA_PATH   || null;
+
+const useHttpsEnv = (process.env.USE_HTTPS || '').toLowerCase();
+// Wenn USE_HTTPS=true => HTTPS erzwingen (und klar loggen, falls Files fehlen)
+// Sonst: HTTPS automatisch, wenn key+cert existieren
+const autoHttpsPossible = fs.existsSync(keyPath) && fs.existsSync(certPath);
+const useHttps = (useHttpsEnv === 'true') || autoHttpsPossible;
+
+function logTlsSummary({ enabled, started, reason } = {}) {
+  const mode = enabled ? 'ENABLED' : 'DISABLED';
+  const state = started ? 'STARTED' : 'NOT STARTED';
+  const envNote = useHttpsEnv ? ` (USE_HTTPS=${process.env.USE_HTTPS})` : '';
+  console.log(`[TLS] ${mode} / ${state}${envNote}`);
+  console.log(`[TLS] keyPath : ${keyPath}`);
+  console.log(`[TLS] certPath: ${certPath}`);
+  if (caPath) console.log(`[TLS] caPath  : ${caPath}`);
+  if (reason) console.log(`[TLS] reason  : ${reason}`);
+}
+
+if (useHttps) {
+  const keyExists  = fs.existsSync(keyPath);
+  const certExists = fs.existsSync(certPath);
+  const caExists   = caPath ? fs.existsSync(caPath) : true;
+
+  if (!keyExists || !certExists || !caExists) {
+    const missing = [
+      (!keyExists ? 'key' : null),
+      (!certExists ? 'cert' : null),
+      (caPath && !caExists ? 'ca' : null)
+    ].filter(Boolean).join(', ');
+
+    logTlsSummary({
+      enabled: true,
+      started: false,
+      reason: `Missing TLS file(s): ${missing}. Falling back to HTTP.`
+    });
+
     startServer(httpServer, 'http');
+  } else {
+    try {
+      const options = {
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath),
+        ...(caPath ? { ca: fs.readFileSync(caPath) } : {})
+      };
+
+      const httpsServer = https.createServer(options, handleRequest);
+      attachUpgradeHandler(httpsServer);
+
+      logTlsSummary({ enabled: true, started: true, reason: 'TLS credentials loaded successfully.' });
+      startServer(httpsServer, 'https');
+    } catch (err) {
+      console.error('[SSL ERROR]', err);
+      logTlsSummary({ enabled: true, started: false, reason: 'TLS init failed. Falling back to HTTP.' });
+      startServer(httpServer, 'http');
+    }
   }
 } else {
+  logTlsSummary({
+    enabled: false,
+    started: false,
+    reason: 'TLS not enabled (no USE_HTTPS=true and key/cert not found). Starting HTTP.'
+  });
   startServer(httpServer, 'http');
 }
