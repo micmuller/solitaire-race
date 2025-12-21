@@ -22,6 +22,7 @@
 // -v2.2.22: patched version für Modul serverbot.js
 // -v2.2.23: https Environment Variable
 // -v2.3.1: Auto-Join Compatibility für IOS eingefügt
+// -v2.3.2: Snapshot Receive and send für duell
 // ================================================================
 
 const http   = require('node:http');
@@ -34,7 +35,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.3.1';
+const VERSION = '2.3.2';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -435,6 +436,14 @@ ws.on('message', buf => {
               hostNick: publicMatch.players[0]?.nick || 'Host'
             }, { matchId: match.matchId });
 
+            // Request a snapshot from the room after a player joins (host/client should respond)
+            broadcastSysToRoom(match.matchId, {
+              type: 'state_request',
+              matchId: match.matchId,
+              seed: match.seed,
+              at: isoNow()
+            });
+
             // match_update to all players in the match room
             broadcastSysToRoom(match.matchId, {
               type: 'match_update',
@@ -454,6 +463,13 @@ ws.on('message', buf => {
                 matchId: match.matchId,
                 seed: match.seed
               });
+              // Ask clients to emit a full state snapshot after reset (for resync / multi-card moves)
+              broadcastSysToRoom(match.matchId, {
+                type: 'state_request',
+                matchId: match.matchId,
+                seed: match.seed,
+                at: isoNow()
+              });
               match.status = 'running';
               match.lastActivityAt = Date.now();
               console.log(`[MATCH] auto-start (auto-join) matchId="${match.matchId}" seed="${match.seed}"`);
@@ -463,6 +479,66 @@ ws.on('message', buf => {
             // (match_not_found, match_full, match_finished, etc.)
           }
         }
+      }
+      // ------------------------------------------------------------------
+      // GAME STATE SNAPSHOT (Client -> Server -> Room)
+      // Allows clients (e.g., PWA host) to provide a full snapshot so other
+      // clients (e.g., iOS) can resync and correctly mirror multi-card moves.
+      // Envelope shape expected:
+      //   { sys: { type:'state_snapshot', matchId, seed?, state: {...} }, from:'pwa' }
+      // ------------------------------------------------------------------
+      if (sys.type === 'state_snapshot') {
+        // Determine matchId robustly
+        const roomName = getRoomOf(ws) || currentRoom || 'lobby';
+        let matchId = null;
+        if (typeof sys.matchId === 'string' && sys.matchId.trim()) {
+          matchId = sys.matchId.trim();
+        } else if (roomName && roomName !== 'lobby' && roomName !== 'default') {
+          matchId = roomName;
+        }
+
+        const snap = (sys.state && typeof sys.state === 'object') ? sys.state : null;
+        if (!matchId || !snap) {
+          // Missing required fields -> ignore
+          return;
+        }
+
+        // Broadcast snapshot to everyone in the match room
+        broadcastSysToRoom(matchId, {
+          type: 'state_snapshot',
+          matchId,
+          seed: sys.seed || snap.seed || null,
+          at: isoNow(),
+          fromCid: ws.__cid || null,
+          state: snap
+        });
+
+        console.log(
+          `[STATE] ${isoNow()} snapshot received matchId="${matchId}" fromCid=${ws.__cid || 'n/a'}`
+        );
+        return;
+      }
+
+      // ------------------------------------------------------------------
+      // GAME STATE REQUEST (Server -> Room)
+      // Server can request that the host/client emits a `state_snapshot`.
+      // ------------------------------------------------------------------
+      if (sys.type === 'state_request') {
+        // Clients may send this too (manual resync). Server forwards within room.
+        const roomName = getRoomOf(ws) || currentRoom || 'lobby';
+        const matchId = (typeof sys.matchId === 'string' && sys.matchId.trim()) ? sys.matchId.trim() : roomName;
+        if (!matchId || matchId === 'lobby' || matchId === 'default') return;
+
+        broadcastSysToRoom(matchId, {
+          type: 'state_request',
+          matchId,
+          seed: sys.seed || null,
+          at: isoNow(),
+          fromCid: ws.__cid || null
+        });
+
+        console.log(`[STATE] ${isoNow()} state_request forwarded matchId="${matchId}" fromCid=${ws.__cid || 'n/a'}`);
+        return;
       }
 
       // Presence-Abfrage: Wer ist online?
@@ -569,6 +645,14 @@ ws.on('message', buf => {
             match: publicMatch
           }, { matchId: match.matchId });
 
+          // Request an initial snapshot from the host (helps late-joining clients resync)
+          sendSys(ws, {
+            type: 'state_request',
+            matchId: match.matchId,
+            seed: match.seed,
+            at: isoNow()
+          }, { matchId: match.matchId });
+
           // Erstes match_update nur an Host (noch keine weiteren Spieler im Raum)
           sendSys(ws, {
             type: 'match_update',
@@ -626,6 +710,14 @@ ws.on('message', buf => {
             hostNick: publicMatch.players[0]?.nick || 'Host'
           }, { matchId: match.matchId });
 
+          // Request a snapshot from the room after a player joins (host/client should respond)
+          broadcastSysToRoom(match.matchId, {
+            type: 'state_request',
+            matchId: match.matchId,
+            seed: match.seed,
+            at: isoNow()
+          });
+
           // match_update an alle Spieler im Match-Room
           broadcastSysToRoom(match.matchId, {
             type: 'match_update',
@@ -644,6 +736,13 @@ ws.on('message', buf => {
               type: 'reset',
               matchId: match.matchId,
               seed: match.seed
+            });
+            // Ask clients to emit a full state snapshot after reset (for resync / multi-card moves)
+            broadcastSysToRoom(match.matchId, {
+              type: 'state_request',
+              matchId: match.matchId,
+              seed: match.seed,
+              at: isoNow()
             });
             match.status = 'running';
             match.lastActivityAt = Date.now();

@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.2.6';   // neue Version
+const VERSION = '3.2.7';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -20,6 +20,7 @@ window.VERSION = VERSION;
    - v3.2.3: Server-Bot Snapshot v2 (Tick + Metrics für Bot-Engine) & Debug
    - v3.2.5: Server-Version im Client-Overlay anzeigen
    - v3.2.6: Foundation -moves Zähler für bot snapshots
+   - V3.2.7: Snapshot Senden für duell Spiele
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -2036,6 +2037,75 @@ function isBotGameActive() {
   function sendSys(o) {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ sys:o, from:clientId }));
   }
+  
+  // ------------------------------------------------------
+// STATE SNAPSHOT (PWA -> Server -> Room)
+// Minimal snapshot for client resync (iOS mirroring)
+// ------------------------------------------------------
+function buildStateSnapshot() {
+  try {
+    return {
+      version: 1,
+      at: Date.now(),
+      room: state.room || '',
+      seed: state.seed || '',
+      owner: localOwner,
+
+      // Foundations: 8 piles with full cards
+      foundations: (state.foundations || []).map(f => ({
+        suit: f.suit,
+        cards: (f.cards || []).map(c => ({ id: c.id, suit: c.suit, rank: c.rank, up: c.up }))
+      })),
+
+      // Tableau + stock/waste for both sides
+      you: {
+        stock: (state.you.stock || []).map(c => ({ id: c.id, suit: c.suit, rank: c.rank, up: c.up })),
+        waste: (state.you.waste || []).map(c => ({ id: c.id, suit: c.suit, rank: c.rank, up: c.up })),
+        tableau: (state.you.tableau || []).map(p => (p || []).map(c => ({ id: c.id, suit: c.suit, rank: c.rank, up: c.up })))
+      },
+      opp: {
+        stock: (state.opp.stock || []).map(c => ({ id: c.id, suit: c.suit, rank: c.rank, up: c.up })),
+        waste: (state.opp.waste || []).map(c => ({ id: c.id, suit: c.suit, rank: c.rank, up: c.up })),
+        tableau: (state.opp.tableau || []).map(p => (p || []).map(c => ({ id: c.id, suit: c.suit, rank: c.rank, up: c.up })))
+      },
+
+      moves: state.moves || 0,
+      over: !!state.over
+    };
+  } catch (e) {
+    console.warn('[STATE] buildStateSnapshot error', e);
+    return null;
+  }
+}
+
+function sendStateSnapshot(reason, matchIdOverride) {
+  try {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    const snap = buildStateSnapshot();
+    if (!snap) return;
+
+    const matchId =
+      (matchIdOverride && String(matchIdOverride).trim())
+        ? String(matchIdOverride).trim()
+        : ((state.match && state.match.id) ? state.match.id : (state.room || ''));
+
+    if (!matchId) return;
+
+    sendSys({
+      type: 'state_snapshot',
+      reason: reason || null,
+      matchId,
+      seed: state.seed || '',
+      state: snap
+    });
+
+    console.debug('[STATE] sent state_snapshot', { reason: reason || null, matchId, seed: state.seed || '' });
+  } catch (e) {
+    console.warn('[STATE] sendStateSnapshot error', e);
+  }
+}
+  
   function send(m) {
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ move:m, from:clientId }));
   }
@@ -2268,6 +2338,33 @@ function isBotGameActive() {
         else if (msg.sys.type === 'pong' && typeof msg.sys.ts === 'number') {
           latencyMs = Date.now() - msg.sys.ts;
         }
+        
+        // ------------------------------------------------------
+        // Snapshot sync: server requests a snapshot, client responds.
+        // ------------------------------------------------------
+        else if (msg.sys.type === 'state_request') {
+          const matchId = msg.sys.matchId || (state.match && state.match.id) || state.room || '';
+          const fromCid = msg.sys.fromCid || msg.from || null;
+          console.log('[STATE] state_request received', { matchId, fromCid, seed: msg.sys.seed || state.seed || '' });
+
+          if (matchId) {
+            sendStateSnapshot('state_request', matchId);
+          }
+        }
+        else if (msg.sys.type === 'state_snapshot') {
+          // For now: log only. We avoid applying snapshots on the PWA client to prevent
+          // disrupting the authoritative interactive UI. iOS will apply it.
+          try {
+            const mid = msg.sys.matchId || (state.match && state.match.id) || state.room || '';
+            const at = msg.sys.at || null;
+            const fromCid = msg.sys.fromCid || msg.from || null;
+            const hasState = !!msg.sys.state;
+            console.log('[STATE] state_snapshot received (ignored on PWA)', { matchId: mid, at, fromCid, hasState });
+          } catch (e) {
+            console.warn('[STATE] state_snapshot log error', e);
+          }
+        }
+        
         // Online-Player-Liste vom Server
         else if (msg.sys.type === 'player_list') {
           const players = Array.isArray(msg.sys.players) ? msg.sys.players : [];
@@ -2517,6 +2614,11 @@ function isBotGameActive() {
             url.searchParams.set('seed', state.seed);
             history.replaceState({}, '', url);
           } catch {}
+
+          // Direkt nach dem Reset einen State-Snapshot senden
+          setTimeout(() => {
+            try { sendStateSnapshot('after_reset'); } catch {}
+          }, 50);
 
           showToast('Neues Spiel gestartet');
           state.over = false;
