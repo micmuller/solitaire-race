@@ -9,6 +9,7 @@
 // ================================================================
 // Changelog:
 // -v1.5: fix Foundation moves
+// -v1.6: improve Waste→Tableau moves
 // ================================================================
 
 
@@ -777,7 +778,44 @@ function runBotDecisionTick(matchId, deps) {
 
     if (canActNow && (wantsFlip || wantsRecycle)) {
       const kind = wantsRecycle ? 'recycle' : 'flip';
+
+      // Best-effort: enrich moves so mirror clients (iOS) can update Stock/Waste without snapshot spam.
+      // Keep it backward compatible: extra fields are ignored by older clients.
       const move = { owner: botOwner, kind };
+
+      try {
+        if (kind === 'flip') {
+          move.from = { kind: 'stock', sideOwner: botOwner };
+          move.to   = { kind: 'waste', sideOwner: botOwner };
+          move.count = 1;
+
+          // Try to attach the flipped cardId if we have a detailed snapshot.
+          // In snapshots, stock is typically ordered [base ... top], so the last card is the next to draw.
+          const botSideNow = (state && state[botSideKey] && typeof state[botSideKey] === 'object') ? state[botSideKey] : null;
+          if (botSideNow && Array.isArray(botSideNow.stock) && botSideNow.stock.length) {
+            const top = botSideNow.stock[botSideNow.stock.length - 1];
+            const cardId = (top && (top.id || top.cardId)) ? (top.id || top.cardId) : null;
+            if (cardId) move.cardId = cardId;
+          }
+
+          // Post-move counts
+          move.stockCount = Math.max(0, botStockCount - 1);
+          move.wasteCount = Math.max(0, botWasteCount + 1);
+        } else {
+          // recycle
+          move.from = { kind: 'waste', sideOwner: botOwner };
+          move.to   = { kind: 'stock', sideOwner: botOwner };
+          // indicates multi-card recycle; clients can ignore
+          move.count = 0;
+
+          // Post-move counts: all waste goes back to stock
+          move.stockCount = Math.max(0, botStockCount + botWasteCount);
+          move.wasteCount = 0;
+        }
+      } catch (e) {
+        // Never break sending a move because of enrich failures.
+      }
+
       broadcastFn(JSON.stringify({ move, from: matchBot.id }));
 
       matchBot.lastMoveAt = nowT;

@@ -23,6 +23,7 @@
 // -v2.2.23: https Environment Variable
 // -v2.3.1: Auto-Join Compatibility für IOS eingefügt
 // -v2.3.2: Snapshot Receive and send für duell
+// -v2.3.3: echo-back Cid for native IOS client
 // ================================================================
 
 const http   = require('node:http');
@@ -35,7 +36,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.3.2';
+const VERSION = '2.3.3';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -406,6 +407,18 @@ ws.on('message', buf => {
         console.log(
           `[SYS-HELLO] ${isoNow()} room="${roomName}" cid=${cid} nick="${nick}"`
         );
+
+        // Echo back the server-assigned client id (cid) so native clients (iOS) can
+        // reliably identify themselves for snapshot mirroring (fromCid vs selfCid).
+        // Safe for PWA clients: unknown sys messages are ignored.
+        sendSys(ws, {
+          type: 'hello_ack',
+          cid: ws.__cid,
+          nick: ws.__nick || 'Player',
+          room: roomName,
+          at: isoNow(),
+          serverVersion: VERSION
+        });
       }
 
       // ------------------------------------------------------------------

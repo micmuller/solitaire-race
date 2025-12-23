@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.2.7';   // neue Version
+const VERSION = '3.2.8';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
@@ -21,6 +21,7 @@ window.VERSION = VERSION;
    - v3.2.5: Server-Version im Client-Overlay anzeigen
    - v3.2.6: Foundation -moves Zähler für bot snapshots
    - V3.2.7: Snapshot Senden für duell Spiele
+   - v3.2.8: Mehr infos bei Waste/Stock Senden für duell Spiele (IOS Fix)
    ============================================================ */
 (function(){
   // NEU: globaler Namespace für unser Spiel
@@ -994,11 +995,31 @@ function isBotGameActive() {
 
       if (move.kind === 'flip') {
         const s = state[side].stock;
+        let flipped = null;
+
         if (s.length) {
           const c = s.pop();
           c.up = true;
           state[side].waste.push(c);
+          flipped = c;
         }
+
+        // Enrich the move so mirror clients (iOS) can update Stock/Waste without needing snapshots.
+        // Keep it backward compatible: extra fields are ignored by older clients.
+        try {
+          move.from = { kind: 'stock', sideOwner: move.owner };
+          move.to   = { kind: 'waste', sideOwner: move.owner };
+          if (flipped && flipped.id) {
+            move.cardId = flipped.id;
+            move.count = 1;
+          }
+          // Post-move counts help UI even if cardId parsing fails.
+          move.stockCount = state[side].stock.length;
+          move.wasteCount = state[side].waste.length;
+        } catch (e) {
+          console.warn('[FLIP] move enrich failed', e);
+        }
+
         if (announce) state.moves++;
         renderAll();
         if (announce) send(move);
@@ -1010,7 +1031,9 @@ function isBotGameActive() {
       }
 
       if (move.kind === 'recycle') {
-        if (state[side].stock.length === 0 && state[side].waste.length > 0) {
+        const can = (state[side].stock.length === 0 && state[side].waste.length > 0);
+
+        if (can) {
           const rev = [...state[side].waste].reverse();
           rev.forEach(c => c.up = false);
           state[side].stock = rev;
@@ -1018,6 +1041,19 @@ function isBotGameActive() {
         } else {
           showToast('Nichts zu recyceln');
         }
+
+        // Enrich the move so mirror clients (iOS) can update Stock/Waste without snapshots.
+        // For recycle we don't send cardId (many cards move). Counts are sufficient.
+        try {
+          move.from = { kind: 'waste', sideOwner: move.owner };
+          move.to   = { kind: 'stock', sideOwner: move.owner };
+          move.count = 0; // indicates multi-card recycle; legacy clients ignore.
+          move.stockCount = state[side].stock.length;
+          move.wasteCount = state[side].waste.length;
+        } catch (e) {
+          console.warn('[RECYCLE] move enrich failed', e);
+        }
+
         if (announce) state.moves++;
         renderAll();
         if (announce) send(move);
