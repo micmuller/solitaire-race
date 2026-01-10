@@ -309,12 +309,17 @@ function computeBotMetrics(state) {
 }
 
 // --- Bot-Registry ---
-function createServerBot(matchId, difficulty = 'easy', opts = {}) {
-  const botId = 'bot-' + Math.random().toString(36).slice(2);
-  const botNick =
+function botNickForDifficulty(difficulty) {
+  return (
     difficulty === 'hard'   ? 'Bot-Hard'   :
     difficulty === 'medium' ? 'Bot-Medium' :
-    'Bot-Easy';
+    'Bot-Easy'
+  );
+}
+
+function createServerBot(matchId, difficulty = 'easy', opts = {}) {
+  const botId = 'bot-' + Math.random().toString(36).slice(2);
+  const botNick = botNickForDifficulty(difficulty);
 
   const bot = {
     id: botId,
@@ -350,6 +355,27 @@ function createServerBot(matchId, difficulty = 'easy', opts = {}) {
 
 function getServerBot(matchId) {
   return botsByMatch.get(matchId) || null;
+}
+
+// Ensure a bot exists for this match (idempotent). Useful for server.js when a client requests a bot game.
+function ensureServerBot(matchId, difficulty = 'easy', opts = {}) {
+  let bot = getServerBot(matchId);
+  if (!bot) {
+    bot = createServerBot(matchId, difficulty, opts);
+    return bot;
+  }
+
+  // Allow updating difficulty on the fly (keeps bot id/stats).
+  const d = difficulty || bot.difficulty || 'easy';
+  if (bot.difficulty !== d) {
+    bot.difficulty = d;
+    bot.nick = botNickForDifficulty(d);
+    if (!opts || opts.silent !== true) {
+      log(`[BOT] updated bot difficulty matchId="${matchId}" botId="${bot.id}" difficulty=${d}`);
+    }
+  }
+
+  return bot;
 }
 
 function removeServerBot(matchId) {
@@ -843,6 +869,7 @@ module.exports = {
   // Registry
   createServerBot,
   getServerBot,
+  ensureServerBot,
   removeServerBot,
 
   // State ingest

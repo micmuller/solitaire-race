@@ -24,6 +24,7 @@
 // -v2.3.1: Auto-Join Compatibility für IOS eingefügt
 // -v2.3.2: Snapshot Receive and send für duell
 // -v2.3.3: echo-back Cid for native IOS client
+// -v2.3.4: IOS-Bot Compatibility
 // ================================================================
 
 const http   = require('node:http');
@@ -36,7 +37,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.3.3';
+const VERSION = '2.3.4';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -98,15 +99,28 @@ try {
 // Unified tick wrapper (supports both serverbot APIs)
 function runServerBotTick(matchId) {
   if (!serverbotOk || !serverbot) return;
+
+  // serverbot.js expects a deps object with at least `broadcastToRoom(room, payload)`.
+  // IMPORTANT: our `broadcastToRoom(room, data, excludeWs)` expects `data` to be a STRING.
+  const deps = {
+    broadcastToRoom: (room, payload) => {
+      try {
+        const msg = (typeof payload === 'string') ? payload : JSON.stringify(payload);
+        broadcastToRoom(room, msg);
+      } catch (e) {
+        // If payload cannot be stringified, do nothing.
+      }
+    },
+    log: (...args) => console.log('[BOT]', ...args)
+  };
+
   try {
     if (typeof serverbot.runBotDecisionTick === 'function') {
-      serverbot.runBotDecisionTick(matchId, {
-        broadcastToRoom: (payload) => broadcastToRoom(matchId, payload)
-      });
+      serverbot.runBotDecisionTick(matchId, deps);
       return;
     }
     if (typeof serverbot.runBotHeartbeatTick === 'function') {
-      serverbot.runBotDecisionTick(matchId, (envelope) => broadcastToRoom(matchId, envelope));
+      serverbot.runBotHeartbeatTick(matchId, deps);
       return;
     }
   } catch (e) {
@@ -884,7 +898,7 @@ ws.on('message', buf => {
           if (!existing.__interval) {
             existing.__interval = setInterval(() => {
               try {
-                serverbot.runBotDecisionTick(matchId, (envelope) => broadcastToRoom(matchId, envelope));
+                runServerBotTick(matchId);
               } catch (e) {
                 console.error('[BOT] heartbeat tick failed', e);
               }
@@ -954,7 +968,7 @@ ws.on('message', buf => {
         if (!bot.__interval) {
           bot.__interval = setInterval(() => {
             try {
-              serverbot.runBotDecisionTick(matchId, (envelope) => broadcastToRoom(matchId, envelope));
+              runServerBotTick(matchId);
             } catch (e) {
               console.error('[BOT] heartbeat tick failed', e);
             }
