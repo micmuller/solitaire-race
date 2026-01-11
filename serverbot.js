@@ -10,6 +10,7 @@
 // Changelog:
 // -v1.5: fix Foundation moves
 // -v1.6: improve Waste→Tableau moves
+// -v1.7: improve Room handling in server.js
 // ================================================================
 
 
@@ -471,6 +472,21 @@ function runBotDecisionTick(matchId, deps) {
     return;
   }
 
+  function broadcastEnvelope(envelopeStr) {
+    // server.js broadcastToRoom(room, data) expects the room/matchId as first arg.
+    // Keep backward compatibility with any older signature that only accepted (data).
+    try {
+      if (broadcastFn.length >= 2) {
+        broadcastFn(matchId, envelopeStr);
+      } else {
+        broadcastFn(envelopeStr);
+      }
+    } catch (e) {
+      // Last resort: try single-arg call
+      try { broadcastFn(envelopeStr); } catch {}
+    }
+  }
+
   const matchBot = getServerBot(matchId);
   if (!matchBot) return;
 
@@ -531,7 +547,7 @@ function runBotDecisionTick(matchId, deps) {
 
   function sendMovePayload(movePayload, kindLabel, debugInfo) {
     const envelope = JSON.stringify({ move: movePayload, from: matchBot.id });
-    broadcastFn(envelope);
+    broadcastEnvelope(envelope);
 
     try {
       const sig = `${movePayload.kind}:${movePayload.cardId || ''}:${(movePayload.from && movePayload.from.uiIndex) ?? ''}->${(movePayload.to && (movePayload.to.uiIndex ?? movePayload.to.f)) ?? ''}`;
@@ -842,7 +858,7 @@ function runBotDecisionTick(matchId, deps) {
         // Never break sending a move because of enrich failures.
       }
 
-      broadcastFn(JSON.stringify({ move, from: matchBot.id }));
+      broadcastEnvelope(JSON.stringify({ move, from: matchBot.id }));
 
       matchBot.lastMoveAt = nowT;
       matchBot.lastFlipAt = nowT;

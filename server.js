@@ -25,6 +25,7 @@
 // -v2.3.2: Snapshot Receive and send für duell
 // -v2.3.3: echo-back Cid for native IOS client
 // -v2.3.4: IOS-Bot Compatibility
+// -v2.3.5: Logging for room-match erweitert.
 // ================================================================
 
 const http   = require('node:http');
@@ -37,7 +38,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.3.4';
+const VERSION = '2.3.5';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -103,7 +104,14 @@ function runServerBotTick(matchId) {
   // serverbot.js expects a deps object with at least `broadcastToRoom(room, payload)`.
   // IMPORTANT: our `broadcastToRoom(room, data, excludeWs)` expects `data` to be a STRING.
   const deps = {
-    broadcastToRoom: (room, payload) => {
+    // serverbot.js historically called broadcastToRoom(payload) (single-arg).
+    // Newer code may call broadcastToRoom(room, payload).
+    // We support BOTH without changing bot logic.
+    broadcastToRoom: (roomOrPayload, maybePayload) => {
+      // If only one arg was provided, treat it as payload and use current matchId as room.
+      const room = (maybePayload === undefined) ? matchId : roomOrPayload;
+      const payload = (maybePayload === undefined) ? roomOrPayload : maybePayload;
+
       try {
         const msg = (typeof payload === 'string') ? payload : JSON.stringify(payload);
         broadcastToRoom(room, msg);
@@ -220,6 +228,7 @@ setInterval(() => cleanupOldMatches(), 10 * 60 * 1000).unref();
 function isoNow() { return new Date().toISOString(); }
 function getRoomOf(ws) { return ws.__room || null; }
 function joinRoom(ws, room) {
+  const prev = ws.__room || null;
   ws.__room = room;
   if (!rooms.has(room)) rooms.set(room, new Set());
   rooms.get(room).add(ws);
@@ -230,16 +239,30 @@ function joinRoom(ws, room) {
     entry.room = room;
     entry.lastSeen = Date.now();
   }
+
+  // ---- DEBUG LOGGING (no behavior change) ----
+  if ((process.env.DEBUG_ROOMS || '') === '1') {
+    console.log(`[ROOM] ${isoNow()} join cid=${ws.__cid || 'n/a'} from="${prev || ''}" to="${room}" peers=${peersInRoom(room)}`);
+  }
+  // ---- END DEBUG LOGGING ----
 }
 function leaveRoom(ws) {
   const room = getRoomOf(ws);
   if (!room) return;
+  const before = peersInRoom(room);
   const set = rooms.get(room);
   if (set) {
     set.delete(ws);
     if (set.size === 0) rooms.delete(room);
   }
   ws.__room = null;
+
+  // ---- DEBUG LOGGING (no behavior change) ----
+  if ((process.env.DEBUG_ROOMS || '') === '1') {
+    const after = peersInRoom(room);
+    console.log(`[ROOM] ${isoNow()} leave cid=${ws.__cid || 'n/a'} room="${room}" peers ${before} -> ${after}`);
+  }
+  // ---- END DEBUG LOGGING ----
 }
 function peersInRoom(room) {
   const set = rooms.get(room);
@@ -247,6 +270,46 @@ function peersInRoom(room) {
 }
 function broadcastToRoom(room, data, excludeWs = null) {
   const set = rooms.get(room);
+
+  // ---- DEBUG LOGGING (no behavior change) ----
+  // Enable with: DEBUG_BROADCAST=1 node server.js
+  const dbg = (process.env.DEBUG_BROADCAST || '') === '1';
+  if (dbg) {
+    const total = set ? set.size : 0;
+    let openCount = 0;
+    let targetCount = 0;
+    const sample = [];
+
+    if (set) {
+      for (const client of set) {
+        if (client.readyState === client.OPEN) openCount++;
+        if (client !== excludeWs && client.readyState === client.OPEN) {
+          targetCount++;
+          if (sample.length < 5) {
+            sample.push(client.__cid || client.__cid === '' ? String(client.__cid) : (client.__cid ?? client.__cid));
+          }
+        }
+      }
+    }
+
+    // Try to classify payload without parsing it (avoid side effects)
+    let kind = 'unknown';
+    try {
+      if (typeof data === 'string') {
+        if (data.includes('"move"')) kind = 'move';
+        else if (data.includes('"sys"')) kind = 'sys';
+      }
+    } catch {}
+
+    const bytes = (typeof data === 'string') ? Buffer.byteLength(data, 'utf8') : 0;
+    console.log(
+      `[BROADCAST] ${isoNow()} room="${room}" kind=${kind} total=${total} open=${openCount} targets=${targetCount}` +
+      (sample.length ? ` sampleCid=${sample.join(',')}` : '') +
+      ` bytes=${bytes}`
+    );
+  }
+  // ---- END DEBUG LOGGING ----
+
   if (!set) return;
   for (const client of set) {
     if (client !== excludeWs && client.readyState === client.OPEN) {
