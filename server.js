@@ -26,6 +26,7 @@
 // -v2.3.3: echo-back Cid for native IOS client
 // -v2.3.4: IOS-Bot Compatibility
 // -v2.3.5: Logging for room-match erweitert.
+// -v2.3.6: Bot Leave and Disconnect function
 // ================================================================
 
 const http   = require('node:http');
@@ -38,7 +39,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.3.5';
+const VERSION = '2.3.6';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -134,6 +135,50 @@ function runServerBotTick(matchId) {
   } catch (e) {
     console.error('[BOT] ServerBot tick failed:', e);
   }
+}
+
+// Stop bot heartbeat + unregister bot for a match (best-effort).
+function stopServerBot(matchId, reason = 'unknown') {
+  if (!serverbotOk || !serverbot || !matchId) return false;
+
+  let bot = null;
+  try { bot = serverbot.getServerBot(matchId); } catch {}
+  if (!bot) return false;
+
+  // Stop interval/timers
+  try {
+    if (bot.__interval) {
+      clearInterval(bot.__interval);
+      bot.__interval = null;
+    }
+  } catch {}
+
+  // Best-effort unregister (support multiple serverbot API shapes)
+  try {
+    if (typeof serverbot.deleteServerBot === 'function') {
+      serverbot.deleteServerBot(matchId);
+    } else if (typeof serverbot.removeServerBot === 'function') {
+      serverbot.removeServerBot(matchId);
+    } else if (typeof serverbot.unregisterServerBot === 'function') {
+      serverbot.unregisterServerBot(matchId);
+    }
+  } catch {}
+
+  console.log(`[BOT] stopped matchId="${matchId}" reason="${reason}"`);
+  return true;
+}
+
+function maybeStopBotIfRoomEmpty(room, reason) {
+  if (!room || room === 'lobby' || room === 'default') return;
+  const remaining = peersInRoom(room);
+  if (remaining > 0) return;
+  // Only stop if a bot exists for this match.
+  try {
+    if (serverbotOk && serverbot && typeof serverbot.getServerBot === 'function') {
+      const bot = serverbot.getServerBot(room);
+      if (bot) stopServerBot(room, reason || 'room_empty');
+    }
+  } catch {}
 }
 
 
@@ -628,6 +673,32 @@ ws.on('message', buf => {
         });
 
         console.log(`[STATE] ${isoNow()} state_request forwarded matchId="${matchId}" fromCid=${ws.__cid || 'n/a'}`);
+        return;
+      }
+
+      // Explicit leave (iOS UI "Leave" / manual exit):
+      // If the client leaves a bot match room, stop the serverbot immediately.
+      if (sys.type === 'leave' || sys.type === 'leave_match' || sys.type === 'match_leave') {
+        const roomName = getRoomOf(ws) || currentRoom || 'lobby';
+        const matchId = (typeof sys.matchId === 'string' && sys.matchId.trim())
+          ? sys.matchId.trim()
+          : roomName;
+
+        // Stop bot if this was a bot match.
+        stopServerBot(matchId, sys.type);
+
+        // Move the client back to lobby-like room (keep the socket open).
+        leaveRoom(ws);
+        joinRoom(ws, 'lobby');
+
+        sendSys(ws, {
+          type: 'left',
+          from: sys.type,
+          matchId,
+          room: 'lobby',
+          at: isoNow()
+        });
+
         return;
       }
 
@@ -1230,7 +1301,15 @@ ws.on('message', buf => {
 ws.on('close', () => {
   const roomLeft = getRoomOf(ws);
   markPlayerDisconnected(ws);
+
+  // Leave room first, so peersInRoom(roomLeft) reflects remaining humans.
   leaveRoom(ws);
+
+  // If this was the last client in a bot match room, stop the bot.
+  if (roomLeft) {
+    maybeStopBotIfRoomEmpty(roomLeft, 'disconnect');
+  }
+
   clientsById.delete(cid);
   playerDirectory.delete(cid);
   console.log(`[DISCONNECT] ${isoNow()} room="${roomLeft}" cid=${cid}`);
