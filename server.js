@@ -27,6 +27,7 @@
 // -v2.3.4: IOS-Bot Compatibility
 // -v2.3.5: Logging for room-match erweitert.
 // -v2.3.6: Bot Leave and Disconnect function
+// -v2.3.8: M7 Drift Hardening
 // ================================================================
 
 const http   = require('node:http');
@@ -39,7 +40,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.3.6';
+const VERSION = '2.3.8';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -261,13 +262,24 @@ const {
   joinMatchForClient,
   markPlayerDisconnected,
   getPublicMatchView,
-  cleanupOldMatches
+  cleanupOldMatches,
+  updateMatchGameState,
+
+  // M7 drift hardening helpers (match-scoped)
+  bumpMatchRev,
+  rememberMoveId,
+  // cacheSnapshot,   // Optionally remove if not used
+  getCachedSnapshot
 } = require('./matches');
 const STATUS_INTERVAL_MS = 30_000;
 const HELLO_SUPPRESS_MS  = 15_000;
 let lastGlobalStatusLog = 0;
 const lastSysLogByRoom = new Map();
 const lastHelloTsByClient = new WeakMap();
+// M7: Resync throttle (prevents state_request storms under drift / stress)
+const RESYNC_THROTTLE_MS = 1500;
+const lastStateRequestByKey = new Map(); // key = `${matchId}|${fromCid}` -> ts
+const lastSnapshotSentToKey = new Map(); // key = `${matchId}|${toCid}`   -> ts
 setInterval(() => cleanupOldMatches(), 10 * 60 * 1000).unref();
 
 function isoNow() { return new Date().toISOString(); }
@@ -463,6 +475,52 @@ ws.on('message', buf => {
       } catch (e) {
         console.warn('[MOVE-PAYLOAD] JSON stringify failed:', e);
       }
+
+      // ----------------------------------------------------------
+      // M7: Move sequencing + best-effort drift hardening (additive)
+      // - If meta.moveId exists: de-dup on server (prevents double-apply)
+      // - Assign matchRev per match and attach it to meta
+      // - Optionally echo moves back to sender ONLY when moveId exists
+      //   (safer for idempotent clients; legacy clients keep old behavior)
+      // ----------------------------------------------------------
+      const matchId = (data?.meta && (data.meta.matchId || data.meta.match_id)) || currentRoom;
+      const hasMoveId = !!(data?.meta && (data.meta.moveId || data.meta.id));
+      const moveId = hasMoveId ? (data.meta.moveId || data.meta.id) : null;
+
+      if (matchId && matchId !== 'lobby' && matchId !== 'default') {
+        if (moveId) {
+          const isDup = rememberMoveId(matchId, String(moveId));
+          if (isDup) {
+            console.log(`[M7] ${isoNow()} DUP move ignored matchId="${matchId}" moveId=${moveId} cid=${ws.__cid || 'n/a'}`);
+            return; // hard stop: do not forward duplicates
+          }
+        }
+
+        const rev = bumpMatchRev(matchId);
+        if (rev != null) {
+          if (!data.meta) data.meta = {};
+          data.meta.matchRev = rev;
+        }
+
+        // Forward the move with additive meta (rev). Prefer compact re-stringify.
+        const out = JSON.stringify(data);
+
+        // Echo-to-sender only when moveId is present (idempotent clients can handle it).
+        // This prevents "sender didn't apply but opponent did" failure mode when optimistic apply is skipped.
+        if (moveId) {
+          broadcastToRoom(matchId, out, null);
+        } else {
+          broadcastToRoom(matchId, out, ws);
+        }
+
+        // Maintain status log cadence as before
+        if (now - lastGlobalStatusLog >= STATUS_INTERVAL_MS) {
+          logStatus();
+          lastGlobalStatusLog = now;
+        }
+
+        return; // we've handled forwarding
+      }
     }
 
     // SYS-Logging / Handling
@@ -638,13 +696,25 @@ ws.on('message', buf => {
           return;
         }
 
-        // Broadcast snapshot to everyone in the match room
+        // M7: single entry-point for storing lastGameState + maintaining cached snapshot
+        // (updateMatchGameState calls cacheSnapshot best-effort)
+        updateMatchGameState(matchId, snap, {
+          seed: sys.seed || snap.seed || null,
+          fromCid: ws.__cid || null,
+          at: isoNow()
+        });
+
+        const cached = getCachedSnapshot(matchId);
+
+        // Broadcast snapshot to everyone in the match room (additive fields)
         broadcastSysToRoom(matchId, {
           type: 'state_snapshot',
           matchId,
-          seed: sys.seed || snap.seed || null,
+          seed: (cached && cached.seed) ? cached.seed : (sys.seed || snap.seed || null),
           at: isoNow(),
           fromCid: ws.__cid || null,
+          matchRev: (cached && cached.matchRev) ? cached.matchRev : null,
+          snapshotHash: (cached && cached.snapshotHash) ? cached.snapshotHash : null,
           state: snap
         });
 
@@ -659,20 +729,62 @@ ws.on('message', buf => {
       // Server can request that the host/client emits a `state_snapshot`.
       // ------------------------------------------------------------------
       if (sys.type === 'state_request') {
-        // Clients may send this too (manual resync). Server forwards within room.
+        // Clients may send this too (manual resync). Throttle forwarding and snapshot-to-requester.
         const roomName = getRoomOf(ws) || currentRoom || 'lobby';
         const matchId = (typeof sys.matchId === 'string' && sys.matchId.trim()) ? sys.matchId.trim() : roomName;
         if (!matchId || matchId === 'lobby' || matchId === 'default') return;
 
-        broadcastSysToRoom(matchId, {
-          type: 'state_request',
-          matchId,
-          seed: sys.seed || null,
-          at: isoNow(),
-          fromCid: ws.__cid || null
-        });
+        const fromCid = ws.__cid || null;
+        const nowMs = Date.now();
+        const key = `${matchId}|${fromCid || 'n/a'}`;
+        const lastReq = lastStateRequestByKey.get(key) || 0;
+        const throttled = (nowMs - lastReq) < RESYNC_THROTTLE_MS;
 
-        console.log(`[STATE] ${isoNow()} state_request forwarded matchId="${matchId}" fromCid=${ws.__cid || 'n/a'}`);
+        if (!throttled) {
+          lastStateRequestByKey.set(key, nowMs);
+
+          broadcastSysToRoom(matchId, {
+            type: 'state_request',
+            matchId,
+            seed: sys.seed || null,
+            at: isoNow(),
+            fromCid
+          });
+
+          console.log(`[STATE] ${isoNow()} state_request forwarded matchId="${matchId}" fromCid=${fromCid || 'n/a'}`);
+        } else {
+          console.log(`[STATE] ${isoNow()} state_request THROTTLED matchId="${matchId}" fromCid=${fromCid || 'n/a'} (within ${RESYNC_THROTTLE_MS}ms)`);
+        }
+
+        // M7: If we already have a cached snapshot, send it immediately to the requester
+        // to reduce drift windows (clients still may respond with a newer snapshot).
+        // Also throttle snapshot-to-requester to avoid flooding.
+        const lastSnap = getCachedSnapshot(matchId);
+        if (lastSnap) {
+          const snapKey = `${matchId}|${fromCid || 'n/a'}`;
+          const lastSent = lastSnapshotSentToKey.get(snapKey) || 0;
+          const snapThrottled = (nowMs - lastSent) < RESYNC_THROTTLE_MS;
+
+          if (!snapThrottled) {
+            lastSnapshotSentToKey.set(snapKey, nowMs);
+
+            sendSys(ws, {
+              type: 'state_snapshot',
+              matchId,
+              seed: lastSnap.seed || null,
+              at: isoNow(),
+              fromCid: lastSnap.fromCid || null,
+              matchRev: lastSnap.matchRev || null,
+              snapshotHash: lastSnap.snapshotHash || null,
+              state: lastSnap.state
+            }, { matchId });
+
+            console.log(`[M7] ${isoNow()} immediate snapshot-to-requester matchId="${matchId}" rev=${lastSnap.matchRev || '-'} hash=${lastSnap.snapshotHash || '-'}`);
+          } else {
+            console.log(`[M7] ${isoNow()} snapshot-to-requester THROTTLED matchId="${matchId}" toCid=${fromCid || 'n/a'} (within ${RESYNC_THROTTLE_MS}ms)`);
+          }
+        }
+
         return;
       }
 

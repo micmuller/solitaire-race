@@ -36,6 +36,71 @@ function generateUniqueMatchId(rooms) {
   return `M${Date.now().toString(36).toUpperCase()}`;
 }
 
+// ------------------------------------------------------------
+// M7 Drift Hardening helpers (kept in matches.js to avoid global state)
+// ------------------------------------------------------------
+function fnv1a64(str) {
+  let h = 14695981039346656037n;
+  const prime = 1099511628211n;
+  for (let i = 0; i < str.length; i++) {
+    h ^= BigInt(str.charCodeAt(i));
+    h = (h * prime) & 0xffffffffffffffffn;
+  }
+  return h.toString(16).padStart(16, '0');
+}
+
+function bumpMatchRev(matchId) {
+  const match = matches.get(matchId);
+  if (!match) return null;
+  match.matchRev = (typeof match.matchRev === 'number' ? match.matchRev : 0) + 1;
+  match.lastActivityAt = Date.now();
+  return match.matchRev;
+}
+
+function rememberMoveId(matchId, moveId, cap = 500) {
+  if (!moveId) return false;
+  const match = matches.get(matchId);
+  if (!match) return false;
+  if (!match.recentMoveIds) match.recentMoveIds = new Set();
+  if (!match.recentMoveIdsQueue) match.recentMoveIdsQueue = [];
+
+  const id = String(moveId);
+  if (match.recentMoveIds.has(id)) return true;
+  match.recentMoveIds.add(id);
+  match.recentMoveIdsQueue.push(id);
+  if (match.recentMoveIdsQueue.length > cap) {
+    const old = match.recentMoveIdsQueue.shift();
+    if (old) match.recentMoveIds.delete(old);
+  }
+  match.lastActivityAt = Date.now();
+  return false;
+}
+
+function cacheSnapshot(matchId, snap, sys = {}) {
+  const match = matches.get(matchId);
+  if (!match || !snap) return null;
+  const rev = bumpMatchRev(matchId);
+  let snapshotHash = null;
+  try {
+    snapshotHash = fnv1a64(JSON.stringify(snap));
+  } catch {}
+
+  match.lastSnapshot = {
+    state: snap,
+    seed: sys.seed || snap.seed || null,
+    snapshotHash,
+    fromCid: sys.fromCid || null,
+    at: sys.at || new Date().toISOString(),
+    matchRev: rev
+  };
+  return match.lastSnapshot;
+}
+
+function getCachedSnapshot(matchId) {
+  const match = matches.get(matchId);
+  return match ? match.lastSnapshot || null : null;
+}
+
 function createMatchForClient(ws, nick, rooms) {
   const matchId = generateUniqueMatchId(rooms);
   const seed = generateSeed();
@@ -48,6 +113,11 @@ function createMatchForClient(ws, nick, rooms) {
     createdAt: now,
     lastActivityAt: now,
     lastGameState: null,
+    // M7 Drift Hardening (Phase 1.5): server-side sequencing/cache on match object
+    matchRev: 0,
+    lastSnapshot: null, // { state, seed, snapshotHash, fromCid, at, matchRev }
+    recentMoveIds: new Set(),
+    recentMoveIdsQueue: [],
     botState: null,
     botStateTick: 0,
     players: [
@@ -161,11 +231,21 @@ function markPlayerDisconnected(ws) {
   match.lastActivityAt = Date.now();
 }
 
-function updateMatchGameState(matchId, gameState) {
+function updateMatchGameState(matchId, gameState, meta = {}) {
   const match = matches.get(matchId);
   if (!match) return;
+
   match.lastGameState = gameState;
   match.lastActivityAt = Date.now();
+
+  // M7: keep a resync-capable snapshot cache even if callers update via lastGameState.
+  // This is best-effort; if gameState is not a full snapshot object, it will still hash/cache as-is.
+  const seed = meta.seed || match.seed || (gameState && gameState.seed) || null;
+  const fromCid = meta.fromCid || null;
+  const at = meta.at || new Date().toISOString();
+  try {
+    cacheSnapshot(matchId, gameState, { seed, fromCid, at });
+  } catch {}
 }
 
 function updateBotState(matchId, botState) {
@@ -251,6 +331,7 @@ function cleanupOldMatches(ttlMs = 60 * 60 * 1000) {
   for (const [id, match] of matches.entries()) {
     if (now - match.lastActivityAt > ttlMs) {
       matches.delete(id);
+      // Note: match-scoped Sets (recentMoveIds) and cached snapshots are freed with the match object.
       removed++;
     }
   }
@@ -269,5 +350,12 @@ module.exports = {
   getMatch,
   updateMatchGameState,
   updateBotState,
-  getBotState
+  getBotState,
+
+  // M7 drift hardening helpers
+  fnv1a64,
+  bumpMatchRev,
+  rememberMoveId,
+  cacheSnapshot,
+  getCachedSnapshot
 };
