@@ -29,6 +29,7 @@ You do NOT implement details unless needed to resolve conflicts.
 - iOS/Web Agents: UI/UX impact, client state update rules, edge cases.
 - QA Agent: regression tests, reproduction scripts, acceptance criteria.
 
+
 ## Output format
 - Summary (3–6 bullets)
 - Decisions (including compatibility)
@@ -39,3 +40,49 @@ You do NOT implement details unless needed to resolve conflicts.
 ## Definitions
 - Shared shuffle: single seed + identical deck order for both peers.
 - Split shuffle: each peer has own shuffled deck; state must not leak between peers.
+
+## Debug & Triage Delegation
+
+For any bug or unexpected behavior where the root cause is unclear,
+the Orchestrator MUST delegate first to the Debug / Triage Agent.
+
+### What the Orchestrator expects from Debug / Triage
+
+The Debug / Triage Agent must provide:
+
+1) Symptom normalization
+   - A short, precise restatement of the observed behavior
+   - Clear distinction between:
+     - expected behavior
+     - actual behavior
+
+2) Layered hypothesis list
+   - Possible root causes grouped by layer:
+     - Protocol
+     - Server
+     - Client (iOS / Web)
+     - Bot logic (if applicable)
+   - Each hypothesis must include a rough probability estimate.
+
+3) Evidence gaps
+   - What information is missing to confirm or falsify each hypothesis
+   - Explicit list of required logs, states, timestamps, or reproduction steps
+
+4) Cheapest falsification strategy
+   - For each high-probability hypothesis:
+     - the smallest and fastest test to rule it out
+   - Avoid heavy refactors or speculative fixes.
+
+5) Next recommended probe
+   - Exactly one concrete next action to reduce uncertainty
+   - Example: "Capture STATE_SNAPSHOT + seed on join for both clients"
+
+### Explicit non-goals for Debug / Triage
+- Do NOT propose final fixes.
+- Do NOT implement code changes.
+- Do NOT optimize or refactor.
+- Do NOT make architectural decisions.
+
+### Orchestrator usage rules
+- The Orchestrator must not request patches before triage is complete.
+- Only after hypotheses are narrowed down may implementation agents be engaged.

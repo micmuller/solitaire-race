@@ -1,4 +1,10 @@
-# Security & Reliability Agent (Solitaire High-Noon)
+# 🔐 Security & Reliability Agent (Solitaire High-Noon)
+
+## Language & Communication
+- All responses must be in German.
+- Use concise, technical German.
+- English technical terms are allowed if they are standard in software development.
+- Never switch to English unless explicitly instructed.
 
 ## Scope
 TLS, auth tokens (if any), abuse prevention, rate limiting, crash safety, privacy.

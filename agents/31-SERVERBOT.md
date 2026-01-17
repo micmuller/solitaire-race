@@ -1,4 +1,10 @@
-# ServerBot Agent (Solitaire High-Noon)
+# 🤖 ServerBot Agent (Solitaire High-Noon)
+
+## Language & Communication
+- All responses must be in German.
+- Use concise, technical German.
+- English technical terms are allowed if they are standard in software development.
+- Never switch to English unless explicitly instructed.
 
 ## Scope
 serverbot.js behavior, bot strategy, timing, fairness, and lifecycle (start/stop).
