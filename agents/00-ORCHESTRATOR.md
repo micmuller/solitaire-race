@@ -28,6 +28,7 @@ You do NOT implement details unless needed to resolve conflicts.
 - Server Agent: runtime impact, state ownership, logging/metrics.
 - iOS/Web Agents: UI/UX impact, client state update rules, edge cases.
 - QA Agent: regression tests, reproduction scripts, acceptance criteria.
+- Architecture Agent: Architecture, state ownership, determinism, modularization, repo structure, long-term maintainability.
 
 
 ## Output format

@@ -28,6 +28,7 @@
 // -v2.3.5: Logging for room-match erweitert.
 // -v2.3.6: Bot Leave and Disconnect function
 // -v2.3.8: M7 Drift Hardening
+// -v2.3.9: P0: state fingerprint + dublicate detector (debug / triage)
 // ================================================================
 
 const http   = require('node:http');
@@ -40,7 +41,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.3.8';
+const VERSION = '2.3.9';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -283,6 +284,133 @@ const lastSnapshotSentToKey = new Map(); // key = `${matchId}|${toCid}`   -> ts
 setInterval(() => cleanupOldMatches(), 10 * 60 * 1000).unref();
 
 function isoNow() { return new Date().toISOString(); }
+
+// ------------------------------------------------------------
+// P0: State Fingerprint + Duplicate Detector (Debug / Triage)
+// - Extracts card ids heuristically from arbitrary snapshot shapes.
+// - Logs duplicates + counts to pinpoint where duplicates appear.
+// ------------------------------------------------------------
+const CARD_ID_REGEX = /^[A-Za-z]-[A-Za-z0-9]+/; // permissive (e.g., "S-UNK-...", "H-12-...")
+function looksLikeCardId(s) {
+  if (typeof s !== 'string') return false;
+  if (s.length < 3 || s.length > 64) return false;
+  return CARD_ID_REGEX.test(s) || (s.includes('-') && s.length <= 32);
+}
+
+function collectCardIdsHeuristic(root, maxDepth = 8) {
+  const ids = [];
+  const seen = new WeakSet();
+
+  function visit(node, depth) {
+    if (node == null) return;
+    if (depth > maxDepth) return;
+
+    const t = typeof node;
+
+    // String leaf
+    if (t === 'string') {
+      if (looksLikeCardId(node)) ids.push(node);
+      return;
+    }
+
+    // Primitive leaf
+    if (t !== 'object') return;
+
+    // Prevent cycles
+    if (seen.has(node)) return;
+    seen.add(node);
+
+    // Array
+    if (Array.isArray(node)) {
+      for (const v of node) visit(v, depth + 1);
+      return;
+    }
+
+    // Object: pick common fields first
+    // Card objects often have: { id }, { cardId }, { cid }, { code }
+    const directKeys = ['cardId', 'id', 'cid', 'code'];
+    for (const k of directKeys) {
+      if (typeof node[k] === 'string' && looksLikeCardId(node[k])) ids.push(node[k]);
+    }
+
+    // Recurse into object props
+    for (const [k, v] of Object.entries(node)) {
+      if (k === '__proto__' || k === 'constructor') continue;
+      visit(v, depth + 1);
+    }
+  }
+
+  visit(root, 0);
+  return ids;
+}
+
+function computeDuplicates(ids) {
+  const counts = new Map();
+  for (const id of ids) counts.set(id, (counts.get(id) || 0) + 1);
+  const dups = [];
+  for (const [id, n] of counts.entries()) {
+    if (n > 1) dups.push({ id, n });
+  }
+  // deterministic order: most frequent first, then id
+  dups.sort((a, b) => (b.n - a.n) || (a.id < b.id ? -1 : 1));
+  return { unique: counts.size, dups };
+}
+
+function tryExtractStockTop(state, n = 10) {
+  const candidates = [
+    state?.stock,
+    state?.stock?.cards,
+    state?.stockCards,
+    state?.piles?.stock,
+    state?.piles?.stock?.cards,
+    state?.deck,
+    state?.deck?.cards
+  ].filter(Boolean);
+
+  for (const c of candidates) {
+    if (Array.isArray(c)) {
+      const top = [];
+      for (const item of c) {
+        if (typeof item === 'string' && looksLikeCardId(item)) top.push(item);
+        else if (item && typeof item === 'object') {
+          const id = item.cardId || item.id || item.code;
+          if (typeof id === 'string' && looksLikeCardId(id)) top.push(id);
+        }
+        if (top.length >= n) break;
+      }
+      if (top.length) return top;
+    }
+  }
+  return [];
+}
+
+function logFingerprint(tag, matchId, sysSeed, snapState, extra = {}) {
+  try {
+    const ids = collectCardIdsHeuristic(snapState);
+    const { unique, dups } = computeDuplicates(ids);
+    const total = ids.length;
+
+    const stockTop10 = tryExtractStockTop(snapState, 10);
+
+    const payload = {
+      at: isoNow(),
+      tag,
+      matchId,
+      seed: sysSeed || snapState?.seed || null,
+      shuffleMode: snapState?.shuffleMode || snapState?.mode || null,
+      totalCardRefs: total,
+      uniqueCardIds: unique,
+      duplicateCount: dups.length,
+      duplicateIds: dups.slice(0, 12), // cap log size
+      stockTop10,
+      ...extra
+    };
+
+    console.log(`[FPR] ${JSON.stringify(payload)}`);
+  } catch (e) {
+    console.log(`[FPR] ${isoNow()} tag=${tag} matchId="${matchId}" (fingerprint failed)`);
+  }
+}
 function getRoomOf(ws) { return ws.__room || null; }
 function joinRoom(ws, room) {
   const prev = ws.__room || null;
@@ -696,6 +824,12 @@ ws.on('message', buf => {
           return;
         }
 
+        // P0 Fingerprint (RX): detect duplicates as early as possible (before caching/broadcast)
+        logFingerprint('RX', matchId, sys.seed || snap.seed || null, snap, {
+          fromCid: ws.__cid || null,
+          room: roomName
+        });
+
         // M7: single entry-point for storing lastGameState + maintaining cached snapshot
         // (updateMatchGameState calls cacheSnapshot best-effort)
         updateMatchGameState(matchId, snap, {
@@ -704,7 +838,21 @@ ws.on('message', buf => {
           at: isoNow()
         });
 
+        // Ensure snapshots also advance matchRev (monotonic) even if no MOVE happened.
+        // This is additive and used for ordering/debug only.
+        const snapshotRev = bumpMatchRev(matchId);
+
         const cached = getCachedSnapshot(matchId);
+
+        // Decide which matchRev to send (prefer cached if matches.js provides one; else use snapshotRev)
+        const matchRevToSend = (cached && cached.matchRev) ? cached.matchRev : snapshotRev;
+
+        // P0 Fingerprint (TX): log the state that will be broadcast
+        logFingerprint('TX', matchId, (cached && cached.seed) ? cached.seed : (sys.seed || snap.seed || null), snap, {
+          toRoom: matchId,
+          matchRev: matchRevToSend || null,
+          snapshotHash: (cached && cached.snapshotHash) ? cached.snapshotHash : null
+        });
 
         // Broadcast snapshot to everyone in the match room (additive fields)
         broadcastSysToRoom(matchId, {
@@ -713,13 +861,13 @@ ws.on('message', buf => {
           seed: (cached && cached.seed) ? cached.seed : (sys.seed || snap.seed || null),
           at: isoNow(),
           fromCid: ws.__cid || null,
-          matchRev: (cached && cached.matchRev) ? cached.matchRev : null,
+          matchRev: matchRevToSend || null,
           snapshotHash: (cached && cached.snapshotHash) ? cached.snapshotHash : null,
           state: snap
         });
 
         console.log(
-          `[STATE] ${isoNow()} snapshot received matchId="${matchId}" fromCid=${ws.__cid || 'n/a'}`
+          `[STATE] ${isoNow()} snapshot received matchId="${matchId}" fromCid=${ws.__cid || 'n/a'} rev=${matchRevToSend || '-'}`
         );
         return;
       }
