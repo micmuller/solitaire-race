@@ -29,6 +29,7 @@
 // -v2.3.6: Bot Leave and Disconnect function
 // -v2.3.8: M7 Drift Hardening
 // -v2.3.9: P0: state fingerprint + dublicate detector (debug / triage)
+// -v2.4.2: P1 Architecture change: Server authoritative but with compatibility for optimistic clients
 // ================================================================
 
 const http   = require('node:http');
@@ -41,7 +42,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.3.9';
+const VERSION = '2.4.1';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -270,7 +271,11 @@ const {
   bumpMatchRev,
   rememberMoveId,
   // cacheSnapshot,   // Optionally remove if not used
-  getCachedSnapshot
+  getCachedSnapshot,
+
+  // P1 helpers (server-authoritative snapshot access)
+  getSnapshot,
+  setAuthoritativeState
 } = require('./matches');
 const STATUS_INTERVAL_MS = 30_000;
 const HELLO_SUPPRESS_MS  = 15_000;
@@ -281,6 +286,26 @@ const lastHelloTsByClient = new WeakMap();
 const RESYNC_THROTTLE_MS = 1500;
 const lastStateRequestByKey = new Map(); // key = `${matchId}|${fromCid}` -> ts
 const lastSnapshotSentToKey = new Map(); // key = `${matchId}|${toCid}`   -> ts
+
+// P1: server-initiated snapshot requests (throttled)
+function requestSnapshotFromRoom(matchId, seed = null, reason = 'server_request') {
+  if (!matchId || matchId === 'lobby' || matchId === 'default') return false;
+  const nowMs = Date.now();
+  const key = `${matchId}|srv`;
+  const lastReq = lastStateRequestByKey.get(key) || 0;
+  if ((nowMs - lastReq) < RESYNC_THROTTLE_MS) return false;
+  lastStateRequestByKey.set(key, nowMs);
+
+  broadcastSysToRoom(matchId, {
+    type: 'state_request',
+    matchId,
+    seed: seed || null,
+    at: isoNow(),
+    fromCid: 'srv',
+    reason
+  });
+  return true;
+}
 setInterval(() => cleanupOldMatches(), 10 * 60 * 1000).unref();
 
 function isoNow() { return new Date().toISOString(); }
@@ -596,10 +621,13 @@ ws.on('message', buf => {
     if (data?.move) {
       console.log(
         `[MOVE] ${isoNow()} room="${currentRoom}" kind=${data.move.kind} ` +
-        `from=${data.from || 'n/a'} cid=${ws.__cid || 'n/a'}`
+        `from=${data.from || 'n/a'} cid=${ws.__cid || 'n/a'} hasMoveId=${!!(data?.meta && (data.meta.moveId || data.meta.id))}`
       );
       try {
-        console.log('[MOVE-PAYLOAD]', JSON.stringify(data.move));
+        const payloadStr = JSON.stringify(data.move);
+        const isFlip = String(data.move.kind || '') === 'flip';
+        const hasCardId = !!data.move.cardId;
+        console.log('[MOVE-PAYLOAD]', payloadStr, isFlip && !hasCardId ? '(!) flip missing cardId' : '');
       } catch (e) {
         console.warn('[MOVE-PAYLOAD] JSON stringify failed:', e);
       }
@@ -613,7 +641,35 @@ ws.on('message', buf => {
       // ----------------------------------------------------------
       const matchId = (data?.meta && (data.meta.matchId || data.meta.match_id)) || currentRoom;
       const hasMoveId = !!(data?.meta && (data.meta.moveId || data.meta.id));
-      const moveId = hasMoveId ? (data.meta.moveId || data.meta.id) : null;
+      let moveId = hasMoveId ? (data.meta.moveId || data.meta.id) : null;
+
+      // P1 mini-fix: For iOS↔iOS and iOS↔BOT stability we prefer echo-to-sender.
+      // If a client sends moves without moveId, generate a server moveId (additive field) so
+      // idempotent clients can de-dup and the sender can safely rely on echo.
+      // NOTE: This is scoped by heuristics to avoid re-breaking legacy/PWA clients.
+      const fromTag = String(data.from || '').toLowerCase();
+      const moveKindTag = String(data.move.kind || '').toLowerCase();
+      const looksLikeIOS = fromTag.includes('ios') || fromTag.includes('native') || fromTag.includes('iphone') || fromTag.includes('ipad');
+      const looksLikeBot = fromTag.includes('bot') || moveKindTag.includes('bot');
+      const P1_ECHO_ALL = (process.env.P1_ECHO_ALL_MOVES || '').toLowerCase() === '1';
+      const shouldForceEcho = P1_ECHO_ALL || looksLikeIOS || looksLikeBot;
+
+      if (!moveId && shouldForceEcho) {
+        if (!data.meta) data.meta = {};
+        // stable enough identifier for dedupe (match-scoped on server)
+        const rid = Math.random().toString(36).slice(2, 8);
+        moveId = `srv-${ws.__cid || 'n/a'}-${Date.now()}-${rid}`;
+        data.meta.moveId = moveId;
+      }
+
+      // P1 guard: Never forward a flip without cardId.
+      // If a client emits flip without cardId, some clients materialize placeholder "UNK" cards in waste.
+      // Dropping the move forces convergence via snapshot.
+      if (String(data.move.kind || '') === 'flip' && !data.move.cardId) {
+        console.warn(`[P1] ${isoNow()} DROP flip-without-cardId matchId="${matchId}" cid=${ws.__cid || 'n/a'} moveId=${moveId || '-'} from=${data.from || 'n/a'}`);
+        requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, 'flip_missing_cardId');
+        return;
+      }
 
       if (matchId && matchId !== 'lobby' && matchId !== 'default') {
         if (moveId) {
@@ -633,13 +689,17 @@ ws.on('message', buf => {
         // Forward the move with additive meta (rev). Prefer compact re-stringify.
         const out = JSON.stringify(data);
 
-        // Echo-to-sender only when moveId is present (idempotent clients can handle it).
-        // This prevents "sender didn't apply but opponent did" failure mode when optimistic apply is skipped.
+        // P1 mini-fix: Echo-to-sender whenever we have a moveId (including server-generated moveIds for iOS/BOT).
+        // Legacy clients without moveId still keep the old behavior unless forced by shouldForceEcho.
         if (moveId) {
           broadcastToRoom(matchId, out, null);
         } else {
           broadcastToRoom(matchId, out, ws);
         }
+
+        // P1 (minimal): after every accepted move, ask the room for a fresh snapshot.
+        // This drives convergence even before full server-side rule validation exists.
+        requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, 'after_move');
 
         // Maintain status log cadence as before
         if (now - lastGlobalStatusLog >= STATUS_INTERVAL_MS) {
@@ -830,40 +890,37 @@ ws.on('message', buf => {
           room: roomName
         });
 
-        // M7: single entry-point for storing lastGameState + maintaining cached snapshot
-        // (updateMatchGameState calls cacheSnapshot best-effort)
-        updateMatchGameState(matchId, snap, {
+        // P1: accept snapshot as the server's canonical cached snapshot (compat mode).
+        // IMPORTANT: cacheSnapshot/matches.js no longer bumps matchRev; we bump here exactly once.
+        const snapshotRev = bumpMatchRev(matchId);
+        setAuthoritativeState(matchId, snap, {
           seed: sys.seed || snap.seed || null,
           fromCid: ws.__cid || null,
           at: isoNow()
         });
 
-        // Ensure snapshots also advance matchRev (monotonic) even if no MOVE happened.
-        // This is additive and used for ordering/debug only.
-        const snapshotRev = bumpMatchRev(matchId);
-
-        const cached = getCachedSnapshot(matchId);
-
-        // Decide which matchRev to send (prefer cached if matches.js provides one; else use snapshotRev)
-        const matchRevToSend = (cached && cached.matchRev) ? cached.matchRev : snapshotRev;
+        // Use canonical snapshot envelope from matches.js (includes matchRev + snapshotHash)
+        const canonical = getSnapshot(matchId) || getCachedSnapshot(matchId);
+        const canonicalState = (canonical && canonical.state) ? canonical.state : snap;
+        const matchRevToSend = (canonical && canonical.matchRev) ? canonical.matchRev : snapshotRev;
 
         // P0 Fingerprint (TX): log the state that will be broadcast
-        logFingerprint('TX', matchId, (cached && cached.seed) ? cached.seed : (sys.seed || snap.seed || null), snap, {
+        logFingerprint('TX', matchId, (canonical && canonical.seed) ? canonical.seed : (sys.seed || snap.seed || null), canonicalState, {
           toRoom: matchId,
           matchRev: matchRevToSend || null,
-          snapshotHash: (cached && cached.snapshotHash) ? cached.snapshotHash : null
+          snapshotHash: (canonical && canonical.snapshotHash) ? canonical.snapshotHash : null
         });
 
         // Broadcast snapshot to everyone in the match room (additive fields)
         broadcastSysToRoom(matchId, {
           type: 'state_snapshot',
           matchId,
-          seed: (cached && cached.seed) ? cached.seed : (sys.seed || snap.seed || null),
+          seed: (canonical && canonical.seed) ? canonical.seed : (sys.seed || snap.seed || null),
           at: isoNow(),
           fromCid: ws.__cid || null,
           matchRev: matchRevToSend || null,
-          snapshotHash: (cached && cached.snapshotHash) ? cached.snapshotHash : null,
-          state: snap
+          snapshotHash: (canonical && canonical.snapshotHash) ? canonical.snapshotHash : null,
+          state: canonicalState
         });
 
         console.log(
@@ -888,7 +945,11 @@ ws.on('message', buf => {
         const lastReq = lastStateRequestByKey.get(key) || 0;
         const throttled = (nowMs - lastReq) < RESYNC_THROTTLE_MS;
 
-        if (!throttled) {
+        // P1: If we already have a canonical snapshot, prefer serving it directly instead of storming the room.
+        // We still forward the request when we DON'T have a snapshot yet.
+        const haveSnap = !!(getSnapshot(matchId) || getCachedSnapshot(matchId));
+
+        if (!throttled && !haveSnap) {
           lastStateRequestByKey.set(key, nowMs);
 
           broadcastSysToRoom(matchId, {
@@ -900,14 +961,16 @@ ws.on('message', buf => {
           });
 
           console.log(`[STATE] ${isoNow()} state_request forwarded matchId="${matchId}" fromCid=${fromCid || 'n/a'}`);
-        } else {
+        } else if (throttled) {
           console.log(`[STATE] ${isoNow()} state_request THROTTLED matchId="${matchId}" fromCid=${fromCid || 'n/a'} (within ${RESYNC_THROTTLE_MS}ms)`);
+        } else {
+          console.log(`[STATE] ${isoNow()} state_request served-from-cache matchId="${matchId}" toCid=${fromCid || 'n/a'}`);
         }
 
-        // M7: If we already have a cached snapshot, send it immediately to the requester
+        // M7/P1: If we already have a cached snapshot, send it immediately to the requester
         // to reduce drift windows (clients still may respond with a newer snapshot).
         // Also throttle snapshot-to-requester to avoid flooding.
-        const lastSnap = getCachedSnapshot(matchId);
+        const lastSnap = getSnapshot(matchId) || getCachedSnapshot(matchId);
         if (lastSnap) {
           const snapKey = `${matchId}|${fromCid || 'n/a'}`;
           const lastSent = lastSnapshotSentToKey.get(snapKey) || 0;

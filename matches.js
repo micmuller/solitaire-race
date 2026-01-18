@@ -8,6 +8,7 @@ const matches = new Map(); // key = matchId, value = Match-Objekt
 // Ein Bot wird wie ein Spieler in der players-Liste geführt, kann aber
 // zusätzlich mit isBot/difficulty gekennzeichnet werden.
 // v1.2: Bot erweiterungen
+// v2.4.0: P1 Architecture change: Server authoritative but with compatibility for optimistic clients
 
 function generateMatchId() {
   // Kurzer, menschenlesbarer Code wie "DUEL4"
@@ -79,7 +80,9 @@ function rememberMoveId(matchId, moveId, cap = 500) {
 function cacheSnapshot(matchId, snap, sys = {}) {
   const match = matches.get(matchId);
   if (!match || !snap) return null;
-  const rev = bumpMatchRev(matchId);
+  // NOTE (P1): cacheSnapshot must NOT mutate matchRev. matchRev is advanced by authoritative actions (MOVE apply, RESET, SNAPSHOT accept) at the call-site.
+  const rev = (typeof match.matchRev === 'number' ? match.matchRev : 0);
+  match.lastActivityAt = Date.now();
   let snapshotHash = null;
   try {
     snapshotHash = fnv1a64(JSON.stringify(snap));
@@ -99,6 +102,45 @@ function cacheSnapshot(matchId, snap, sys = {}) {
 function getCachedSnapshot(matchId) {
   const match = matches.get(matchId);
   return match ? match.lastSnapshot || null : null;
+}
+
+// ------------------------------------------------------------
+// P1: Server-authoritative snapshot accessors (minimal)
+// ------------------------------------------------------------
+function getSnapshot(matchId) {
+  const match = matches.get(matchId);
+  if (!match) return null;
+  if (match.lastSnapshot && match.lastSnapshot.state) return match.lastSnapshot;
+
+  // Fallback: wrap lastGameState as snapshot
+  const state = match.lastGameState;
+  if (!state) return null;
+  let snapshotHash = null;
+  try { snapshotHash = fnv1a64(JSON.stringify(state)); } catch {}
+
+  return {
+    state,
+    seed: match.seed || state.seed || null,
+    snapshotHash,
+    fromCid: null,
+    at: new Date().toISOString(),
+    matchRev: (typeof match.matchRev === 'number' ? match.matchRev : 0)
+  };
+}
+
+function setAuthoritativeState(matchId, state, sys = {}) {
+  const match = matches.get(matchId);
+  if (!match || !state) return null;
+
+  match.lastGameState = state;
+  match.lastActivityAt = Date.now();
+
+  // Caller is responsible for bumpMatchRev(matchId) BEFORE calling this if a new revision is desired.
+  return cacheSnapshot(matchId, state, {
+    seed: sys.seed || match.seed || state.seed || null,
+    fromCid: sys.fromCid || null,
+    at: sys.at || new Date().toISOString()
+  });
 }
 
 function createMatchForClient(ws, nick, rooms) {
@@ -238,6 +280,8 @@ function updateMatchGameState(matchId, gameState, meta = {}) {
   match.lastGameState = gameState;
   match.lastActivityAt = Date.now();
 
+  // P1 note: updateMatchGameState is legacy (client-supplied state). In server-authoritative mode, only setAuthoritativeState/applyMove should update canonical state.
+
   // M7: keep a resync-capable snapshot cache even if callers update via lastGameState.
   // This is best-effort; if gameState is not a full snapshot object, it will still hash/cache as-is.
   const seed = meta.seed || match.seed || (gameState && gameState.seed) || null;
@@ -357,5 +401,9 @@ module.exports = {
   bumpMatchRev,
   rememberMoveId,
   cacheSnapshot,
-  getCachedSnapshot
+  getCachedSnapshot,
+
+  // P1 helpers
+  getSnapshot,
+  setAuthoritativeState
 };
