@@ -9,6 +9,7 @@ const matches = new Map(); // key = matchId, value = Match-Objekt
 // zusätzlich mit isBot/difficulty gekennzeichnet werden.
 // v1.2: Bot erweiterungen
 // v2.4.0: P1 Architecture change: Server authoritative but with compatibility for optimistic clients
+// v2.4.5: P1.2 Initial Deal + Shuffle Server-Authoritative
 
 function generateMatchId() {
   // Kurzer, menschenlesbarer Code wie "DUEL4"
@@ -40,6 +41,7 @@ function generateUniqueMatchId(rooms) {
 // ------------------------------------------------------------
 // M7 Drift Hardening helpers (kept in matches.js to avoid global state)
 // ------------------------------------------------------------
+
 function fnv1a64(str) {
   let h = 14695981039346656037n;
   const prime = 1099511628211n;
@@ -48,6 +50,158 @@ function fnv1a64(str) {
     h = (h * prime) & 0xffffffffffffffffn;
   }
   return h.toString(16).padStart(16, '0');
+}
+
+// ------------------------------------------------------------
+// P1.1: State invariant validation (anti-corruption guardrails)
+// ------------------------------------------------------------
+function _safeJson(obj) {
+  try { return JSON.stringify(obj); } catch { return null; }
+}
+
+function _defaultExpectedTotalCards(state) {
+  // If the client/server encodes an explicit expectedTotalCards, use that.
+  if (state && typeof state.expectedTotalCards === 'number') return state.expectedTotalCards;
+  // Heuristic defaults:
+  const mode = state && (state.shuffleMode || state.shuffle || state.mode);
+  if (String(mode).toLowerCase() === 'split') return 104; // 2 decks (one per player)
+  return 52; // shared deck
+}
+
+function _looksLikeCardId(id) {
+  if (typeof id !== 'string') return false;
+  if (id.length < 2 || id.length > 64) return false;
+  // exclude common non-card identifiers
+  if (id === 'p1' || id === 'p2' || id === 'bot') return false;
+  return true;
+}
+
+function _collectCardIdsDeep(root, opts = {}) {
+  const maxNodes = typeof opts.maxNodes === 'number' ? opts.maxNodes : 20000;
+  const maxDepth = typeof opts.maxDepth === 'number' ? opts.maxDepth : 50;
+
+  const ids = [];
+  const unknownIds = [];
+
+  const seen = new Set();
+  const stack = [{ v: root, d: 0 }];
+  let nodes = 0;
+
+  while (stack.length) {
+    const { v, d } = stack.pop();
+    if (v == null) continue;
+    if (d > maxDepth) continue;
+
+    const t = typeof v;
+    if (t === 'string') {
+      // some states may inline cardIds in arrays
+      if (_looksLikeCardId(v) && /[A-Z0-9]/i.test(v)) {
+        // Only treat as cardId if it contains typical card markers or UNK markers
+        if (v.includes('UNK') || v.includes('-') || v.includes('_')) {
+          ids.push(v);
+          if (v.includes('UNK') || v.includes('0UNK')) unknownIds.push(v);
+        }
+      }
+      continue;
+    }
+    if (t !== 'object') continue;
+
+    // cycle protection
+    if (seen.has(v)) continue;
+    seen.add(v);
+
+    nodes++;
+    if (nodes > maxNodes) break;
+
+    if (Array.isArray(v)) {
+      for (let i = v.length - 1; i >= 0; i--) {
+        stack.push({ v: v[i], d: d + 1 });
+      }
+      continue;
+    }
+
+    // Common card shapes: { id: '...', rank: .., suit: .. }
+    if (typeof v.id === 'string' && _looksLikeCardId(v.id)) {
+      ids.push(v.id);
+      if (v.id.includes('UNK') || v.id.includes('0UNK')) unknownIds.push(v.id);
+    }
+
+    // push properties
+    const keys = Object.keys(v);
+    for (let i = keys.length - 1; i >= 0; i--) {
+      const k = keys[i];
+      // Avoid traversing huge transient/derived blobs if present
+      if (k === 'ui' || k === 'debug' || k === 'telemetry') continue;
+      stack.push({ v: v[k], d: d + 1 });
+    }
+  }
+
+  return { ids, unknownIds, truncated: nodes > maxNodes };
+}
+
+function validateInvariant(state, opts = {}) {
+  // Returns a report object (never throws)
+  const report = {
+    ok: true,
+    reason: null,
+    expectedTotalCards: null,
+    foundTotalCards: 0,
+    dupes: [],
+    missingCount: null,
+    unknownIds: [],
+    truncated: false,
+    snapshotHash: null
+  };
+
+  if (!state || typeof state !== 'object') {
+    report.ok = false;
+    report.reason = 'state_missing_or_invalid';
+    return report;
+  }
+
+  // Hash for correlation
+  const js = _safeJson(state);
+  if (js) {
+    try { report.snapshotHash = fnv1a64(js); } catch {}
+  }
+
+  const expected = _defaultExpectedTotalCards(state);
+  report.expectedTotalCards = expected;
+
+  const { ids, unknownIds, truncated } = _collectCardIdsDeep(state, opts);
+  report.truncated = !!truncated;
+  report.foundTotalCards = ids.length;
+
+  // unknown/placeholder ids are always a corruption signal for P1
+  if (unknownIds.length > 0) {
+    report.ok = false;
+    report.reason = 'unknown_card_ids_present';
+    report.unknownIds = Array.from(new Set(unknownIds)).slice(0, 50);
+  }
+
+  // duplicate ids
+  const seen = new Set();
+  const dupes = new Set();
+  for (const id of ids) {
+    if (seen.has(id)) dupes.add(id);
+    else seen.add(id);
+  }
+  if (dupes.size > 0) {
+    report.ok = false;
+    report.reason = report.reason || 'duplicate_card_ids';
+    report.dupes = Array.from(dupes).slice(0, 50);
+  }
+
+  // missing cards: only if we are not truncated and have a sensible expectation
+  if (!report.truncated && typeof expected === 'number' && expected > 0) {
+    report.missingCount = Math.max(0, expected - seen.size);
+    if (report.missingCount > 0) {
+      report.ok = false;
+      report.reason = report.reason || 'missing_cards';
+    }
+  }
+
+  return report;
 }
 
 function bumpMatchRev(matchId) {
@@ -133,6 +287,27 @@ function setAuthoritativeState(matchId, state, sys = {}) {
   if (!match || !state) return null;
 
   match.lastGameState = state;
+
+  // P1.1: validate invariants on authoritative state updates
+  try {
+    const inv = validateInvariant(state);
+    match.lastInvariant = { ...inv, at: sys.at || new Date().toISOString() };
+    if (!inv.ok) {
+      match.isCorrupt = true;
+      const RED = '\x1b[31m';
+      const RESET = '\x1b[0m';
+      console.warn(`${RED}[CORRUPTION] matchId=${matchId} rev=${typeof match.matchRev === 'number' ? match.matchRev : 0} reason=${inv.reason} expected=${inv.expectedTotalCards} found=${inv.foundTotalCards} missing=${inv.missingCount} dupes=${(inv.dupes||[]).length} unk=${(inv.unknownIds||[]).length} truncated=${inv.truncated} hash=${inv.snapshotHash}${RESET}`);
+    } else {
+      match.isCorrupt = false;
+    }
+  } catch (e) {
+    match.lastInvariant = { ok: false, reason: 'invariant_check_failed', error: String(e && e.message ? e.message : e), at: sys.at || new Date().toISOString() };
+    match.isCorrupt = true;
+    const RED = '\x1b[31m';
+    const RESET = '\x1b[0m';
+    console.warn(`${RED}[CORRUPTION] matchId=${matchId} reason=invariant_check_failed error=${String(e && e.message ? e.message : e)}${RESET}`);
+  }
+
   match.lastActivityAt = Date.now();
 
   // Caller is responsible for bumpMatchRev(matchId) BEFORE calling this if a new revision is desired.
@@ -158,6 +333,7 @@ function createMatchForClient(ws, nick, rooms) {
     // M7 Drift Hardening (Phase 1.5): server-side sequencing/cache on match object
     matchRev: 0,
     lastSnapshot: null, // { state, seed, snapshotHash, fromCid, at, matchRev }
+    lastInvariant: null, // { ok, reason, expectedTotalCards, foundTotalCards, dupes, missingCount, unknownIds, truncated, snapshotHash }
     recentMoveIds: new Set(),
     recentMoveIdsQueue: [],
     botState: null,
@@ -174,6 +350,7 @@ function createMatchForClient(ws, nick, rooms) {
       }
     ]
   };
+
 
   matches.set(matchId, match);
   ws.__matchId = matchId;
@@ -277,19 +454,54 @@ function updateMatchGameState(matchId, gameState, meta = {}) {
   const match = matches.get(matchId);
   if (!match) return;
 
+  // P1.2: Legacy client-supplied state is no longer authoritative.
+  // Ignore empty or client-pushed full states to prevent corruption.
+  if (!gameState || typeof gameState !== 'object') {
+    return;
+  }
+
+  // If server has an authoritative snapshot, never overwrite it with client state
+  if (match.lastSnapshot && match.lastSnapshot.state) {
+    return;
+  }
+
   match.lastGameState = gameState;
+
+  // P1.2: legacy path retained for compatibility, but guarded above
+  const at = meta.at || new Date().toISOString();
+  try {
+    const inv = validateInvariant(gameState);
+    match.lastInvariant = { ...inv, at };
+    if (!inv.ok) {
+      match.isCorrupt = true;
+      const RED = '\x1b[31m';
+      const RESET = '\x1b[0m';
+      console.warn(`${RED}[CORRUPTION] matchId=${matchId} rev=${typeof match.matchRev === 'number' ? match.matchRev : 0} reason=${inv.reason} expected=${inv.expectedTotalCards} found=${inv.foundTotalCards} missing=${inv.missingCount} dupes=${(inv.dupes||[]).length} unk=${(inv.unknownIds||[]).length} truncated=${inv.truncated} hash=${inv.snapshotHash}${RESET}`);
+    } else {
+      match.isCorrupt = false;
+    }
+  } catch (e) {
+    match.lastInvariant = { ok: false, reason: 'invariant_check_failed', error: String(e && e.message ? e.message : e), at };
+    match.isCorrupt = true;
+    const RED = '\x1b[31m';
+    const RESET = '\x1b[0m';
+    console.warn(`${RED}[CORRUPTION] matchId=${matchId} reason=invariant_check_failed error=${String(e && e.message ? e.message : e)}${RESET}`);
+  }
+
   match.lastActivityAt = Date.now();
 
   // P1 note: updateMatchGameState is legacy (client-supplied state). In server-authoritative mode, only setAuthoritativeState/applyMove should update canonical state.
 
-  // M7: keep a resync-capable snapshot cache even if callers update via lastGameState.
-  // This is best-effort; if gameState is not a full snapshot object, it will still hash/cache as-is.
-  const seed = meta.seed || match.seed || (gameState && gameState.seed) || null;
+    const seed = meta.seed || match.seed || (gameState && gameState.seed) || null;
   const fromCid = meta.fromCid || null;
-  const at = meta.at || new Date().toISOString();
   try {
     cacheSnapshot(matchId, gameState, { seed, fromCid, at });
-  } catch {}
+  } catch {}  
+
+}
+function getLastInvariant(matchId) {
+  const match = matches.get(matchId);
+  return match ? match.lastInvariant || null : null;
 }
 
 function updateBotState(matchId, botState) {
@@ -402,6 +614,8 @@ module.exports = {
   rememberMoveId,
   cacheSnapshot,
   getCachedSnapshot,
+  validateInvariant,
+  getLastInvariant,
 
   // P1 helpers
   getSnapshot,

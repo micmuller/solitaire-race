@@ -30,6 +30,8 @@
 // -v2.3.8: M7 Drift Hardening
 // -v2.3.9: P0: state fingerprint + dublicate detector (debug / triage)
 // -v2.4.2: P1 Architecture change: Server authoritative but with compatibility for optimistic clients
+// -v2.4.3: P1.1 Invariant-Validation + Corruption Guardrails (server-side, red console errors)
+// -v2.4.5: P1.2 Initial Deal + Shuffle Server-Authoritative
 // ================================================================
 
 const http   = require('node:http');
@@ -42,7 +44,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.1';
+const VERSION = '2.4.5';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -275,7 +277,8 @@ const {
 
   // P1 helpers (server-authoritative snapshot access)
   getSnapshot,
-  setAuthoritativeState
+  setAuthoritativeState,
+  getLastInvariant
 } = require('./matches');
 const STATUS_INTERVAL_MS = 30_000;
 const HELLO_SUPPRESS_MS  = 15_000;
@@ -286,6 +289,46 @@ const lastHelloTsByClient = new WeakMap();
 const RESYNC_THROTTLE_MS = 1500;
 const lastStateRequestByKey = new Map(); // key = `${matchId}|${fromCid}` -> ts
 const lastSnapshotSentToKey = new Map(); // key = `${matchId}|${toCid}`   -> ts
+
+// P1.1: Corruption airbag (when invariant fails, push canonical snapshot + request resync)
+const CORRUPTION_AIRBAG_THROTTLE_MS = 2000;
+const lastCorruptionAirbagByRoom = new Map(); // matchId -> ts
+
+function maybeTriggerCorruptionAirbag(matchId, reason = 'invariant_failed') {
+  if (!matchId || matchId === 'lobby' || matchId === 'default') return false;
+  const nowMs = Date.now();
+  const last = lastCorruptionAirbagByRoom.get(matchId) || 0;
+  if ((nowMs - last) < CORRUPTION_AIRBAG_THROTTLE_MS) return false;
+  lastCorruptionAirbagByRoom.set(matchId, nowMs);
+
+  const inv = getLastInvariant(matchId);
+  if (!inv || inv.ok) return false;
+
+  // Prefer canonical cached snapshot
+  const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
+  if (snap && snap.state) {
+    broadcastSysToRoom(matchId, {
+      type: 'state_snapshot',
+      matchId,
+      seed: snap.seed || null,
+      at: isoNow(),
+      fromCid: snap.fromCid || 'srv',
+      matchRev: snap.matchRev || null,
+      snapshotHash: snap.snapshotHash || null,
+      state: snap.state,
+      reason: `corruption_airbag:${reason}`
+    });
+  }
+
+  // Always request a fresh snapshot afterwards (host may have newer truth)
+  requestSnapshotFromRoom(matchId, (snap && snap.seed) ? snap.seed : null, `corruption_airbag:${reason}`);
+
+  // Highlight in console
+  const RED = '\x1b[31m';
+  const RESET = '\x1b[0m';
+  console.warn(`${RED}[AIRBAG] ${isoNow()} matchId="${matchId}" reason=${inv.reason} expected=${inv.expectedTotalCards} found=${inv.foundTotalCards} missing=${inv.missingCount} dupes=${(inv.dupes||[]).length} unk=${(inv.unknownIds||[]).length} hash=${inv.snapshotHash}${RESET}`);
+  return true;
+}
 
 // P1: server-initiated snapshot requests (throttled)
 function requestSnapshotFromRoom(matchId, seed = null, reason = 'server_request') {
@@ -308,7 +351,65 @@ function requestSnapshotFromRoom(matchId, seed = null, reason = 'server_request'
 }
 setInterval(() => cleanupOldMatches(), 10 * 60 * 1000).unref();
 
+
 function isoNow() { return new Date().toISOString(); }
+
+// ------------------------------------------------------------
+// P1.2: Server-authoritative initial deal / shuffle / state
+// ------------------------------------------------------------
+function buildInitialState({ seed, shuffleMode = 'shared' }) {
+  // NOTE: Minimal, deterministic Klondike init.
+  // Cards are generated once, server-side. Clients must never deal.
+
+  // Suits: S,H,D,C  Ranks: 0(A)..12(K)
+  const suits = ['S', 'H', 'D', 'C'];
+  const ranks = [...Array(13).keys()];
+
+  const cards = [];
+  let deckCount = (shuffleMode === 'shared') ? 2 : 1; // shared=104, split=52 per player
+
+  for (let d = 0; d < deckCount; d++) {
+    for (const s of suits) {
+      for (const r of ranks) {
+        cards.push({ id: `${s}-${r}-${d}`, suit: s, rank: r });
+      }
+    }
+  }
+
+  // Deterministic shuffle (seeded Fisher-Yates)
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) h = (h ^ seed.charCodeAt(i)) * 16777619;
+  function rnd() {
+    h ^= h << 13; h ^= h >> 17; h ^= h << 5;
+    return (h >>> 0) / 4294967296;
+  }
+
+  for (let i = cards.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [cards[i], cards[j]] = [cards[j], cards[i]];
+  }
+
+  // Deal Klondike tableau (7 piles)
+  const tableaus = Array.from({ length: 7 }, () => []);
+  let idx = 0;
+  for (let col = 0; col < 7; col++) {
+    for (let row = 0; row <= col; row++) {
+      const c = cards[idx++];
+      tableaus[col].push({ ...c, faceUp: row === col });
+    }
+  }
+
+  const stock = cards.slice(idx).map(c => ({ ...c, faceUp: false }));
+
+  return {
+    seed,
+    shuffleMode,
+    foundations: { S: [], H: [], D: [], C: [] },
+    tableaus,
+    stock,
+    waste: []
+  };
+}
 
 // ------------------------------------------------------------
 // P0: State Fingerprint + Duplicate Detector (Debug / Triage)
@@ -701,6 +802,9 @@ ws.on('message', buf => {
         // This drives convergence even before full server-side rule validation exists.
         requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, 'after_move');
 
+        // P1.1: If invariant failed on the latest authoritative snapshot, push an emergency resync.
+        maybeTriggerCorruptionAirbag(matchId, 'after_move');
+
         // Maintain status log cadence as before
         if (now - lastGlobalStatusLog >= STATUS_INTERVAL_MS) {
           logStatus();
@@ -898,6 +1002,7 @@ ws.on('message', buf => {
           fromCid: ws.__cid || null,
           at: isoNow()
         });
+        maybeTriggerCorruptionAirbag(matchId, 'after_state_snapshot');
 
         // Use canonical snapshot envelope from matches.js (includes matchRev + snapshotHash)
         const canonical = getSnapshot(matchId) || getCachedSnapshot(matchId);
@@ -965,6 +1070,7 @@ ws.on('message', buf => {
           console.log(`[STATE] ${isoNow()} state_request THROTTLED matchId="${matchId}" fromCid=${fromCid || 'n/a'} (within ${RESYNC_THROTTLE_MS}ms)`);
         } else {
           console.log(`[STATE] ${isoNow()} state_request served-from-cache matchId="${matchId}" toCid=${fromCid || 'n/a'}`);
+          maybeTriggerCorruptionAirbag(matchId, 'on_state_request');
         }
 
         // M7/P1: If we already have a cached snapshot, send it immediately to the requester
@@ -1110,6 +1216,25 @@ ws.on('message', buf => {
         const nick = sys.nick || 'Player 1';
         try {
           const match = createMatchForClient(ws, nick, rooms);
+
+          // P1.2: Build initial server-authoritative state immediately
+          const initialState = buildInitialState({ seed: match.seed, shuffleMode: 'shared' });
+          setAuthoritativeState(match.matchId, initialState, {
+            seed: match.seed,
+            fromCid: 'srv',
+            at: isoNow()
+          });
+
+          // Broadcast initial snapshot to room
+          broadcastSysToRoom(match.matchId, {
+            type: 'state_snapshot',
+            matchId: match.matchId,
+            seed: match.seed,
+            at: isoNow(),
+            fromCid: 'srv',
+            state: initialState,
+            reason: 'server_initial_state'
+          });
 
           // WebSocket in ein dediziertes Match-Room verschieben
           leaveRoom(ws);
@@ -1275,6 +1400,47 @@ ws.on('message', buf => {
             // Neues Match für diesen Client anlegen (Host = Mensch)
             match = createMatchForClient(ws, effectiveNick, rooms);
 
+            // P1.2: Build initial server-authoritative state immediately
+            const initialState = buildInitialState({ seed: match.seed, shuffleMode: 'shared' });
+            setAuthoritativeState(match.matchId, initialState, {
+              seed: match.seed,
+              fromCid: 'srv',
+              at: isoNow()
+            });
+
+            // Broadcast initial snapshot to room
+            broadcastSysToRoom(match.matchId, {
+              type: 'state_snapshot',
+              matchId: match.matchId,
+              seed: match.seed,
+              at: isoNow(),
+              fromCid: 'srv',
+              state: initialState,
+              reason: 'server_initial_state'
+            });
+
+            // P1.2: Explicitly start the match (clients no longer self-start via local deal)
+            match.status = 'running';
+            match.lastActivityAt = Date.now();
+
+            // Signal clients to start rendering / gameplay
+            broadcastSysToRoom(match.matchId, {
+              type: 'reset',
+              matchId: match.matchId,
+              seed: match.seed,
+              at: isoNow(),
+              reason: 'server_initial_start'
+            });
+
+            // Inform host about running state
+            const publicAfterStart = getPublicMatchView(match);
+            sendSys(ws, {
+              type: 'match_update',
+              matchId: match.matchId,
+              status: match.status,
+              players: publicAfterStart.players
+            }, { matchId: match.matchId });
+
             // WebSocket in den Match-Room verschieben
             leaveRoom(ws);
             joinRoom(ws, match.matchId);
@@ -1309,6 +1475,11 @@ ws.on('message', buf => {
             if (serverbotOk && !serverbot.getServerBot(match.matchId)) {
               const bot = serverbot.createServerBot(match.matchId, difficulty || 'easy');
               console.log(`[BOT] serverbot registered matchId="${match.matchId}" botId="${bot.id}" difficulty=${bot.difficulty} nick="${bot.nick}"`);
+              // P1.2: Ensure bot starts only after authoritative initial state + reset
+              if (!getSnapshot(match.matchId) && !getCachedSnapshot(match.matchId)) {
+                console.warn('[BOT] auto-start skipped – no authoritative initial state yet');
+                return;
+              }
               // Start heartbeat immediately so ticks are generated even without explicit spawn_bot follow-up
               bot.__interval = setInterval(() => {
                 runServerBotTick(match.matchId);
@@ -1351,6 +1522,11 @@ ws.on('message', buf => {
         // Prüfen, ob bereits ein Bot für dieses Match existiert
         const existing = serverbot.getServerBot(matchId);
         if (existing) {
+          // P1.2: Ensure bot starts only after authoritative initial state + reset
+          if (!getSnapshot(matchId) && !getCachedSnapshot(matchId)) {
+            console.warn('[BOT] auto-start skipped – no authoritative initial state yet');
+            return;
+          }
           // Heartbeat sicherstellen
           if (!existing.__interval) {
             existing.__interval = setInterval(() => {
@@ -1418,6 +1594,11 @@ ws.on('message', buf => {
         }
 
         // Neuen Bot registrieren (Logik liegt im serverbot.js)
+        // P1.2: Bot must never start without an authoritative initial state
+        if (!getSnapshot(matchId) && !getCachedSnapshot(matchId)) {
+          console.warn('[BOT] start delayed – waiting for server initial state');
+          return;
+        }
         const bot = serverbot.createServerBot(matchId, difficulty);
         console.log(`[BOT] created botId="${bot.id}" matchId="${matchId}" difficulty=${bot.difficulty} nick="${bot.nick}"`);
 

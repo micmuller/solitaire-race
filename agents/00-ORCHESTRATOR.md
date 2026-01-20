@@ -1,5 +1,4 @@
-# 🧠 Orchestrator Agent
-# Project: Solitaire HighNoon
+# 🧠 Orchestrator Agent (Solitaire HighNoon)
 
 ## Language & Communication
 - All responses must be in German.
@@ -87,3 +86,4 @@ The Debug / Triage Agent must provide:
 ### Orchestrator usage rules
 - The Orchestrator must not request patches before triage is complete.
 - Only after hypotheses are narrowed down may implementation agents be engaged.
+
