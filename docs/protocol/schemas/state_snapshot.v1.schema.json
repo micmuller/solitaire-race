@@ -1,0 +1,95 @@
+
+
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solitaire-highnoon.local/schemas/state_snapshot.v1.schema.json",
+  "title": "Solitaire HighNoon STATE_SNAPSHOT v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "room", "seed", "owner", "foundations", "you", "opp", "moves", "over"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "at": { "type": "integer", "minimum": 0 },
+    "room": { "type": "string", "minLength": 1 },
+    "seed": { "type": "string", "minLength": 1 },
+    "owner": { "$ref": "#/$defs/Owner" },
+    "shuffleMode": { "$ref": "#/$defs/ShuffleMode" },
+    "foundations": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/FoundationState" }
+    },
+    "you": { "$ref": "#/$defs/SideState" },
+    "opp": { "$ref": "#/$defs/SideState" },
+    "moves": { "type": "integer", "minimum": 0 },
+    "over": { "type": "boolean" }
+  },
+  "$defs": {
+    "Owner": {
+      "type": "string",
+      "enum": ["Y", "O"]
+    },
+    "ShuffleMode": {
+      "type": "string",
+      "enum": ["shared", "split"],
+      "default": "shared"
+    },
+    "Suit": {
+      "type": "string",
+      "enum": ["♠", "♥", "♦", "♣"]
+    },
+    "Rank": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 12
+    },
+    "CardLite": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "suit", "rank", "up"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "suit": { "$ref": "#/$defs/Suit" },
+        "rank": { "$ref": "#/$defs/Rank" },
+        "up": { "type": "boolean" }
+      }
+    },
+    "FoundationState": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["suit", "cards"],
+      "properties": {
+        "suit": { "$ref": "#/$defs/Suit" },
+        "cards": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CardLite" }
+        }
+      }
+    },
+    "SideState": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["stock", "waste", "tableau"],
+      "properties": {
+        "stock": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CardLite" }
+        },
+        "waste": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CardLite" }
+        },
+        "tableau": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/CardLite" }
+          }
+        }
+      }
+    }
+  }
+}

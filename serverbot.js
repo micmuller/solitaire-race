@@ -7,21 +7,32 @@
 //   - Metrics-Berechnung
 //   - Entscheidungslogik & Move-Mapping
 // ================================================================
+
 // Changelog:
 // -v1.5: fix Foundation moves
 // -v1.6: improve Waste→Tableau moves
 // -v1.7: improve Room handling in server.js
 // ================================================================
+// -----------------------------------------------------------------------------
+// Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
+// -----------------------------------------------------------------------------
+// Date (YYYY-MM-DD) | Version  | Change
+// 2026-01-23        | v1.9     | Fix: De-dup guard for identical recent moves (prevents repeating same illegal move when state doesn't change); include cardId+sig in move sent log
+// 2026-01-23        | v1.8     | P1.3: Bot consumes server-authoritative STATE_SNAPSHOT from matches.js when client bot_state is missing; normalize v1/legacy schemas for decision logic
+// -----------------------------------------------------------------------------
 
 
 const botsByMatch = new Map();     // matchId -> bot
 const botStateByMatch = new Map(); // matchId -> letzter Snapshot-State
 
-const SERVERBOT_API_VERSION = 2;
+const SERVERBOT_API_VERSION = 3;
 
 const BOT_DEBUG = process.env.BOT_DEBUG === '1';
 
 const BOT_LOG_THROTTLE_MS = Number(process.env.BOT_LOG_THROTTLE_MS || 5000);
+
+// P1.3: Prefer server-authoritative snapshots (matches.js) if no client snapshot is available
+const { getSnapshot } = require('./matches');
 
 // Decision pacing (ms) – keep bot moves human-like
 const BOT_MOVE_DELAY_MIN_MS = Number(process.env.BOT_MOVE_DELAY_MIN_MS || 2000);
@@ -259,6 +270,40 @@ function computeBotMetrics(state) {
     }
   }
 
+  // v1 schema: { you:{stock,waste,tableau}, opp:{...}, foundations:[{suit,cards}*8] }
+  if (!metrics.foundationPiles && Array.isArray(state?.foundations)) {
+    metrics.foundationPiles = state.foundations.length;
+    for (const f of state.foundations) {
+      const cards = Array.isArray(f && f.cards) ? f.cards : [];
+      metrics.foundationCards += cards.length;
+    }
+  }
+
+  // legacy bot schema: { foundations:{S:[],H:[],D:[],C:[]}, tableaus:[...], stock:[...], waste:[...] }
+  if (!metrics.foundationCards && state?.foundations && typeof state.foundations === 'object' && !Array.isArray(state.foundations)) {
+    const keys = ['S', 'H', 'D', 'C'];
+    metrics.foundationPiles = 4;
+    for (const k of keys) {
+      const pile = state.foundations[k];
+      if (Array.isArray(pile)) metrics.foundationCards += pile.length;
+    }
+  }
+
+  if (!metrics.tableauPiles && Array.isArray(state?.tableaus)) {
+    metrics.tableauPiles = state.tableaus.length;
+    for (const pile of state.tableaus) {
+      if (Array.isArray(pile) && pile.length > 0) metrics.nonEmptyTableauPiles++;
+    }
+  }
+
+  if (!metrics.wasteSize && Array.isArray(state?.waste)) {
+    metrics.wasteSize = state.waste.length;
+  }
+
+  if (!metrics.stockCount && Array.isArray(state?.stock)) {
+    metrics.stockCount = state.stock.length;
+  }
+
   if (typeof state?.stockCount === 'number') {
     metrics.stockCount = state.stockCount;
   }
@@ -461,6 +506,89 @@ function isRedCard(c) {
   return s === '♥' || s === '♦';
 }
 
+// --- Normalization helpers for bot state (P1.3) ---
+function _cloneCardWithUp(c) {
+  if (!c || typeof c !== 'object') return c;
+  // Normalize face flag: prefer `up` but accept `faceUp`
+  if (typeof c.up === 'boolean') return c;
+  if (typeof c.faceUp === 'boolean') return { ...c, up: c.faceUp };
+  return c;
+}
+
+function _mapCardArray(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map(_cloneCardWithUp);
+}
+
+function _mapPileArray(piles) {
+  if (!Array.isArray(piles)) return [];
+  return piles.map(p => Array.isArray(p) ? _mapCardArray(p) : []);
+}
+
+function _legacySuitToSymbol(s) {
+  switch (s) {
+    case 'S': return '♠';
+    case 'H': return '♥';
+    case 'D': return '♦';
+    case 'C': return '♣';
+    default: return s;
+  }
+}
+
+// Convert any of our known snapshot states into a "detailed" bot-consumable shape:
+// { owner, tableauFull:{you,opp}, wasteFull:{you,opp}, foundations:[{suit,cards}...] , metrics? }
+function normalizeStateForBot(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  // Already detailed
+  if (raw.tableauFull && raw.wasteFull && Array.isArray(raw.foundations)) {
+    return raw;
+  }
+
+  // v1 schema from matches.js
+  if (raw.you && raw.opp && Array.isArray(raw.foundations)) {
+    return {
+      ...raw,
+      tableauFull: { you: _mapPileArray(raw.you.tableau), opp: _mapPileArray(raw.opp.tableau) },
+      wasteFull: { you: _mapCardArray(raw.you.waste), opp: _mapCardArray(raw.opp.waste) },
+      // normalize card flags in foundations too
+      foundations: raw.foundations.map(f => ({
+        ...f,
+        suit: _legacySuitToSymbol(f && f.suit),
+        cards: _mapCardArray((f && f.cards) || [])
+      }))
+    };
+  }
+
+  // legacy bot schema (single side)
+  if (Array.isArray(raw.tableaus) && Array.isArray(raw.stock) && Array.isArray(raw.waste) && raw.foundations && typeof raw.foundations === 'object') {
+    const foundations4 = ['S', 'H', 'D', 'C'].map(k => ({
+      suit: _legacySuitToSymbol(k),
+      cards: _mapCardArray(raw.foundations[k] || [])
+    }));
+
+    return {
+      ...raw,
+      owner: raw.owner || 'Y',
+      tableauFull: { you: _mapPileArray(raw.tableaus), opp: [] },
+      wasteFull: { you: _mapCardArray(raw.waste), opp: [] },
+      foundations: foundations4
+    };
+  }
+
+  // Unknown shape: return as-is (metrics-only mode)
+  return raw;
+}
+
+function tryGetServerSnapshotState(matchId) {
+  try {
+    const snap = getSnapshot(matchId);
+    return (snap && snap.state) ? snap.state : null;
+  } catch {
+    return null;
+  }
+}
+
 // --- Herzstück: ein Decision-Tick für einen Bot (exported as runBotDecisionTick) ---
 function runBotDecisionTick(matchId, deps) {
   const broadcastFn = deps && typeof deps.broadcastToRoom === 'function'
@@ -490,23 +618,48 @@ function runBotDecisionTick(matchId, deps) {
   const matchBot = getServerBot(matchId);
   if (!matchBot) return;
 
-  const state = botStateByMatch.get(matchId) || matchBot.state || null;
+  // Prefer client bot_state if present; otherwise consume server-authoritative snapshot.
+  const clientState = botStateByMatch.get(matchId) || matchBot.state || null;
+  const serverState = clientState ? null : tryGetServerSnapshotState(matchId);
+  const stateRaw = clientState || serverState || null;
+  const state = normalizeStateForBot(stateRaw);
+
+  // Keep bot cache in sync when we successfully read server snapshots
+  if (state && !clientState && serverState) {
+    matchBot.state = stateRaw; // store raw (for future normalization)
+    matchBot.lastSeenStateAt = Date.now();
+  }
 
   // Infer/carry rank scheme (0-based vs 1-based) so we don't mis-detect A/2.
   const inferredScheme = inferRankSchemeFromSnapshot(state);
   if (inferredScheme !== 'unknown') matchBot.rankScheme = inferredScheme;
   const scheme = matchBot.rankScheme || 'unknown';
 
-  // snapshot.owner is the "local" player (human host on this device)
+  // snapshot.owner is the "local" player on the producing device.
+  // For client-produced snapshots, local == human, so bot is the opponent.
+  // For server-consumed legacy single-side snapshots (TEMP), there is only one side array
+  // (tableauFull.you / wasteFull.you). In that case, treat that single side as the bot side.
   const humanOwner = (state && typeof state.owner === 'string' && state.owner) ? state.owner : 'Y';
   const botOwner   = humanOwner === 'Y' ? 'O' : 'Y';
 
-  // In the client snapshot, `owner` denotes the local/human owner on that device.
-  // The bot is the opponent of that local owner.
-  const botSideKey = botOwner === 'O' ? 'opp' : 'you';
+  const isLegacySingleSide =
+    hasDetailedState(state) &&
+    !(state && state.you && state.opp) && // not v1
+    state.tableauFull && Array.isArray(state.tableauFull.you) && state.tableauFull.you.length > 0 &&
+    state.tableauFull && Array.isArray(state.tableauFull.opp) && state.tableauFull.opp.length === 0;
+
+  // Default (client snapshots): bot plays the opposite side arrays
+  let botSideKey = (botOwner === 'O') ? 'opp' : 'you';
+
+  // Legacy single-side: only "you" arrays exist, so bot must play "you"
+  if (isLegacySingleSide) {
+    botSideKey = 'you';
+  }
 
   // Prefer authoritative counts from detailed arrays (bot side), then fall back to metrics.
   const botSide = (state && state[botSideKey] && typeof state[botSideKey] === 'object') ? state[botSideKey] : null;
+  // For legacy single-side snapshots, botSide arrays are in tableauFull/wasteFull, not in state[botSideKey].
+  // Stock/Waste counts may still be derived from metrics in that case.
 
   const botStockCount = (botSide && Array.isArray(botSide.stock))
     ? botSide.stock.length
@@ -541,27 +694,44 @@ function runBotDecisionTick(matchId, deps) {
         `| botSide=${botSideKey} botStock=${botStockCount ?? 'n/a'} botWaste=${botWasteCount ?? 'n/a'}`
       );
     } else {
-      log(`[BOT] metrics matchId="${matchId}" (noch kein Snapshot vom Client)`);
+      log(`[BOT] metrics matchId="${matchId}" (noch kein Snapshot verfügbar)`); 
     }
   }
 
   function sendMovePayload(movePayload, kindLabel, debugInfo) {
-    const envelope = JSON.stringify({ move: movePayload, from: matchBot.id });
-    broadcastEnvelope(envelope);
+// De-dup guard: if we already attempted this exact move very recently, skip.
+// This avoids repeating the same illegal move when the state doesn't actually change.
+const sig = `${movePayload.kind}:${movePayload.cardId || ''}:${(movePayload.from && movePayload.from.uiIndex) ?? ''}->${(movePayload.to && (movePayload.to.uiIndex ?? movePayload.to.f)) ?? ''}`;
 
-    try {
-      const sig = `${movePayload.kind}:${movePayload.cardId || ''}:${(movePayload.from && movePayload.from.uiIndex) ?? ''}->${(movePayload.to && (movePayload.to.uiIndex ?? movePayload.to.f)) ?? ''}`;
-      const now = Date.now();
-      if (!Array.isArray(matchBot.recentMoveSigs)) matchBot.recentMoveSigs = [];
-      matchBot.recentMoveSigs.push({ sig, at: now });
-      matchBot.recentMoveSigs = matchBot.recentMoveSigs.filter(x => x && (now - x.at) < 20000).slice(-10);
-    } catch {}
+try {
+  const now = Date.now();
+  if (!Array.isArray(matchBot.recentMoveSigs)) matchBot.recentMoveSigs = [];
+  const seen = matchBot.recentMoveSigs.some(x => x && x.sig === sig && (now - x.at) < 12000);
+  if (seen) {
+    if (BOT_DEBUG) {
+      log(`[BOT] move skipped (duplicate) botId="${matchBot.id}" matchId="${matchId}" sig="${sig}"`);
+    }
+    // Push next action a bit so we don't spam attempts
+    matchBot.nextActionAt = now + randInt(1200, 2500);
+    return;
+  }
+} catch {}
+
+const envelope = JSON.stringify({ move: movePayload, from: matchBot.id });
+broadcastEnvelope(envelope);
+
+try {
+  const now = Date.now();
+  if (!Array.isArray(matchBot.recentMoveSigs)) matchBot.recentMoveSigs = [];
+  matchBot.recentMoveSigs.push({ sig, at: now });
+  matchBot.recentMoveSigs = matchBot.recentMoveSigs.filter(x => x && (now - x.at) < 30000).slice(-12);
+} catch {}
 
     matchBot.lastMoveAt = Date.now();
     scheduleNextAction(matchBot);
 
     log(
-      `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="${kindLabel}"` +
+      `[BOT] move sent botId="${matchBot.id}" matchId="${matchId}" kind="${kindLabel}" cardId="${movePayload.cardId || ''}" sig="${sig}"` +
       (debugInfo ? ` details=${debugInfo}` : '')
     );
   }

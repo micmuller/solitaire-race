@@ -33,6 +33,20 @@
 // -v2.4.3: P1.1 Invariant-Validation + Corruption Guardrails (server-side, red console errors)
 // -v2.4.5: P1.2 Initial Deal + Shuffle Server-Authoritative
 // ================================================================
+// -----------------------------------------------------------------------------
+// Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
+// -----------------------------------------------------------------------------
+// Date (YYYY-MM-DD) | Version  | Change
+// 2026-01-23        | v2.4.10  | Guardrails: route serverbot moves through M7 pipeline (moveId+matchRev+echo), add server-level duplicate bot-move signature suppression
+// 2026-01-23        | v2.4.9   | P1.3 wiring: snapshotFromCidForRecipient() to ensure fromCid==selfCid for server snapshots
+// 2026-01-23        | v2.4.6   | P1.3 wiring: server-authoritative initial STATE_SNAPSHOT via matches.ensureInitialSnapshot + per-player getSnapshotForPlayer; stop legacy snapshot recycling
+// 2026-01-23        | v2.4.5   | Baseline: P1.2 + M7 Drift Hardening (pre P1.3 wiring)
+//                  |          | Hinweis: Neue Einträge oben anfügen (neueste zuerst).
+// -----------------------------------------------------------------------------
+//
+// Hinweis: Die lange "-vX.Y.Z" Liste oben gilt als historisch. Bitte neue Einträge nur noch hier pflegen.
+// -----------------------------------------------------------------------------
+
 
 const http   = require('node:http');
 const https  = require('node:https');
@@ -44,7 +58,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.5';
+const VERSION = '2.4.10';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -120,7 +134,7 @@ function runServerBotTick(matchId) {
 
       try {
         const msg = (typeof payload === 'string') ? payload : JSON.stringify(payload);
-        broadcastToRoom(room, msg);
+        ingestServerGeneratedMove(room, msg);
       } catch (e) {
         // If payload cannot be stringified, do nothing.
       }
@@ -140,6 +154,56 @@ function runServerBotTick(matchId) {
   } catch (e) {
     console.error('[BOT] ServerBot tick failed:', e);
   }
+}
+
+function ingestServerGeneratedMove(matchId, payload) {
+  // payload can be an object or JSON string. Expected: { move: {...}, from: 'bot-...' , meta?: {...} }
+  if (!matchId || matchId === 'lobby' || matchId === 'default') return;
+
+  let data = payload;
+  try {
+    if (typeof payload === 'string') data = JSON.parse(payload);
+  } catch {
+    return;
+  }
+
+  if (!data || typeof data !== 'object' || !data.move) return;
+
+  const sig = computeMoveSig(data.move);
+  if (sig && seenServerMoveSig(matchId, sig)) {
+    console.log(`[BOT] ${isoNow()} duplicate move suppressed matchId="${matchId}" sig="${sig}" from=${data.from || 'n/a'}`);
+    return;
+  }
+
+  // Ensure meta exists and is additive
+  if (!data.meta) data.meta = {};
+  data.meta.matchId = data.meta.matchId || matchId;
+
+  // Always attach a moveId for server-generated moves so M7 de-dup works.
+  if (!data.meta.moveId && !data.meta.id) {
+    const rid = Math.random().toString(36).slice(2, 8);
+    data.meta.moveId = `srvbot-${matchId}-${Date.now()}-${rid}`;
+  }
+
+  const moveId = String(data.meta.moveId || data.meta.id || '');
+  if (moveId) {
+    const isDup = rememberMoveId(matchId, moveId);
+    if (isDup) {
+      console.log(`[M7] ${isoNow()} DUP server-move ignored matchId="${matchId}" moveId=${moveId}`);
+      return;
+    }
+  }
+
+  const rev = bumpMatchRev(matchId);
+  if (rev != null) data.meta.matchRev = rev;
+
+  const out = JSON.stringify(data);
+  // Server/bot moves must be echoed to all (including host) to keep clients deterministic.
+  broadcastToRoom(matchId, out, null);
+
+  // Drive convergence
+  requestSnapshotFromRoom(matchId, data.meta.seed || null, 'after_bot_move');
+  maybeTriggerCorruptionAirbag(matchId, 'after_bot_move');
 }
 
 // Stop bot heartbeat + unregister bot for a match (best-effort).
@@ -278,6 +342,8 @@ const {
   // P1 helpers (server-authoritative snapshot access)
   getSnapshot,
   setAuthoritativeState,
+  ensureInitialSnapshot,
+  getSnapshotForPlayer,
   getLastInvariant
 } = require('./matches');
 const STATUS_INTERVAL_MS = 30_000;
@@ -289,6 +355,35 @@ const lastHelloTsByClient = new WeakMap();
 const RESYNC_THROTTLE_MS = 1500;
 const lastStateRequestByKey = new Map(); // key = `${matchId}|${fromCid}` -> ts
 const lastSnapshotSentToKey = new Map(); // key = `${matchId}|${toCid}`   -> ts
+
+// Bot/server-move de-dup (server-side): prevents repeated identical bot moves when state doesn't change.
+const recentServerMoveSigsByMatch = new Map(); // matchId -> [{sig, at}]
+const SERVER_MOVE_SIG_WINDOW_MS = 20_000;
+
+function computeMoveSig(move) {
+  try {
+    const kind = String(move?.kind || '');
+    const cardId = String(move?.cardId || '');
+    const fromIdx = (move?.from && (move.from.uiIndex ?? move.from.index ?? move.from.i)) ?? '';
+    const toIdx = (move?.to && (move.to.uiIndex ?? move.to.index ?? move.to.i ?? move.to.f)) ?? '';
+    return `${kind}:${cardId}:${fromIdx}->${toIdx}`;
+  } catch {
+    return null;
+  }
+}
+
+function seenServerMoveSig(matchId, sig) {
+  if (!matchId || !sig) return false;
+  const now = Date.now();
+  const arr = recentServerMoveSigsByMatch.get(matchId) || [];
+  const seen = arr.some(x => x && x.sig === sig && (now - x.at) <= SERVER_MOVE_SIG_WINDOW_MS);
+  // prune + keep small
+  const next = arr.filter(x => x && (now - x.at) <= (SERVER_MOVE_SIG_WINDOW_MS * 3)).slice(-24);
+  if (!seen) next.push({ sig, at: now });
+  recentServerMoveSigsByMatch.set(matchId, next);
+  return seen;
+}
+
 
 // P1.1: Corruption airbag (when invariant fails, push canonical snapshot + request resync)
 const CORRUPTION_AIRBAG_THROTTLE_MS = 2000;
@@ -307,17 +402,7 @@ function maybeTriggerCorruptionAirbag(matchId, reason = 'invariant_failed') {
   // Prefer canonical cached snapshot
   const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
   if (snap && snap.state) {
-    broadcastSysToRoom(matchId, {
-      type: 'state_snapshot',
-      matchId,
-      seed: snap.seed || null,
-      at: isoNow(),
-      fromCid: snap.fromCid || 'srv',
-      matchRev: snap.matchRev || null,
-      snapshotHash: snap.snapshotHash || null,
-      state: snap.state,
-      reason: `corruption_airbag:${reason}`
-    });
+    broadcastServerSnapshotToRoom(matchId, snap, `corruption_airbag:${reason}`);
   }
 
   // Always request a fresh snapshot afterwards (host may have newer truth)
@@ -354,8 +439,48 @@ setInterval(() => cleanupOldMatches(), 10 * 60 * 1000).unref();
 
 function isoNow() { return new Date().toISOString(); }
 
+function snapshotFromCidForRecipient(ws, snap) {
+  // iOS swaps you/opp when fromCid != selfCid. Server snapshots must not trigger swaps.
+  const recipientCid = ws && ws.__cid ? ws.__cid : null;
+  const src = (snap && typeof snap.fromCid === 'string') ? snap.fromCid : null;
+
+  // If we don't know the recipient cid, keep non-srv fromCid or omit.
+  if (!recipientCid) return (src && src !== 'srv') ? src : null;
+
+  // For server snapshots (src missing or 'srv'), force recipient cid.
+  if (!src || src === 'srv') return recipientCid;
+
+  // Otherwise preserve explicit per-player fromCid if set.
+  return src;
+}
+
+function broadcastServerSnapshotToRoom(room, snapObj, reason = 'server_snapshot') {
+  // Send a server-originated snapshot per recipient so each iOS client gets fromCid==selfCid.
+  const set = rooms.get(room);
+  if (!set || !snapObj || !snapObj.state) return;
+
+  for (const client of set) {
+    if (client.readyState !== client.OPEN) continue;
+
+    sendSys(client, {
+      type: 'state_snapshot',
+      matchId: room,
+      seed: snapObj.seed || null,
+      at: isoNow(),
+      fromCid: snapshotFromCidForRecipient(client, snapObj) || (client.__cid || null),
+      matchRev: snapObj.matchRev || null,
+      snapshotHash: snapObj.snapshotHash || null,
+      state: snapObj.state,
+      reason
+    }, { matchId: room });
+  }
+}
+
 // ------------------------------------------------------------
-// P1.2: Server-authoritative initial deal / shuffle / state
+// DEPRECATED (P1.2): Legacy server initial state builder
+// NOTE: As of P1.3, server-authoritative initial STATE_SNAPSHOT is created in matches.js
+// via ensureInitialSnapshot() and delivered per-player via getSnapshotForPlayer().
+// Keep this function for now to avoid large diffs; do not use it for new flows.
 // ------------------------------------------------------------
 function buildInitialState({ seed, shuffleMode = 'shared' }) {
   // NOTE: Minimal, deterministic Klondike init.
@@ -921,13 +1046,22 @@ ws.on('message', buf => {
               hostNick: publicMatch.players[0]?.nick || 'Host'
             }, { matchId: match.matchId });
 
-            // Request a snapshot from the room after a player joins (host/client should respond)
-            broadcastSysToRoom(match.matchId, {
-              type: 'state_request',
-              matchId: match.matchId,
-              seed: match.seed,
-              at: isoNow()
-            });
+            // P1.3: Ensure authoritative snapshot exists and serve a per-player view to the joiner
+            ensureInitialSnapshot(match.matchId, { seed: match.seed, fromCid: 'srv', shuffleMode: 'shared' });
+            const joinerSnap = getSnapshotForPlayer(match.matchId, ws.__playerId) || getSnapshot(match.matchId) || getCachedSnapshot(match.matchId);
+            if (joinerSnap && joinerSnap.state) {
+              sendSys(ws, {
+                type: 'state_snapshot',
+                matchId: match.matchId,
+                seed: joinerSnap.seed || match.seed,
+                at: isoNow(),
+                fromCid: snapshotFromCidForRecipient(ws, joinerSnap) || (ws.__cid || null),
+                matchRev: joinerSnap.matchRev || null,
+                snapshotHash: joinerSnap.snapshotHash || null,
+                state: joinerSnap.state,
+                reason: 'server_initial_state_on_auto_join'
+              }, { matchId: match.matchId });
+            }
 
             // match_update to all players in the match room
             broadcastSysToRoom(match.matchId, {
@@ -947,13 +1081,6 @@ ws.on('message', buf => {
                 type: 'reset',
                 matchId: match.matchId,
                 seed: match.seed
-              });
-              // Ask clients to emit a full state snapshot after reset (for resync / multi-card moves)
-              broadcastSysToRoom(match.matchId, {
-                type: 'state_request',
-                matchId: match.matchId,
-                seed: match.seed,
-                at: isoNow()
               });
               match.status = 'running';
               match.lastActivityAt = Date.now();
@@ -987,7 +1114,13 @@ ws.on('message', buf => {
           // Missing required fields -> ignore
           return;
         }
-
+        // P1.3: If we already have a server-authoritative snapshot, DO NOT overwrite it
+        // with client-supplied snapshots (prevents legacy recycling + corruption loops).
+        const existingAuthoritative = getSnapshot(matchId) || getCachedSnapshot(matchId);
+        if (existingAuthoritative && existingAuthoritative.state && existingAuthoritative.fromCid === 'srv') {
+          console.log(`[STATE] ${isoNow()} client snapshot ignored (authoritative exists) matchId="${matchId}" fromCid=${ws.__cid || 'n/a'}`);
+          return;
+        }
         // P0 Fingerprint (RX): detect duplicates as early as possible (before caching/broadcast)
         logFingerprint('RX', matchId, sys.seed || snap.seed || null, snap, {
           fromCid: ws.__cid || null,
@@ -996,7 +1129,6 @@ ws.on('message', buf => {
 
         // P1: accept snapshot as the server's canonical cached snapshot (compat mode).
         // IMPORTANT: cacheSnapshot/matches.js no longer bumps matchRev; we bump here exactly once.
-        const snapshotRev = bumpMatchRev(matchId);
         setAuthoritativeState(matchId, snap, {
           seed: sys.seed || snap.seed || null,
           fromCid: ws.__cid || null,
@@ -1007,7 +1139,7 @@ ws.on('message', buf => {
         // Use canonical snapshot envelope from matches.js (includes matchRev + snapshotHash)
         const canonical = getSnapshot(matchId) || getCachedSnapshot(matchId);
         const canonicalState = (canonical && canonical.state) ? canonical.state : snap;
-        const matchRevToSend = (canonical && canonical.matchRev) ? canonical.matchRev : snapshotRev;
+        const matchRevToSend = (canonical && canonical.matchRev) ? canonical.matchRev : null;
 
         // P0 Fingerprint (TX): log the state that will be broadcast
         logFingerprint('TX', matchId, (canonical && canonical.seed) ? canonical.seed : (sys.seed || snap.seed || null), canonicalState, {
@@ -1050,9 +1182,15 @@ ws.on('message', buf => {
         const lastReq = lastStateRequestByKey.get(key) || 0;
         const throttled = (nowMs - lastReq) < RESYNC_THROTTLE_MS;
 
-        // P1: If we already have a canonical snapshot, prefer serving it directly instead of storming the room.
-        // We still forward the request when we DON'T have a snapshot yet.
-        const haveSnap = !!(getSnapshot(matchId) || getCachedSnapshot(matchId));
+        // P1.3: Ensure an authoritative snapshot exists (server-side initial deal).
+        // If the last invariant indicates corruption, regenerate (do not keep serving corrupt cache).
+        const inv = getLastInvariant ? getLastInvariant(matchId) : null;
+        if (inv && inv.ok === false) {
+          ensureInitialSnapshot(matchId, { seed: sys.seed || null, fromCid: 'srv', shuffleMode: 'shared' });
+        }
+
+        const ensured = ensureInitialSnapshot(matchId, { seed: sys.seed || null, fromCid: 'srv', shuffleMode: 'shared' });
+        const haveSnap = !!(ensured && ensured.state) || !!(getSnapshot(matchId) || getCachedSnapshot(matchId));
 
         if (!throttled && !haveSnap) {
           lastStateRequestByKey.set(key, nowMs);
@@ -1073,10 +1211,8 @@ ws.on('message', buf => {
           maybeTriggerCorruptionAirbag(matchId, 'on_state_request');
         }
 
-        // M7/P1: If we already have a cached snapshot, send it immediately to the requester
-        // to reduce drift windows (clients still may respond with a newer snapshot).
-        // Also throttle snapshot-to-requester to avoid flooding.
-        const lastSnap = getSnapshot(matchId) || getCachedSnapshot(matchId);
+        const pid = ws.__playerId || null;
+        const lastSnap = (pid ? getSnapshotForPlayer(matchId, pid) : null) || (getSnapshot(matchId) || getCachedSnapshot(matchId));
         if (lastSnap) {
           const snapKey = `${matchId}|${fromCid || 'n/a'}`;
           const lastSent = lastSnapshotSentToKey.get(snapKey) || 0;
@@ -1090,7 +1226,7 @@ ws.on('message', buf => {
               matchId,
               seed: lastSnap.seed || null,
               at: isoNow(),
-              fromCid: lastSnap.fromCid || null,
+              fromCid: snapshotFromCidForRecipient(ws, lastSnap) || (ws.__cid || null),
               matchRev: lastSnap.matchRev || null,
               snapshotHash: lastSnap.snapshotHash || null,
               state: lastSnap.state
@@ -1217,24 +1353,8 @@ ws.on('message', buf => {
         try {
           const match = createMatchForClient(ws, nick, rooms);
 
-          // P1.2: Build initial server-authoritative state immediately
-          const initialState = buildInitialState({ seed: match.seed, shuffleMode: 'shared' });
-          setAuthoritativeState(match.matchId, initialState, {
-            seed: match.seed,
-            fromCid: 'srv',
-            at: isoNow()
-          });
-
-          // Broadcast initial snapshot to room
-          broadcastSysToRoom(match.matchId, {
-            type: 'state_snapshot',
-            matchId: match.matchId,
-            seed: match.seed,
-            at: isoNow(),
-            fromCid: 'srv',
-            state: initialState,
-            reason: 'server_initial_state'
-          });
+          // P1.3: Ensure authoritative initial snapshot exists server-side (deterministic deal)
+          ensureInitialSnapshot(match.matchId, { seed: match.seed, fromCid: 'srv', shuffleMode: 'shared' });
 
           // WebSocket in ein dediziertes Match-Room verschieben
           leaveRoom(ws);
@@ -1254,13 +1374,21 @@ ws.on('message', buf => {
             match: publicMatch
           }, { matchId: match.matchId });
 
-          // Request an initial snapshot from the host (helps late-joining clients resync)
-          sendSys(ws, {
-            type: 'state_request',
-            matchId: match.matchId,
-            seed: match.seed,
-            at: isoNow()
-          }, { matchId: match.matchId });
+          // Send initial snapshot to host (owner="Y")
+          const hostSnap = getSnapshotForPlayer(match.matchId, 'p1') || getSnapshot(match.matchId) || getCachedSnapshot(match.matchId);
+          if (hostSnap && hostSnap.state) {
+            sendSys(ws, {
+              type: 'state_snapshot',
+              matchId: match.matchId,
+              seed: hostSnap.seed || match.seed,
+              at: isoNow(),
+              fromCid: snapshotFromCidForRecipient(ws, hostSnap) || (ws.__cid || null),
+              matchRev: hostSnap.matchRev || null,
+              snapshotHash: hostSnap.snapshotHash || null,
+              state: hostSnap.state,
+              reason: 'server_initial_state'
+            }, { matchId: match.matchId });
+          }
 
           // Erstes match_update nur an Host (noch keine weiteren Spieler im Raum)
           sendSys(ws, {
@@ -1319,13 +1447,22 @@ ws.on('message', buf => {
             hostNick: publicMatch.players[0]?.nick || 'Host'
           }, { matchId: match.matchId });
 
-          // Request a snapshot from the room after a player joins (host/client should respond)
-          broadcastSysToRoom(match.matchId, {
-            type: 'state_request',
-            matchId: match.matchId,
-            seed: match.seed,
-            at: isoNow()
-          });
+          // P1.3: Ensure authoritative snapshot exists and serve a per-player view to the joiner
+          ensureInitialSnapshot(match.matchId, { seed: match.seed, fromCid: 'srv', shuffleMode: 'shared' });
+          const joinerSnap = getSnapshotForPlayer(match.matchId, ws.__playerId) || getSnapshot(match.matchId) || getCachedSnapshot(match.matchId);
+          if (joinerSnap && joinerSnap.state) {
+            sendSys(ws, {
+              type: 'state_snapshot',
+              matchId: match.matchId,
+              seed: joinerSnap.seed || match.seed,
+              at: isoNow(),
+              fromCid: snapshotFromCidForRecipient(ws, joinerSnap) || (ws.__cid || null),
+              matchRev: joinerSnap.matchRev || null,
+              snapshotHash: joinerSnap.snapshotHash || null,
+              state: joinerSnap.state,
+              reason: 'server_initial_state_on_join'
+            }, { matchId: match.matchId });
+          }
 
           // match_update an alle Spieler im Match-Room
           broadcastSysToRoom(match.matchId, {
@@ -1346,13 +1483,24 @@ ws.on('message', buf => {
               matchId: match.matchId,
               seed: match.seed
             });
-            // Ask clients to emit a full state snapshot after reset (for resync / multi-card moves)
-            broadcastSysToRoom(match.matchId, {
-              type: 'state_request',
+
+          // P1.3: Ensure authoritative snapshot exists and serve a per-player view to the joiner
+          ensureInitialSnapshot(match.matchId, { seed: match.seed, fromCid: 'srv', shuffleMode: 'shared' });
+          const joinerSnap = getSnapshotForPlayer(match.matchId, ws.__playerId) || getSnapshot(match.matchId) || getCachedSnapshot(match.matchId);
+          if (joinerSnap && joinerSnap.state) {
+            sendSys(ws, {
+              type: 'state_snapshot',
               matchId: match.matchId,
-              seed: match.seed,
-              at: isoNow()
-            });
+              seed: joinerSnap.seed || match.seed,
+              at: isoNow(),
+              fromCid: snapshotFromCidForRecipient(ws, joinerSnap) || (ws.__cid || null),
+              matchRev: joinerSnap.matchRev || null,
+              snapshotHash: joinerSnap.snapshotHash || null,
+              state: joinerSnap.state,
+              reason: 'server_initial_state_on_join'
+            }, { matchId: match.matchId });
+          }
+
             match.status = 'running';
             match.lastActivityAt = Date.now();
             console.log(`[MATCH] auto-start matchId="${match.matchId}" seed="${match.seed}"`);
@@ -1400,30 +1548,15 @@ ws.on('message', buf => {
             // Neues Match für diesen Client anlegen (Host = Mensch)
             match = createMatchForClient(ws, effectiveNick, rooms);
 
-            // P1.2: Build initial server-authoritative state immediately
-            const initialState = buildInitialState({ seed: match.seed, shuffleMode: 'shared' });
-            setAuthoritativeState(match.matchId, initialState, {
-              seed: match.seed,
-              fromCid: 'srv',
-              at: isoNow()
-            });
+            // P1.3: Ensure authoritative initial snapshot exists for bot matches
+            // (matches.js liefert dafür TEMP legacy 52-card format sobald isBot present ist)
+            ensureInitialSnapshot(match.matchId, { seed: match.seed, fromCid: 'srv', shuffleMode: 'shared' });
 
-            // Broadcast initial snapshot to room
-            broadcastSysToRoom(match.matchId, {
-              type: 'state_snapshot',
-              matchId: match.matchId,
-              seed: match.seed,
-              at: isoNow(),
-              fromCid: 'srv',
-              state: initialState,
-              reason: 'server_initial_state'
-            });
-
-            // P1.2: Explicitly start the match (clients no longer self-start via local deal)
+            // Match starten
             match.status = 'running';
             match.lastActivityAt = Date.now();
 
-            // Signal clients to start rendering / gameplay
+            // Reset an Room (Clients rendern danach)
             broadcastSysToRoom(match.matchId, {
               type: 'reset',
               matchId: match.matchId,
@@ -1432,7 +1565,7 @@ ws.on('message', buf => {
               reason: 'server_initial_start'
             });
 
-            // Inform host about running state
+            // Host über running informieren
             const publicAfterStart = getPublicMatchView(match);
             sendSys(ws, {
               type: 'match_update',
@@ -1459,6 +1592,26 @@ ws.on('message', buf => {
               hostNick: effectiveNick,
               match: publicMatch
             }, { matchId: match.matchId });
+
+            // P1.3: Send initial snapshot to host right away (owner="Y")
+            const hostSnap =
+              getSnapshotForPlayer(match.matchId, 'p1') ||
+              getSnapshot(match.matchId) ||
+              getCachedSnapshot(match.matchId);
+
+            if (hostSnap && hostSnap.state) {
+              sendSys(ws, {
+                type: 'state_snapshot',
+                matchId: match.matchId,
+                seed: hostSnap.seed || match.seed,
+                at: isoNow(),
+                fromCid: snapshotFromCidForRecipient(ws, hostSnap) || (ws.__cid || null),
+                matchRev: hostSnap.matchRev || null,
+                snapshotHash: hostSnap.snapshotHash || null,
+                state: hostSnap.state,
+                reason: 'server_initial_state_bot'
+              }, { matchId: match.matchId });
+            }
 
             // Erstes match_update nur an Host
             sendSys(ws, {
