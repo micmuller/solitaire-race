@@ -37,6 +37,7 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-01-25        | v2.4.11  | P1: Gate server-generated (bot) moves through matches.validateAndApplyMove; reject illegal moves server-side (no broadcast), keep protocol stable
 // 2026-01-23        | v2.4.10  | Guardrails: route serverbot moves through M7 pipeline (moveId+matchRev+echo), add server-level duplicate bot-move signature suppression
 // 2026-01-23        | v2.4.9   | P1.3 wiring: snapshotFromCidForRecipient() to ensure fromCid==selfCid for server snapshots
 // 2026-01-23        | v2.4.6   | P1.3 wiring: server-authoritative initial STATE_SNAPSHOT via matches.ensureInitialSnapshot + per-player getSnapshotForPlayer; stop legacy snapshot recycling
@@ -58,7 +59,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.10';
+const VERSION = '2.4.11';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -185,6 +186,75 @@ function ingestServerGeneratedMove(matchId, payload) {
     data.meta.moveId = `srvbot-${matchId}-${Date.now()}-${rid}`;
   }
 
+  // ----------------------------------------------------------
+  // P1: Server-authoritative validation/apply for server-generated moves (bot)
+  // If invalid, DO NOT broadcast. This prevents illegal bot moves from ever reaching clients.
+  // Protocol remains unchanged (we only log on reject).
+  // ----------------------------------------------------------
+  try {
+    if (typeof validateAndApplyMove === 'function') {
+      const gate = validateAndApplyMove(matchId, data.move, data.from || 'bot', {
+        seed: data.meta.seed || null,
+        fromCid: 'srv',
+        at: isoNow()
+      });
+      if (!gate || gate.ok !== true) {
+        const reason = (gate && gate.reason) ? gate.reason : 'invalid_move';
+
+        // Extra debug for bot: show what the authoritative snapshot contains at the referenced source pile.
+        // This helps diagnose "bad_from" / "bad_card" (usually index mapping or cardId shape mismatch).
+        try {
+          if (reason === 'bad_from' || reason === 'bad_card') {
+            const auth = getSnapshot(matchId) || getCachedSnapshot(matchId);
+            const st = auth && auth.state ? auth.state : null;
+            const mv = data.move || {};
+
+            const fromIdx = (mv.from && (mv.from.uiIndex ?? mv.from.index ?? mv.from.i)) ?? (mv.fromIndex ?? mv.fromIdx ?? mv.from) ?? null;
+            const toIdx = (mv.to && (mv.to.uiIndex ?? mv.to.index ?? mv.to.i)) ?? (mv.toIndex ?? mv.toIdx ?? mv.to) ?? null;
+            const cardId = mv.cardId || mv.id || null;
+
+            // Determine side based on cardId prefix.
+            const sideKey = (typeof cardId === 'string' && cardId.startsWith('Y-')) ? 'you' : 'opp';
+            const side = st && st[sideKey];
+            const tableau = side && Array.isArray(side.tableau) ? side.tableau : null;
+
+            let pileLen = null;
+            let top = null;
+            if (tableau && fromIdx != null) {
+              const fi = Number(fromIdx);
+              if (Number.isFinite(fi) && fi >= 0 && fi < tableau.length) {
+                const pile = tableau[fi];
+                if (Array.isArray(pile)) {
+                  pileLen = pile.length;
+                  const t = pile.length ? pile[pile.length - 1] : null;
+                  if (t && typeof t === 'object') {
+                    top = {
+                      id: t.cardId || t.id || t.code || null,
+                      rank: t.rank ?? null,
+                      suit: t.suit ?? null,
+                      up: (t.up ?? t.faceUp ?? null)
+                    };
+                  } else if (typeof t === 'string') {
+                    top = { id: t };
+                  }
+                }
+              }
+            }
+
+            console.warn(`[BOT_REJECT_DBG] ${isoNow()} matchId="${matchId}" reason=${reason} kind=${mv.kind || 'n/a'} side=${sideKey} from=${fromIdx} to=${toIdx} cardId=${cardId || '-'} pileLen=${pileLen ?? 'n/a'} top=${top ? JSON.stringify(top) : 'n/a'}`);
+          }
+        } catch {}
+
+        console.warn(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || 'bot'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${data.meta.moveId || '-'} sig=${sig || '-'}`);
+        // Drive convergence even on reject
+        requestSnapshotFromRoom(matchId, data.meta.seed || null, `move_reject:${reason}`);
+        return; // IMPORTANT: do not broadcast rejected server-generated moves
+      }
+    }
+  } catch (e) {
+    console.error('[P1] validateAndApplyMove gate failed (falling back to broadcast)', e);
+  }
+
   const moveId = String(data.meta.moveId || data.meta.id || '');
   if (moveId) {
     const isDup = rememberMoveId(matchId, moveId);
@@ -194,11 +264,11 @@ function ingestServerGeneratedMove(matchId, payload) {
     }
   }
 
-  const rev = bumpMatchRev(matchId);
-  if (rev != null) data.meta.matchRev = rev;
+
 
   const out = JSON.stringify(data);
   // Server/bot moves must be echoed to all (including host) to keep clients deterministic.
+    // NOTE: authoritative state/rev already applied in matches.validateAndApplyMove above (when available).
   broadcastToRoom(matchId, out, null);
 
   // Drive convergence
@@ -344,7 +414,8 @@ const {
   setAuthoritativeState,
   ensureInitialSnapshot,
   getSnapshotForPlayer,
-  getLastInvariant
+  getLastInvariant,
+  validateAndApplyMove
 } = require('./matches');
 const STATUS_INTERVAL_MS = 30_000;
 const HELLO_SUPPRESS_MS  = 15_000;
@@ -355,6 +426,38 @@ const lastHelloTsByClient = new WeakMap();
 const RESYNC_THROTTLE_MS = 1500;
 const lastStateRequestByKey = new Map(); // key = `${matchId}|${fromCid}` -> ts
 const lastSnapshotSentToKey = new Map(); // key = `${matchId}|${toCid}`   -> ts
+
+// Debug: throttle schema logs so we can inspect snapshot shapes without flooding.
+const lastSchemaLogByKey = new Map(); // `${matchId}|${tag}` -> ts
+const SCHEMA_LOG_THROTTLE_MS = 15_000;
+
+function logStateSchemaOnce(matchId, tag, state) {
+  if (!matchId || !state) return;
+  const now = Date.now();
+  const key = `${matchId}|${tag}`;
+  const last = lastSchemaLogByKey.get(key) || 0;
+  if ((now - last) < SCHEMA_LOG_THROTTLE_MS) return;
+  lastSchemaLogByKey.set(key, now);
+
+  try {
+    const keys = Object.keys(state || {}).slice(0, 40);
+    const f = state.foundations;
+    const foundationsType = Array.isArray(f) ? 'array' : (f && typeof f === 'object' ? 'object' : typeof f);
+
+    // Try to detect common pile containers (legacy + P1.3)
+    const tableaus = state.tableaus || state.tableau || state.piles?.tableaus || state.piles?.tableau;
+    const stock = state.stock || state.piles?.stock || state.deck || state.piles?.deck;
+    const waste = state.waste || state.piles?.waste || state.discard || state.piles?.discard;
+
+    const tableauLen = Array.isArray(tableaus) ? tableaus.length : (Array.isArray(tableaus?.cards) ? tableaus.cards.length : null);
+    const stockLen = Array.isArray(stock) ? stock.length : (Array.isArray(stock?.cards) ? stock.cards.length : null);
+    const wasteLen = Array.isArray(waste) ? waste.length : (Array.isArray(waste?.cards) ? waste.cards.length : null);
+
+    console.log(`[SCHEMA] ${isoNow()} tag=${tag} matchId="${matchId}" keys=${keys.join(',')} foundationsType=${foundationsType} tableauLen=${tableauLen} stockLen=${stockLen} wasteLen=${wasteLen}`);
+  } catch (e) {
+    console.log(`[SCHEMA] ${isoNow()} tag=${tag} matchId="${matchId}" (schema log failed)`);
+  }
+}
 
 // Bot/server-move de-dup (server-side): prevents repeated identical bot moves when state doesn't change.
 const recentServerMoveSigsByMatch = new Map(); // matchId -> [{sig, at}]
@@ -1328,6 +1431,23 @@ ws.on('message', buf => {
         if (!snap) {
           console.log(`[BOT] bot_state ignored matchId="${matchId}" (missing sys.state snapshot)`);
           return;
+        }
+
+        // Debug: Inspect schema of the bot_state snapshot (client-provided)
+        logStateSchemaOnce(matchId, 'bot_state_in', snap);
+
+        // Debug: Inspect schema of the current authoritative snapshot (server-side)
+        const auth = getSnapshot(matchId) || getCachedSnapshot(matchId);
+
+        if (auth && auth.state && auth.state.you) {
+          console.log('[AUTH.you.keys]', Object.keys(auth.state.you));
+        }
+        if (auth && auth.state && auth.state.opp) {
+          console.log('[AUTH.opp.keys]', Object.keys(auth.state.opp));
+        }
+
+        if (auth && auth.state) {
+          logStateSchemaOnce(matchId, 'auth_snapshot', auth.state);
         }
 
         // Tick aus dem Envelope in den Snapshot spiegeln (falls im Snapshot selbst nicht vorhanden)

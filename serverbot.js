@@ -17,6 +17,8 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-01-25        | v1.11    | Fix: Bot stock draw uses kind=draw (not flip) to match matches.js validator; prevents flip_not_needed reject spam
+// 2026-01-25        | v1.10    | Fix: Bot no longer stalls after first legal move: prefer server-authoritative snapshot (matchRev) over stale client bot_state; clear recentMoveSigs on matchRev change
 // 2026-01-23        | v1.9     | Fix: De-dup guard for identical recent moves (prevents repeating same illegal move when state doesn't change); include cardId+sig in move sent log
 // 2026-01-23        | v1.8     | P1.3: Bot consumes server-authoritative STATE_SNAPSHOT from matches.js when client bot_state is missing; normalize v1/legacy schemas for decision logic
 // -----------------------------------------------------------------------------
@@ -378,6 +380,8 @@ function createServerBot(matchId, difficulty = 'easy', opts = {}) {
     state: null,
     stateMetrics: null,
     lastSeenStateAt: 0
+    ,lastSeenMatchRev: 0
+    ,lastSeenTick: null
     ,lastHeartbeatLogAt: 0
     ,lastMetricsLogAt: 0
     ,lastStateLogAt: 0
@@ -580,13 +584,18 @@ function normalizeStateForBot(raw) {
   return raw;
 }
 
-function tryGetServerSnapshotState(matchId) {
+function tryGetServerSnapshot(matchId) {
   try {
     const snap = getSnapshot(matchId);
-    return (snap && snap.state) ? snap.state : null;
+    return snap || null;
   } catch {
     return null;
   }
+}
+
+function tryGetServerSnapshotState(matchId) {
+  const snap = tryGetServerSnapshot(matchId);
+  return (snap && snap.state) ? snap.state : null;
 }
 
 // --- Herzstück: ein Decision-Tick für einen Bot (exported as runBotDecisionTick) ---
@@ -618,17 +627,38 @@ function runBotDecisionTick(matchId, deps) {
   const matchBot = getServerBot(matchId);
   if (!matchBot) return;
 
-  // Prefer client bot_state if present; otherwise consume server-authoritative snapshot.
+  // Prefer server-authoritative snapshot (matches.js) whenever available.
+  // Client bot_state can become stale after a bot move; using server snapshot avoids stalls/repeat-loops.
   const clientState = botStateByMatch.get(matchId) || matchBot.state || null;
-  const serverState = clientState ? null : tryGetServerSnapshotState(matchId);
-  const stateRaw = clientState || serverState || null;
+  const serverSnap = tryGetServerSnapshot(matchId);
+  const serverState = (serverSnap && serverSnap.state) ? serverSnap.state : null;
+
+  // Track freshness (tick/matchRev) to reset de-dup when state truly changes.
+  const tickNow = (clientState && (clientState.tick ?? clientState.botStateTick)) ?? null;
+  const revNow = (serverSnap && typeof serverSnap.matchRev === 'number') ? serverSnap.matchRev : null;
+
+  // Always trust server state when present. Fallback to client state only if no server snapshot is available.
+  const stateRaw = serverState || clientState || null;
   const state = normalizeStateForBot(stateRaw);
 
-  // Keep bot cache in sync when we successfully read server snapshots
-  if (state && !clientState && serverState) {
-    matchBot.state = stateRaw; // store raw (for future normalization)
+  // Keep bot cache in sync.
+  if (stateRaw) {
+    matchBot.state = stateRaw;
     matchBot.lastSeenStateAt = Date.now();
   }
+
+  // Clear recent move de-dup cache whenever the authoritative revision changes.
+  if (revNow != null && revNow !== matchBot.lastSeenMatchRev) {
+    matchBot.lastSeenMatchRev = revNow;
+    matchBot.recentMoveSigs = [];
+  }
+
+  // Track tick (best effort) for debugging/telemetry.
+  if (tickNow != null) matchBot.lastSeenTick = tickNow;
+
+
+
+
 
   // Infer/carry rank scheme (0-based vs 1-based) so we don't mis-detect A/2.
   const inferredScheme = inferRankSchemeFromSnapshot(state);
@@ -975,33 +1005,35 @@ try {
   }
 
   // Stock/Waste as last resort:
-  // - if bot stock has cards: flip
+  // - if bot stock has cards: draw
   // - else if bot waste has cards: recycle
   // - else: do nothing (tableau-only endgame)
   if (!decided) {
     const nowT = Date.now();
 
     const wantsRecycle = (botStockCount === 0) && (botWasteCount > 0);
-    const wantsFlip    = (botStockCount > 0);
+    const wantsDraw    = (botStockCount > 0);
 
     // throttle:
     const minCooldown = wantsRecycle ? 1200 : 2500;
     const canActNow = !matchBot.lastFlipAt || (nowT - matchBot.lastFlipAt) > minCooldown;
 
-    if (canActNow && (wantsFlip || wantsRecycle)) {
-      const kind = wantsRecycle ? 'recycle' : 'flip';
+    if (canActNow && (wantsDraw || wantsRecycle)) {
+      const kind = wantsRecycle ? 'recycle' : 'draw';
 
       // Best-effort: enrich moves so mirror clients (iOS) can update Stock/Waste without snapshot spam.
       // Keep it backward compatible: extra fields are ignored by older clients.
       const move = { owner: botOwner, kind };
 
       try {
-        if (kind === 'flip') {
+        if (kind === 'draw') {
           move.from = { kind: 'stock', sideOwner: botOwner };
           move.to   = { kind: 'waste', sideOwner: botOwner };
+          move.fromZone = 'stock';
+          move.toZone = 'waste';
           move.count = 1;
 
-          // Try to attach the flipped cardId if we have a detailed snapshot.
+          // Try to attach the drawn cardId if we have a detailed snapshot.
           // In snapshots, stock is typically ordered [base ... top], so the last card is the next to draw.
           const botSideNow = (state && state[botSideKey] && typeof state[botSideKey] === 'object') ? state[botSideKey] : null;
           if (botSideNow && Array.isArray(botSideNow.stock) && botSideNow.stock.length) {

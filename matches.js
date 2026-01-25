@@ -5,6 +5,8 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-01-25        | v2.4.10  | P1: Fix bot toPile moves with numeric from/to (no zones): normalize indices and default zones to tableau; prevents bad_from loops
+// 2026-01-25        | v2.4.9   | P1: Add server-side validate/apply helpers for legacy (iOS↔BOT) moves (toFound/toPile/flip/draw); export validateMove/applyMove/validateAndApplyMove
 // 2026-01-23        | v2.4.8   | Fix: Invariant collector double-counted card ids (id fields were traversed twice) causing false duplicate_card_ids (expected=52 found=208); skip id keys after capture
 // 2026-01-23        | v2.4.7   | TEMP: Legacy bot snapshot format (52-card, tableaus/stock/waste/foundations{S,H,D,C}, faceUp) for iOS↔BOT; ensureInitialSnapshot selects legacy when isBot present
 // 2026-01-23        | v2.4.6   | P1.3: Server-side Initial Deal + Authoritative STATE_SNAPSHOT helpers (ensureInitialSnapshot, getSnapshotForPlayer)
@@ -325,6 +327,496 @@ function getSnapshotForPlayer(matchId, playerId) {
   };
 
   return { ...snap, state: swapped };
+}
+
+// ------------------------------------------------------------
+// P1 (minimal): Server-authoritative move validation + apply
+// - Initial scope: legacy bot-state (iOS↔BOT) only.
+// - This keeps protocol stable; invalid moves are rejected server-side.
+// ------------------------------------------------------------
+
+function _detectStateSchema(state) {
+  // Returns: 'legacy_root' | 'v1_sided' | null
+  if (!state || typeof state !== 'object') return null;
+
+  // Legacy root schema: foundations is object {S,H,D,C}, piles at root.
+  if (state.foundations && !Array.isArray(state.foundations)
+    && typeof state.foundations === 'object'
+    && Array.isArray(state.tableaus)
+    && Array.isArray(state.stock)
+    && Array.isArray(state.waste)) {
+    return 'legacy_root';
+  }
+
+  // v1 sided schema (P1.3): foundations is an array, and both sides exist.
+  if (Array.isArray(state.foundations)
+    && state.you && typeof state.you === 'object'
+    && state.opp && typeof state.opp === 'object'
+    && Array.isArray(state.you.stock)
+    && Array.isArray(state.you.waste)
+    && Array.isArray(state.you.tableau)
+    && Array.isArray(state.opp.stock)
+    && Array.isArray(state.opp.waste)
+    && Array.isArray(state.opp.tableau)) {
+    return 'v1_sided';
+  }
+
+  return null;
+}
+
+function _legacySuitCode(suit) {
+  // Accept legacy codes and v1 suit glyphs, normalize to legacy codes.
+  if (suit === 'S' || suit === 'H' || suit === 'D' || suit === 'C') return suit;
+  if (suit === '♠') return 'S';
+  if (suit === '♥') return 'H';
+  if (suit === '♦') return 'D';
+  if (suit === '♣') return 'C';
+  return null;
+}
+
+function _suitGlyphFromCode(code) {
+  const c = _legacySuitCode(code);
+  if (c === 'S') return '♠';
+  if (c === 'H') return '♥';
+  if (c === 'D') return '♦';
+  if (c === 'C') return '♣';
+  return null;
+}
+
+function _legacyColor(suitCode) {
+  return (suitCode === 'S' || suitCode === 'C') ? 'black' : 'red';
+}
+
+function _isFaceUp(card) {
+  if (!card || typeof card !== 'object') return false;
+  // legacy uses faceUp, v1 uses up
+  if (card.faceUp === true) return true;
+  if (card.up === true) return true;
+  return false;
+}
+
+function _setFaceUp(card, v) {
+  if (!card || typeof card !== 'object') return;
+  if ('up' in card) card.up = !!v;
+  else card.faceUp = !!v;
+}
+
+function _pickSideKeyFromMove(move, card) {
+  // For v1: choose state.you vs state.opp based on cardId prefix.
+  const cid = (move && (move.cardId || move.id)) || (card && (card.id || card.cardId)) || null;
+  if (typeof cid === 'string') {
+    if (cid.startsWith('Y-')) return 'you';
+    if (cid.startsWith('O-')) return 'opp';
+  }
+  // fallback: if move.fromSide exists
+  const s = (move && (move.side || move.fromSide || move.owner)) || null;
+  if (typeof s === 'string') {
+    const sl = s.toLowerCase();
+    if (sl === 'you' || sl === 'y') return 'you';
+    if (sl === 'opp' || sl === 'o' || sl === 'opponent') return 'opp';
+  }
+  // default: bot is usually opp
+  return 'opp';
+}
+
+function _idx(v) {
+  // Accept: number | numeric string | {uiIndex,index,i,f}
+  if (v == null) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'string') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (typeof v === 'object') {
+    const c = (v.uiIndex ?? v.index ?? v.i ?? v.f);
+    return _idx(c);
+  }
+  return null;
+}
+
+function _moveFromTo(move) {
+  // Normalizes from/to indices for bot + client move variants.
+  const m = move || {};
+  const from = _idx(m.fromIndex ?? m.fromIdx ?? m.from);
+  const to   = _idx(m.toIndex   ?? m.toIdx   ?? m.to);
+  return { from, to };
+}
+
+function _peek(arr) {
+  return Array.isArray(arr) && arr.length ? arr[arr.length - 1] : null;
+}
+
+function _pop(arr) {
+  return Array.isArray(arr) && arr.length ? arr.pop() : null;
+}
+
+function _push(arr, v) {
+  if (!Array.isArray(arr)) return false;
+  arr.push(v);
+  return true;
+}
+
+function _getPileRef(state, zone, idx, move, card) {
+  const z = String(zone || '').toLowerCase();
+  const schema = _detectStateSchema(state);
+
+  // --- legacy_root ---
+  if (schema === 'legacy_root') {
+    if (z === 'waste') return state.waste;
+    if (z === 'stock') return state.stock;
+    if (z === 'tableau') {
+      const i = typeof idx === 'number' ? idx : Number(idx);
+      if (!Number.isFinite(i) || i < 0 || i >= state.tableaus.length) return null;
+      return state.tableaus[i];
+    }
+    if (z === 'foundation' || z === 'foundations') {
+      const suit = _legacySuitCode(idx);
+      if (!suit) return null;
+      const f = state.foundations;
+      if (!f || typeof f !== 'object') return null;
+      if (!Array.isArray(f[suit])) f[suit] = [];
+      return f[suit];
+    }
+    return null;
+  }
+
+  // --- v1_sided (P1.3) ---
+  if (schema === 'v1_sided') {
+    const sideKey = _pickSideKeyFromMove(move, card);
+    const side = state[sideKey];
+    if (!side || typeof side !== 'object') return null;
+
+    if (z === 'waste') return side.waste;
+    if (z === 'stock') return side.stock;
+    if (z === 'tableau') {
+      const i = typeof idx === 'number' ? idx : Number(idx);
+      if (!Number.isFinite(i) || i < 0 || i >= side.tableau.length) return null;
+      return side.tableau[i];
+    }
+    if (z === 'foundation' || z === 'foundations') {
+      const suitCode = _legacySuitCode(idx);
+      if (!suitCode) return null;
+
+      // Determine which half (you vs opp foundations) to use based on card owner.
+      // In canonical owner='Y': you uses first 4, opp uses last 4.
+      const fromKey = _pickSideKeyFromMove(move, card);
+      const base = (fromKey === 'you') ? 0 : 4;
+      const glyph = _suitGlyphFromCode(suitCode);
+      if (!glyph) return null;
+
+      // Find the matching foundation object within the half.
+      const arr = state.foundations;
+      for (let i = base; i < base + 4 && i < arr.length; i++) {
+        const f = arr[i];
+        if (f && typeof f === 'object' && f.suit === glyph && Array.isArray(f.cards)) {
+          return f.cards;
+        }
+      }
+      return null;
+    }
+    return null;
+  }
+
+  return null;
+}
+
+function _canPlaceOnFoundationLegacy(card, foundationPile) {
+  if (!card) return { ok: false, reason: 'no_card' };
+  const suit = _legacySuitCode(card.suit);
+  if (!suit) return { ok: false, reason: 'bad_suit' };
+  const top = _peek(foundationPile);
+  if (!top) {
+    // Ace starts (rank 0)
+    return card.rank === 0
+      ? { ok: true }
+      : { ok: false, reason: 'foundation_requires_ace' };
+  }
+  const topSuit = _legacySuitCode(top.suit);
+  if (topSuit !== suit) return { ok: false, reason: 'foundation_suit_mismatch' };
+  if (card.rank !== (top.rank + 1)) return { ok: false, reason: 'foundation_rank_not_next' };
+  return { ok: true };
+}
+
+function _canPlaceOnTableauLegacy(card, tableauPile) {
+  if (!card) return { ok: false, reason: 'no_card' };
+  const top = _peek(tableauPile);
+  if (!top) {
+    // Only King (rank 12) can go to empty tableau
+    return card.rank === 12
+      ? { ok: true }
+      : { ok: false, reason: 'tableau_empty_requires_king' };
+  }
+  const suitA = _legacySuitCode(card.suit);
+  const suitB = _legacySuitCode(top.suit);
+  if (!suitA || !suitB) return { ok: false, reason: 'bad_suit' };
+  if (_legacyColor(suitA) === _legacyColor(suitB)) return { ok: false, reason: 'tableau_color_same' };
+  if (card.rank !== (top.rank - 1)) return { ok: false, reason: 'tableau_rank_not_desc' };
+  return { ok: true };
+}
+
+function _normalizeMoveKind(kind) {
+  const k = String(kind || '').toLowerCase();
+  if (k === 'tofound' || k === 'tofoundation' || k === 'foundation') return 'toFound';
+  if (k === 'topile' || k === 'totableau' || k === 'tableau') return 'toPile';
+  if (k === 'flip' || k === 'fliptableau') return 'flip';
+  if (k === 'draw' || k === 'stocktowaste' || k === 'deal') return 'draw';
+  return String(kind || '');
+}
+
+function _extractLegacyMoveFields(move) {
+  // Support multiple shapes:
+  // A) { kind, fromZone, fromIndex, toZone, toIndex, toSuit }
+  // B) { kind, from:{zone,idx}, to:{zone,idx|suit} }
+  // C) historical: { kind, from:'waste'|'t3', to:'f:S'|'t5' }
+  const kind = _normalizeMoveKind(move && move.kind);
+
+  const fromZone = (move && (move.fromZone || (move.from && move.from.zone))) || null;
+  const fromIndex = (move && (move.fromIndex ?? (move.from && move.from.idx))) ?? null;
+  const toZone = (move && (move.toZone || (move.to && move.to.zone))) || null;
+  const toIndex = (move && (move.toIndex ?? (move.to && move.to.idx))) ?? null;
+  const toSuit = (move && (move.toSuit || (move.to && move.to.suit))) || null;
+
+  // Parse compact strings if present
+  let fz = fromZone;
+  let fi = fromIndex;
+  let tz = toZone;
+  let ti = toIndex;
+  let ts = toSuit;
+
+  if (!fz && typeof (move && move.from) === 'string') {
+    const s = move.from;
+    if (s === 'waste' || s === 'stock') fz = s;
+    else if (/^t\d+$/.test(s)) { fz = 'tableau'; fi = Number(s.slice(1)); }
+  }
+
+  if (!tz && typeof (move && move.to) === 'string') {
+    const s = move.to;
+    if (/^t\d+$/.test(s)) { tz = 'tableau'; ti = Number(s.slice(1)); }
+    else if (/^f[:=]/.test(s)) { tz = 'foundation'; ts = s.split(/[:=]/)[1]; }
+  }
+
+  // If destination is foundation and suit was put into toIndex, accept it.
+  if ((String(tz || '').toLowerCase() === 'foundation' || String(tz || '').toLowerCase() === 'foundations') && !ts && ti != null) {
+    ts = ti;
+    ti = null;
+  }
+
+  return {
+    kind,
+    fromZone: fz,
+    fromIndex: fi,
+    toZone: tz,
+    toIndex: ti,
+    toSuit: ts
+  };
+}
+
+function validateMove(matchId, move, actor = 'unknown') {
+  const snap = getSnapshot(matchId);
+  const state = snap && snap.state ? snap.state : null;
+
+  const report = {
+    ok: false,
+    reason: null,
+    kind: move && move.kind ? String(move.kind) : null,
+    actor: String(actor || 'unknown')
+  };
+
+  if (!state) {
+    report.reason = 'state_missing';
+    return report;
+  }
+
+  const schema = _detectStateSchema(state);
+  if (!schema) {
+    report.reason = 'unsupported_state_schema';
+    return report;
+  }
+
+  const m = _extractLegacyMoveFields(move || {});
+  const kind = m.kind;
+
+  if (kind === 'flip') {
+    const idx = typeof m.fromIndex === 'number' ? m.fromIndex : Number(m.fromIndex);
+    const pile = _getPileRef(state, 'tableau', idx, move, null);
+    if (!pile) { report.reason = 'bad_tableau_index'; return report; }
+    const top = _peek(pile);
+    if (!top) { report.reason = 'flip_no_cards'; return report; }
+    if (_isFaceUp(top)) { report.reason = 'flip_not_needed'; return report; }
+    report.ok = true;
+    return report;
+  }
+
+  if (kind === 'draw') {
+    const stock = _getPileRef(state, 'stock', null, move, null);
+    const waste = _getPileRef(state, 'waste', null, move, null);
+    if (!Array.isArray(stock) || !Array.isArray(waste)) { report.reason = 'bad_piles'; return report; }
+    if (stock.length <= 0) { report.reason = 'stock_empty'; return report; }
+    report.ok = true;
+    return report;
+  }
+
+  if (kind !== 'toFound' && kind !== 'toPile') {
+    report.reason = 'unsupported_move_kind';
+    return report;
+  }
+
+  // source pile
+  let srcZone = m.fromZone;
+  let srcIdx = m.fromIndex;
+
+  // Bot moves often use numeric from/to without explicit zones (assume tableau indices)
+  if (!srcZone && (kind === 'toPile' || kind === 'toFound')) {
+    const ft = _moveFromTo(move);
+    if (ft.from != null) {
+      srcZone = 'tableau';
+      srcIdx = ft.from;
+    }
+  }
+
+  const src = _getPileRef(state, srcZone, srcIdx, move, null);
+  if (!src || !Array.isArray(src)) { report.reason = 'bad_from'; return report; }
+
+  const card = _peek(src);
+  if (!card) { report.reason = 'from_empty'; return report; }
+
+  // If the move specifies a cardId, it must match the current top-card of the source pile.
+  // Otherwise bots can repeatedly propose a move for a card that isn't actually movable yet.
+  const wantId = (move && (move.cardId || move.id)) || null;
+  if (wantId) {
+    const topId = (card && (card.id || card.cardId || card.code)) || null;
+    if (topId !== wantId) { report.reason = 'card_not_on_top'; return report; }
+  }
+
+  // cannot move face-down cards
+  if (!_isFaceUp(card)) { report.reason = 'card_face_down'; return report; }
+
+  if (kind === 'toFound') {
+    const suit = _legacySuitCode(m.toSuit || (card && card.suit));
+    const dst = _getPileRef(state, 'foundation', suit, move, card);
+    if (!dst) { report.reason = 'bad_foundation'; return report; }
+    const can = _canPlaceOnFoundationLegacy(card, dst);
+    if (!can.ok) { report.reason = can.reason; return report; }
+    report.ok = true;
+    return report;
+  }
+
+  // kind === 'toPile'
+  const ft = _moveFromTo(move);
+  const dstZone = m.toZone || 'tableau';
+  const dstIdx = (m.toIndex != null) ? m.toIndex : ft.to;
+  const dst = _getPileRef(state, dstZone, dstIdx, move, card);
+  if (!dst || !Array.isArray(dst)) { report.reason = 'bad_to'; return report; }
+
+  const can = _canPlaceOnTableauLegacy(card, dst);
+  if (!can.ok) { report.reason = can.reason; return report; }
+
+  report.ok = true;
+  return report;
+}
+
+function applyMove(matchId, move, meta = {}) {
+  const snap = getSnapshot(matchId);
+  const state = snap && snap.state ? snap.state : null;
+  if (!state) return { ok: false, reason: 'state_missing' };
+  const schema = _detectStateSchema(state);
+  if (!schema) return { ok: false, reason: 'unsupported_state_schema' };
+
+  const m = _extractLegacyMoveFields(move || {});
+  const kind = m.kind;
+
+  // NOTE: mutate canonical state in-place (authoritative). Call-site must bumpMatchRev before setAuthoritativeState if desired.
+
+  if (kind === 'flip') {
+    const idx = typeof m.fromIndex === 'number' ? m.fromIndex : Number(m.fromIndex);
+    const pile = _getPileRef(state, 'tableau', idx, move, null);
+    const top = _peek(pile);
+    if (!top) return { ok: false, reason: 'flip_no_cards' };
+    _setFaceUp(top, true);
+    return { ok: true, state };
+  }
+
+  if (kind === 'draw') {
+    const stock = _getPileRef(state, 'stock', null, move, null);
+    const waste = _getPileRef(state, 'waste', null, move, null);
+    const c = _pop(stock);
+    if (!c) return { ok: false, reason: 'stock_empty' };
+    _setFaceUp(c, true);
+    _push(waste, c);
+    return { ok: true, state };
+  }
+
+  let srcZone = m.fromZone;
+  let srcIdx = m.fromIndex;
+
+  // Bot moves often use numeric from/to without explicit zones (assume tableau indices)
+  if (!srcZone && (kind === 'toPile' || kind === 'toFound')) {
+    const ft = _moveFromTo(move);
+    if (ft.from != null) {
+      srcZone = 'tableau';
+      srcIdx = ft.from;
+    }
+  }
+
+  const src = _getPileRef(state, srcZone, srcIdx, move, null);
+  if (!src) return { ok: false, reason: 'bad_from' };
+
+  // If the move specifies a cardId, it must match the current top-card of the source pile.
+  const wantId = (move && (move.cardId || move.id)) || null;
+  if (wantId) {
+    const top = _peek(src);
+    const topId = (top && (top.id || top.cardId || top.code)) || null;
+    if (topId !== wantId) return { ok: false, reason: 'card_not_on_top' };
+  }
+
+  const card = _pop(src);
+  if (!card) return { ok: false, reason: 'from_empty' };
+
+  if (kind === 'toFound') {
+    const suit = _legacySuitCode(m.toSuit || (card && card.suit));
+    const dst = _getPileRef(state, 'foundation', suit, move, card);
+    if (!dst) {
+      // rollback
+      _push(src, card);
+      return { ok: false, reason: 'bad_foundation' };
+    }
+    _push(dst, card);
+    return { ok: true, state };
+  }
+
+  // toPile
+  const ft = _moveFromTo(move);
+  const dst = _getPileRef(state, m.toZone || 'tableau', (m.toIndex != null) ? m.toIndex : ft.to, move, card);
+  if (!dst) {
+    // rollback
+    _push(src, card);
+    return { ok: false, reason: 'bad_to' };
+  }
+
+  _push(dst, card);
+
+  // Optional: if tableau source becomes empty, no auto-flip here; flip must be explicit.
+  return { ok: true, state };
+}
+
+function validateAndApplyMove(matchId, move, actor = 'unknown', sys = {}) {
+  const v = validateMove(matchId, move, actor);
+  if (!v.ok) return { ok: false, reason: v.reason, rejected: true };
+
+  // bump revision for authoritative action
+  bumpMatchRev(matchId);
+
+  const res = applyMove(matchId, move, sys);
+  if (!res.ok) return { ok: false, reason: res.reason };
+
+  // persist authoritative snapshot
+  setAuthoritativeState(matchId, res.state, {
+    seed: sys.seed || null,
+    fromCid: sys.fromCid || null,
+    at: sys.at || new Date().toISOString()
+  });
+
+  return { ok: true };
 }
 
 // ------------------------------------------------------------
@@ -927,5 +1419,9 @@ module.exports = {
   createInitialGameState,
   createInitialBotStateLegacy,
   ensureInitialSnapshot,
-  getSnapshotForPlayer
+  getSnapshotForPlayer,
+  // P1 move helpers (legacy iOS↔BOT validation/apply)
+  validateMove,
+  applyMove,
+  validateAndApplyMove
 };
