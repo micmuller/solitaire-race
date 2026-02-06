@@ -969,6 +969,25 @@ function validateAndApplyMove(matchId, move, actor = 'unknown', sys = {}) {
     moveSig: sys.moveSig || sys.sig || null
   });
 
+  try {
+    const m = move || {};
+    const kind = m.kind || 'n/a';
+    const cardId = m.cardId || m.id || '-';
+    const moveId = sys.moveId || sys.id || '-';
+    const sig = sys.moveSig || sys.sig || '-';
+    const snapshotHash = (match && match.lastInvariant && match.lastInvariant.snapshotHash) ? match.lastInvariant.snapshotHash : '-';
+    const stats = airbag && airbag.stats ? airbag.stats : null;
+    const y = (stats && stats.countsByZone && stats.countsByZone.you) || {};
+    const o = (stats && stats.countsByZone && stats.countsByZone.opp) || {};
+    const countsSummary =
+      `you:stock=${y.stock ?? 0} waste=${y.waste ?? 0} tab=${y.tableau ?? 0} fnd=${y.foundations ?? 0} | ` +
+      `opp:stock=${o.stock ?? 0} waste=${o.waste ?? 0} tab=${o.tableau ?? 0} fnd=${o.foundations ?? 0}`;
+    console.log(
+      `[MOVE_APPLY] matchId=${matchId} rev=${rev ?? '-'} kind=${kind} cardId=${cardId} ` +
+      `moveId=${moveId} sig=${sig} hash=${snapshotHash} counts=${countsSummary}`
+    );
+  } catch {}
+
   return { ok: true, airbag };
 }
 

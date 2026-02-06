@@ -197,6 +197,7 @@ function ingestServerGeneratedMove(matchId, payload) {
       const gate = validateAndApplyMove(matchId, data.move, data.from || 'bot', {
         seed: data.meta.seed || null,
         fromCid: 'srv',
+        moveId: data.meta.moveId || data.meta.id || null,
         moveSig: sig || null,
         at: isoNow()
       });
