@@ -37,6 +37,7 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-02-06        | v2.4.12  | AIRBAG: card-conservation invariant recovery (broadcast snapshot on failure)
 // 2026-01-25        | v2.4.11  | P1: Gate server-generated (bot) moves through matches.validateAndApplyMove; reject illegal moves server-side (no broadcast), keep protocol stable
 // 2026-01-23        | v2.4.10  | Guardrails: route serverbot moves through M7 pipeline (moveId+matchRev+echo), add server-level duplicate bot-move signature suppression
 // 2026-01-23        | v2.4.9   | P1.3 wiring: snapshotFromCidForRecipient() to ensure fromCid==selfCid for server snapshots
@@ -59,7 +60,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.11';
+const VERSION = '2.4.12';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -196,6 +197,7 @@ function ingestServerGeneratedMove(matchId, payload) {
       const gate = validateAndApplyMove(matchId, data.move, data.from || 'bot', {
         seed: data.meta.seed || null,
         fromCid: 'srv',
+        moveSig: sig || null,
         at: isoNow()
       });
       if (!gate || gate.ok !== true) {
@@ -249,6 +251,14 @@ function ingestServerGeneratedMove(matchId, payload) {
         // Drive convergence even on reject
         requestSnapshotFromRoom(matchId, data.meta.seed || null, `move_reject:${reason}`);
         return; // IMPORTANT: do not broadcast rejected server-generated moves
+      }
+
+      if (gate && gate.airbag && gate.airbag.ok === false) {
+        const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
+        if (snap && snap.state) {
+          broadcastServerSnapshotToRoom(matchId, snap, 'airbag_card_conservation');
+        }
+        requestSnapshotFromRoom(matchId, data.meta.seed || null, 'airbag_card_conservation');
       }
     }
   } catch (e) {
