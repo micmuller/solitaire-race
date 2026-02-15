@@ -38,13 +38,13 @@
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
 // 2026-02-15        | v2.4.14  | Bugfixing A2: enforce server-side validation for client-originated moves before broadcast
+// 2026-02-14        | v2.4.13  | Bugfixing A1: drop flip moves with invalid cardId to prevent UNK drift
 // 2026-02-06        | v2.4.12  | AIRBAG: card-conservation invariant recovery (broadcast snapshot on failure)
 // 2026-01-25        | v2.4.11  | P1: Gate server-generated (bot) moves through matches.validateAndApplyMove; reject illegal moves server-side (no broadcast), keep protocol stable
 // 2026-01-23        | v2.4.10  | Guardrails: route serverbot moves through M7 pipeline (moveId+matchRev+echo), add server-level duplicate bot-move signature suppression
 // 2026-01-23        | v2.4.9   | P1.3 wiring: snapshotFromCidForRecipient() to ensure fromCid==selfCid for server snapshots
 // 2026-01-23        | v2.4.6   | P1.3 wiring: server-authoritative initial STATE_SNAPSHOT via matches.ensureInitialSnapshot + per-player getSnapshotForPlayer; stop legacy snapshot recycling
 // 2026-01-23        | v2.4.5   | Baseline: P1.2 + M7 Drift Hardening (pre P1.3 wiring)
-// 2026-02-14        | v2.4.13  | Bugfixing A1: drop flip moves with invalid cardId to prevent UNK drift
 //                  |          | Hinweis: Neue Einträge oben anfügen (neueste zuerst).
 // -----------------------------------------------------------------------------
 //

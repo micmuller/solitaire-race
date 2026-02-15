@@ -1,0 +1,31 @@
+[MOVE-PAYLOAD] {"owner":"Y","stockCount":23,"count":1,"from":{"kind":"stock","sideOwner":"Y"},"wasteCount":1,"cardId":"Y-50-♣-11","kind":"flip","to":{"kind":"waste","sideOwner":"Y"}} 
+[MOVE_REJECT] 2026-02-15T19:42:47.198Z matchId="RKD5F" actor=ios kind=flip reason=flip_not_needed moveId=m-4a4ce980-19e8-44c3-aba7-8f0f6ec5eb39 cid=pdh5fc3dq7a
+[MOVE] 2026-02-15T19:42:48.450Z room="RKD5F" kind=flip from=ios cid=pdh5fc3dq7a hasMoveId=true
+[MOVE-PAYLOAD] {"to":{"kind":"waste","sideOwner":"Y"},"stockCount":22,"count":1,"kind":"flip","wasteCount":2,"owner":"Y","cardId":"Y-46-♣-7","from":{"kind":"stock","sideOwner":"Y"}} 
+[MOVE_REJECT] 2026-02-15T19:42:48.450Z matchId="RKD5F" actor=ios kind=flip reason=flip_not_needed moveId=m-1d6ec723-3166-45ae-a926-1324e5840051 cid=pdh5fc3dq7a
+[MOVE] 2026-02-15T19:42:49.107Z room="RKD5F" kind=toPile from=ios cid=wtw4nvrk6o hasMoveId=true
+[MOVE-PAYLOAD] {"from":{"uiIndex":5,"kind":"pile","sideOwner":"O"},"owner":"O","to":{"sideOwner":"O","uiIndex":6,"kind":"pile"},"cardId":"O-45-♣-6","count":1,"kind":"toPile"} 
+[MOVE_APPLY] matchId=RKD5F rev=2 kind=toPile cardId=O-45-♣-6 moveId=- sig=- hash=c8baa2d830c74888 counts=you:stock=24 waste=0 tab=28 fnd=0 | opp:stock=24 waste=0 tab=28 fnd=0
+[BROADCAST] 2026-02-15T19:42:49.109Z room="RKD5F" kind=move total=2 open=2 targets=2 sampleCid=pdh5fc3dq7a,wtw4nvrk6o bytes=275
+[MOVE] 2026-02-15T19:42:49.329Z room="RKD5F" kind=flip from=ios cid=pdh5fc3dq7a hasMoveId=true
+[MOVE-PAYLOAD] {"wasteCount":3,"cardId":"Y-23-♥-10","owner":"Y","count":1,"to":{"sideOwner":"Y","kind":"waste"},"stockCount":21,"kind":"flip","from":{"sideOwner":"Y","kind":"stock"}} 
+[MOVE_REJECT] 2026-02-15T19:42:49.329Z matchId="RKD5F" actor=ios kind=flip reason=flip_not_needed moveId=m-e349ee1a-7554-40be-8b9c-98d6fe0f9edf cid=pdh5fc3dq7a
+[MOVE] 2026-02-15T19:42:53.394Z room="RKD5F" kind=flip from=ios cid=pdh5fc3dq7a hasMoveId=true
+[MOVE-PAYLOAD] {"wasteCount":4,"count":1,"stockCount":20,"kind":"flip","to":{"kind":"waste","sideOwner":"Y"},"from":{"kind":"stock","sideOwner":"Y"},"owner":"Y","cardId":"Y-9-♠-9"} 
+[MOVE_REJECT] 2026-02-15T19:42:53.394Z matchId="RKD5F" actor=ios kind=flip reason=flip_not_needed moveId=m-bda9cbad-1e10-4bfe-b5ec-fcf4ce94c1de cid=pdh5fc3dq7a
+[MOVE] 2026-02-15T19:42:53.857Z room="RKD5F" kind=flip from=ios cid=pdh5fc3dq7a hasMoveId=true
+[MOVE-PAYLOAD] {"owner":"Y","stockCount":19,"count":1,"from":{"kind":"stock","sideOwner":"Y"},"wasteCount":5,"cardId":"Y-35-♦-9","kind":"flip","to":{"kind":"waste","sideOwner":"Y"}} 
+[MOVE_REJECT] 2026-02-15T19:42:53.857Z matchId="RKD5F" actor=ios kind=flip reason=flip_not_needed moveId=m-6cfb03e5-5a9e-44c2-a698-7c38793260e9 cid=pdh5fc3dq7a
+[MOVE] 2026-02-15T19:42:54.322Z room="RKD5F" kind=flip from=ios cid=pdh5fc3dq7a hasMoveId=true
+[MOVE-PAYLOAD] {"owner":"Y","stockCount":18,"count":1,"from":{"kind":"stock","sideOwner":"Y"},"wasteCount":6,"cardId":"Y-15-♥-2","kind":"flip","to":{"kind":"waste","sideOwner":"Y"}} 
+[MOVE_REJECT] 2026-02-15T19:42:54.322Z matchId="RKD5F" actor=ios kind=flip reason=flip_not_needed moveId=m-ce11fab8-eb8f-456f-bebd-6b66009863f1 cid=pdh5fc3dq7a
+[MOVE] 2026-02-15T19:43:00.083Z room="RKD5F" kind=toPile from=ios cid=wtw4nvrk6o hasMoveId=true
+[MOVE-PAYLOAD] {"owner":"O","kind":"toPile","from":{"sideOwner":"O","uiIndex":3,"kind":"pile"},"count":1,"cardId":"O-18-♥-5","to":{"kind":"pile","sideOwner":"O","uiIndex":6}} 
+[MOVE_APPLY] matchId=RKD5F rev=3 kind=toPile cardId=O-18-♥-5 moveId=- sig=- hash=b4ac19dfc5e47b98 counts=you:stock=24 waste=0 tab=28 fnd=0 | opp:stock=24 waste=0 tab=28 fnd=0
+[BROADCAST] 2026-02-15T19:43:00.085Z room="RKD5F" kind=move total=2 open=2 targets=2 sampleCid=pdh5fc3dq7a,wtw4nvrk6o bytes=275
+[STATUS] 2026-02-15T19:43:00.085Z — Clients=2, Rooms=1 [RKD5F:2]
+[MOVE] 2026-02-15T19:43:00.556Z room="RKD5F" kind=flip from=ios cid=wtw4nvrk6o hasMoveId=true
+[MOVE-PAYLOAD] {"from":{"kind":"stock","sideOwner":"O"},"count":1,"owner":"O","kind":"flip","stockCount":23,"to":{"sideOwner":"O","kind":"waste"},"wasteCount":1,"cardId":"O-1-♠-1"} 
+[MOVE_REJECT] 2026-02-15T19:43:00.557Z matchId="RKD5F" actor=ios kind=flip reason=flip_not_needed moveId=m-9fd9a45a-ff49-4914-b4fb-9e6b608b50e8 cid=wtw4nvrk6o
+[MOVE] 2026-02-15T19:43:02.661Z room="RKD5F" kind=flip from=ios cid=wtw4nvrk6o hasMoveId=true
+[MOVE-PAYLOAD] {"from":{"kind":"stock","sideOwner":"O"},"count":1,"owner":"O","kind":"flip","stockCount":22,"to":{"kind":"waste","sideOwner":"O"},"wasteCount":2,"cardId":"O-11-♠-11"} 
