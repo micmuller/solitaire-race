@@ -1012,7 +1012,39 @@ ws.on('message', buf => {
           }
         }
 
-        const rev = bumpMatchRev(matchId);
+        // A2: Enforce server-side move validation for client-originated moves as well.
+        // If validation rejects, do not broadcast the move.
+        let appliedByGate = false;
+        try {
+          if (typeof validateAndApplyMove === 'function') {
+            const gate = validateAndApplyMove(matchId, data.move, data.from || ws.__cid || 'client', {
+              seed: (data.meta && data.meta.seed) ? data.meta.seed : null,
+              fromCid: ws.__cid || null,
+              at: isoNow()
+            });
+            if (!gate || gate.ok !== true) {
+              const reason = (gate && gate.reason) ? gate.reason : 'invalid_move';
+              console.warn(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || ws.__cid || 'client'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${moveId || '-'} cid=${ws.__cid || 'n/a'}`);
+              requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, `move_reject:${reason}`);
+              return;
+            }
+            appliedByGate = true;
+          }
+        } catch (e) {
+          console.error('[A2] validateAndApplyMove gate failed (falling back to legacy forward)', e);
+        }
+
+        // Keep additive matchRev for clients. If gated, read authoritative rev; otherwise bump legacy rev.
+        let rev = null;
+        if (appliedByGate) {
+          try {
+            const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
+            rev = snap && typeof snap.matchRev === 'number' ? snap.matchRev : null;
+          } catch {}
+        }
+        if (rev == null) {
+          rev = bumpMatchRev(matchId);
+        }
         if (rev != null) {
           if (!data.meta) data.meta = {};
           data.meta.matchRev = rev;
