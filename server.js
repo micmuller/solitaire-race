@@ -43,6 +43,7 @@
 // 2026-01-23        | v2.4.9   | P1.3 wiring: snapshotFromCidForRecipient() to ensure fromCid==selfCid for server snapshots
 // 2026-01-23        | v2.4.6   | P1.3 wiring: server-authoritative initial STATE_SNAPSHOT via matches.ensureInitialSnapshot + per-player getSnapshotForPlayer; stop legacy snapshot recycling
 // 2026-01-23        | v2.4.5   | Baseline: P1.2 + M7 Drift Hardening (pre P1.3 wiring)
+// 2026-02-14        | v2.4.13  | Bugfixing A1: drop flip moves with invalid cardId to prevent UNK drift
 //                  |          | Hinweis: Neue Einträge oben anfügen (neueste zuerst).
 // -----------------------------------------------------------------------------
 //
@@ -60,7 +61,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.12';
+const VERSION = '2.4.13';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -1002,12 +1003,15 @@ ws.on('message', buf => {
         data.meta.moveId = moveId;
       }
 
-      // P1 guard: Never forward a flip without cardId.
-      // If a client emits flip without cardId, some clients materialize placeholder "UNK" cards in waste.
+      // P1 guard: Never forward a flip with missing or malformed cardId.
+      // If a client emits flip without a valid cardId, some clients materialize placeholder "UNK" cards in waste.
       // Dropping the move forces convergence via snapshot.
-      if (String(data.move.kind || '') === 'flip' && !data.move.cardId) {
-        console.warn(`[P1] ${isoNow()} DROP flip-without-cardId matchId="${matchId}" cid=${ws.__cid || 'n/a'} moveId=${moveId || '-'} from=${data.from || 'n/a'}`);
-        requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, 'flip_missing_cardId');
+      const isFlipMove = String(data.move.kind || '') === 'flip';
+      const flipCardId = String(data.move.cardId || '');
+      const isValidFlipCardId = /^([YO])-\d+-(♠|♥|♦|♣)-\d+$/.test(flipCardId);
+      if (isFlipMove && !isValidFlipCardId) {
+        console.warn(`[P1] ${isoNow()} DROP flip-invalid-cardId matchId="${matchId}" cid=${ws.__cid || 'n/a'} moveId=${moveId || '-'} from=${data.from || 'n/a'} cardId=${flipCardId || '-'}`);
+        requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, 'flip_invalid_cardId');
         return;
       }
 
