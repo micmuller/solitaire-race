@@ -5,6 +5,7 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-02-06        | v2.4.12  | AIRBAG: Card-conservation invariant after apply (dup/missing guard + snapshot recovery trigger)
 // 2026-01-25        | v2.4.10  | P1: Fix bot toPile moves with numeric from/to (no zones): normalize indices and default zones to tableau; prevents bad_from loops
 // 2026-01-25        | v2.4.9   | P1: Add server-side validate/apply helpers for legacy (iOS↔BOT) moves (toFound/toPile/flip/draw); export validateMove/applyMove/validateAndApplyMove
 // 2026-01-23        | v2.4.8   | Fix: Invariant collector double-counted card ids (id fields were traversed twice) causing false duplicate_card_ids (expected=52 found=208); skip id keys after capture
@@ -799,6 +800,149 @@ function applyMove(matchId, move, meta = {}) {
   return { ok: true, state };
 }
 
+function _cardIdFromCard(card) {
+  if (!card) return null;
+  if (typeof card === 'string') return card;
+  if (typeof card === 'object') {
+    return card.id || card.cardId || card.code || null;
+  }
+  return null;
+}
+
+function computeCardStats(state) {
+  const stats = {
+    total: 0,
+    unique: 0,
+    duplicates: [],
+    countsByZone: {},
+    expectedTotal: (state && typeof state.expectedTotalCards === 'number') ? state.expectedTotalCards : null,
+    missing: null
+  };
+
+  const counts = new Map();
+  const dupes = new Set();
+
+  function addCard(card) {
+    stats.total++;
+    const id = _cardIdFromCard(card);
+    if (!id) return;
+    const n = (counts.get(id) || 0) + 1;
+    counts.set(id, n);
+    if (n === 2) dupes.add(id);
+  }
+
+  function collectPile(pile) {
+    if (!Array.isArray(pile)) return 0;
+    let c = 0;
+    for (const card of pile) {
+      c++;
+      addCard(card);
+    }
+    return c;
+  }
+
+  function collectTableau(tableau) {
+    if (!Array.isArray(tableau)) return 0;
+    let c = 0;
+    for (const pile of tableau) {
+      c += collectPile(pile);
+    }
+    return c;
+  }
+
+  const schema = _detectStateSchema(state);
+
+  if (schema === 'legacy_root') {
+    const stock = collectPile(state.stock);
+    const waste = collectPile(state.waste);
+    const tableau = collectTableau(state.tableaus);
+
+    let foundations = 0;
+    if (state.foundations && typeof state.foundations === 'object') {
+      for (const k of Object.keys(state.foundations)) {
+        foundations += collectPile(state.foundations[k]);
+      }
+    }
+
+    stats.countsByZone = {
+      you: { stock, waste, tableau, foundations }
+    };
+  } else if (schema === 'v1_sided') {
+    const youStock = collectPile(state.you && state.you.stock);
+    const youWaste = collectPile(state.you && state.you.waste);
+    const youTab = collectTableau(state.you && state.you.tableau);
+
+    const oppStock = collectPile(state.opp && state.opp.stock);
+    const oppWaste = collectPile(state.opp && state.opp.waste);
+    const oppTab = collectTableau(state.opp && state.opp.tableau);
+
+    let youFnd = 0;
+    let oppFnd = 0;
+    if (Array.isArray(state.foundations)) {
+      for (let i = 0; i < state.foundations.length; i++) {
+        const f = state.foundations[i];
+        const pile = Array.isArray(f) ? f : (f && Array.isArray(f.cards) ? f.cards : null);
+        const n = collectPile(pile);
+        if (i < 4) youFnd += n;
+        else oppFnd += n;
+      }
+    }
+
+    stats.countsByZone = {
+      you: { stock: youStock, waste: youWaste, tableau: youTab, foundations: youFnd },
+      opp: { stock: oppStock, waste: oppWaste, tableau: oppTab, foundations: oppFnd }
+    };
+  }
+
+  stats.unique = counts.size;
+  stats.duplicates = Array.from(dupes);
+
+  if (typeof stats.expectedTotal === 'number' && stats.expectedTotal > 0) {
+    stats.missing = Math.max(0, stats.expectedTotal - stats.unique);
+  }
+
+  return stats;
+}
+
+function assertCardConservation(state, ctx = {}) {
+  const stats = computeCardStats(state);
+  const expected = stats.expectedTotal;
+  const hasExpected = (typeof expected === 'number' && expected > 0);
+
+  const hasDupes = stats.duplicates.length > 0;
+  const hasMissing = hasExpected && stats.unique !== expected;
+
+  const ok = !(hasDupes || hasMissing);
+
+  const matchId = ctx.matchId || 'n/a';
+  const rev = (ctx.rev != null) ? ctx.rev : (ctx.matchRev != null ? ctx.matchRev : 'n/a');
+  const kind = (ctx.move && ctx.move.kind) ? ctx.move.kind : 'n/a';
+  const sig = ctx.moveSig || ctx.sig || null;
+
+  if (!ok) {
+    const dupesShort = stats.duplicates.slice(0, 10);
+    const countsStr = (() => {
+      try { return JSON.stringify(stats.countsByZone || {}); } catch { return '{}'; }
+    })();
+    console.warn(
+      `[AIRBAG] card_conservation_failed matchId=${matchId} rev=${rev} kind=${kind} sig=${sig || '-'} ` +
+      `total=${stats.total} unique=${stats.unique} expected=${hasExpected ? expected : '-'} ` +
+      `missing=${hasExpected ? stats.missing : '-'} duplicates=${dupesShort.length ? dupesShort.join(',') : '-'} ` +
+      `countsByZone=${countsStr}`
+    );
+  } else if ((process.env.AIRBAG_DEBUG_COUNTS || '').toLowerCase() === '1') {
+    const y = (stats.countsByZone && stats.countsByZone.you) || {};
+    const o = (stats.countsByZone && stats.countsByZone.opp) || {};
+    console.log(
+      `[COUNTS] matchId=${matchId} rev=${rev} ` +
+      `you:stock=${y.stock ?? 0} waste=${y.waste ?? 0} tab=${y.tableau ?? 0} fnd=${y.foundations ?? 0} | ` +
+      `opp:stock=${o.stock ?? 0} waste=${o.waste ?? 0} tab=${o.tableau ?? 0} fnd=${o.foundations ?? 0}`
+    );
+  }
+
+  return { ok, stats };
+}
+
 function validateAndApplyMove(matchId, move, actor = 'unknown', sys = {}) {
   const v = validateMove(matchId, move, actor);
   if (!v.ok) return { ok: false, reason: v.reason, rejected: true };
@@ -816,7 +960,35 @@ function validateAndApplyMove(matchId, move, actor = 'unknown', sys = {}) {
     at: sys.at || new Date().toISOString()
   });
 
-  return { ok: true };
+  const match = matches.get(matchId);
+  const rev = match ? match.matchRev : null;
+  const airbag = assertCardConservation(res.state, {
+    matchId,
+    rev,
+    move,
+    moveSig: sys.moveSig || sys.sig || null
+  });
+
+  try {
+    const m = move || {};
+    const kind = m.kind || 'n/a';
+    const cardId = m.cardId || m.id || '-';
+    const moveId = sys.moveId || sys.id || '-';
+    const sig = sys.moveSig || sys.sig || '-';
+    const snapshotHash = (match && match.lastInvariant && match.lastInvariant.snapshotHash) ? match.lastInvariant.snapshotHash : '-';
+    const stats = airbag && airbag.stats ? airbag.stats : null;
+    const y = (stats && stats.countsByZone && stats.countsByZone.you) || {};
+    const o = (stats && stats.countsByZone && stats.countsByZone.opp) || {};
+    const countsSummary =
+      `you:stock=${y.stock ?? 0} waste=${y.waste ?? 0} tab=${y.tableau ?? 0} fnd=${y.foundations ?? 0} | ` +
+      `opp:stock=${o.stock ?? 0} waste=${o.waste ?? 0} tab=${o.tableau ?? 0} fnd=${o.foundations ?? 0}`;
+    console.log(
+      `[MOVE_APPLY] matchId=${matchId} rev=${rev ?? '-'} kind=${kind} cardId=${cardId} ` +
+      `moveId=${moveId} sig=${sig} hash=${snapshotHash} counts=${countsSummary}`
+    );
+  } catch {}
+
+  return { ok: true, airbag };
 }
 
 // ------------------------------------------------------------
