@@ -42,6 +42,7 @@
 // 2026-01-23        | v2.4.9   | P1.3 wiring: snapshotFromCidForRecipient() to ensure fromCid==selfCid for server snapshots
 // 2026-01-23        | v2.4.6   | P1.3 wiring: server-authoritative initial STATE_SNAPSHOT via matches.ensureInitialSnapshot + per-player getSnapshotForPlayer; stop legacy snapshot recycling
 // 2026-01-23        | v2.4.5   | Baseline: P1.2 + M7 Drift Hardening (pre P1.3 wiring)
+// 2026-02-14        | v2.4.13  | Bugfixing A1: drop flip moves with invalid cardId to prevent UNK drift
 //                  |          | Hinweis: Neue Einträge oben anfügen (neueste zuerst).
 // -----------------------------------------------------------------------------
 //
@@ -59,7 +60,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.11';
+const VERSION = '2.4.13';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
