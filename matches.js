@@ -810,15 +810,14 @@ function validateMove(matchId, move, actor = 'unknown') {
 
   if (!card) { report.reason = 'from_empty'; return report; }
 
-  if (wantId) {
-    const topId = (card && (card.id || card.cardId || card.code)) || null;
-    if (!_sameCardId(topId, wantId)) { report.reason = 'card_not_on_top'; return report; }
-  }
-
-  // cannot move face-down cards
-  if (!_isFaceUp(card)) { report.reason = 'card_face_down'; return report; }
-
   if (kind === 'toFound') {
+    if (wantId) {
+      const topId = (card && (card.id || card.cardId || card.code)) || null;
+      if (!_sameCardId(topId, wantId)) { report.reason = 'card_not_on_top'; return report; }
+    }
+    // cannot move face-down cards
+    if (!_isFaceUp(card)) { report.reason = 'card_face_down'; return report; }
+
     const suit = _legacySuitCode(m.toSuit || (card && card.suit));
     const dst = _getPileRef(state, 'foundation', suit, move, card);
     if (!dst) { report.reason = 'bad_foundation'; return report; }
@@ -829,13 +828,39 @@ function validateMove(matchId, move, actor = 'unknown') {
   }
 
   // kind === 'toPile'
+  let movingCard = card;
+  const rawCount = Number((move && move.count) || 1);
+  const moveCount = Number.isFinite(rawCount) && rawCount > 0 ? Math.floor(rawCount) : 1;
+
+  if (wantId) {
+    // Allow multi-card tableau moves where cardId identifies the first moved card (not the top card).
+    let idx = -1;
+    for (let i = src.length - 1; i >= 0; i--) {
+      const id = src[i] && (src[i].id || src[i].cardId || src[i].code);
+      if (_sameCardId(id, wantId)) { idx = i; break; }
+    }
+    if (idx < 0) { report.reason = 'card_not_on_top'; return report; }
+
+    const available = src.length - idx;
+    if (moveCount > available) { report.reason = 'bad_count'; return report; }
+
+    if (moveCount > 1 || idx !== src.length - 1) {
+      // For stack moves, requested card must start the moved tail.
+      if (available !== moveCount) { report.reason = 'bad_count'; return report; }
+    }
+
+    movingCard = src[idx];
+  }
+
+  if (!_isFaceUp(movingCard)) { report.reason = 'card_face_down'; return report; }
+
   const ft = _moveFromTo(move);
   const dstZone = m.toZone || 'tableau';
   const dstIdx = (m.toIndex != null) ? m.toIndex : ft.to;
-  const dst = _getPileRef(state, dstZone, dstIdx, move, card);
+  const dst = _getPileRef(state, dstZone, dstIdx, move, movingCard);
   if (!dst || !Array.isArray(dst)) { report.reason = 'bad_to'; return report; }
 
-  const can = _canPlaceOnTableauLegacy(card, dst);
+  const can = _canPlaceOnTableauLegacy(movingCard, dst);
   if (!can.ok) { report.reason = can.reason; return report; }
 
   report.ok = true;
@@ -934,52 +959,38 @@ function applyMove(matchId, move, meta = {}) {
   let src = _getPileRef(state, srcZone, srcIdx, move, null);
   if (!src) return { ok: false, reason: 'bad_from' };
 
-  // If the move specifies a cardId, it must match the current top-card of the source pile.
+  // If the move specifies a cardId, it must match the moved card.
   const wantId = (move && (move.cardId || move.id)) || null;
-  if (wantId) {
-    let top = _peek(src);
-    let topId = (top && (top.id || top.cardId || top.code)) || null;
+  const rawCount = Number((move && move.count) || 1);
+  const moveCount = Number.isFinite(rawCount) && rawCount > 0 ? Math.floor(rawCount) : 1;
 
-    if (schema === 'v1_sided' && (!_sameCardId(topId, wantId))) {
-      const guessed = _pickSideKeyFromMove(move, top);
-      const alt = _otherSideKey(guessed);
-      if (alt) {
-        const altMove = { ...(move || {}), __forceSideKey: alt };
-        const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
-        const altTop = _peek(altSrc);
-        const altTopId = (altTop && (altTop.id || altTop.cardId || altTop.code)) || null;
-        if (altSrc && _sameCardId(altTopId, wantId)) {
-          src = altSrc;
-          top = altTop;
-          topId = altTopId;
-        }
-      }
-    }
+  if (kind === 'toFound') {
+    if (wantId) {
+      let top = _peek(src);
+      let topId = (top && (top.id || top.cardId || top.code)) || null;
 
-    if (!_sameCardId(topId, wantId)) return { ok: false, reason: 'card_not_on_top' };
-  }
-
-  let card = _pop(src);
-  if (!card) {
-    if (schema === 'v1_sided' && srcZone === 'stock') {
-      const guessed = _pickSideKeyFromMove(move, null);
-      const alt = _otherSideKey(guessed);
-      if (alt) {
-        const altMove = { ...(move || {}), __forceSideKey: alt };
-        const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
-        if (altSrc) {
-          const popped = _pop(altSrc);
-          if (popped) {
+      if (schema === 'v1_sided' && (!_sameCardId(topId, wantId))) {
+        const guessed = _pickSideKeyFromMove(move, top);
+        const alt = _otherSideKey(guessed);
+        if (alt) {
+          const altMove = { ...(move || {}), __forceSideKey: alt };
+          const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
+          const altTop = _peek(altSrc);
+          const altTopId = (altTop && (altTop.id || altTop.cardId || altTop.code)) || null;
+          if (altSrc && _sameCardId(altTopId, wantId)) {
             src = altSrc;
-            card = popped;
+            top = altTop;
+            topId = altTopId;
           }
         }
       }
-    }
-  }
-  if (!card) return { ok: false, reason: 'from_empty' };
 
-  if (kind === 'toFound') {
+      if (!_sameCardId(topId, wantId)) return { ok: false, reason: 'card_not_on_top' };
+    }
+
+    const card = _pop(src);
+    if (!card) return { ok: false, reason: 'from_empty' };
+
     const suit = _legacySuitCode(m.toSuit || (card && card.suit));
     const dst = _getPileRef(state, 'foundation', suit, move, card);
     if (!dst) {
@@ -991,16 +1002,52 @@ function applyMove(matchId, move, meta = {}) {
     return { ok: true, state };
   }
 
-  // toPile
-  const ft = _moveFromTo(move);
-  const dst = _getPileRef(state, m.toZone || 'tableau', (m.toIndex != null) ? m.toIndex : ft.to, move, card);
-  if (!dst) {
-    // rollback
-    _push(src, card);
-    return { ok: false, reason: 'bad_to' };
+  // toPile (supports single- and multi-card stack moves)
+  let startIdx = src.length - 1;
+  if (wantId) {
+    let idx = -1;
+    for (let i = src.length - 1; i >= 0; i--) {
+      const id = src[i] && (src[i].id || src[i].cardId || src[i].code);
+      if (_sameCardId(id, wantId)) { idx = i; break; }
+    }
+
+    if (idx < 0 && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
+        if (altSrc && Array.isArray(altSrc)) {
+          for (let i = altSrc.length - 1; i >= 0; i--) {
+            const id = altSrc[i] && (altSrc[i].id || altSrc[i].cardId || altSrc[i].code);
+            if (_sameCardId(id, wantId)) { idx = i; src = altSrc; break; }
+          }
+        }
+      }
+    }
+
+    if (idx < 0) return { ok: false, reason: 'card_not_on_top' };
+    const available = src.length - idx;
+    if (moveCount > available) return { ok: false, reason: 'bad_count' };
+    if ((moveCount > 1 || idx !== src.length - 1) && available !== moveCount) return { ok: false, reason: 'bad_count' };
+    startIdx = idx;
+  } else {
+    if (moveCount > 1) {
+      if (moveCount > src.length) return { ok: false, reason: 'bad_count' };
+      startIdx = src.length - moveCount;
+    }
   }
 
-  _push(dst, card);
+  const moving = src.slice(startIdx);
+  if (!moving.length) return { ok: false, reason: 'from_empty' };
+
+  const anchor = moving[0];
+  const ft = _moveFromTo(move);
+  const dst = _getPileRef(state, m.toZone || 'tableau', (m.toIndex != null) ? m.toIndex : ft.to, move, anchor);
+  if (!dst) return { ok: false, reason: 'bad_to' };
+
+  src.splice(startIdx, moving.length);
+  for (const c of moving) _push(dst, c);
 
   // Optional: if tableau source becomes empty, no auto-flip here; flip must be explicit.
   return { ok: true, state };
