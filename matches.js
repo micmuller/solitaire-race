@@ -391,15 +391,18 @@ function _legacyColor(suitCode) {
 
 function _isFaceUp(card) {
   if (!card || typeof card !== 'object') return false;
-  // legacy uses faceUp, v1 uses up
+  // legacy uses faceUp, v1 often uses up; iOS model can carry isFaceUp
   if (card.faceUp === true) return true;
   if (card.up === true) return true;
+  if (card.isFaceUp === true) return true;
   return false;
 }
 
 function _setFaceUp(card, v) {
   if (!card || typeof card !== 'object') return;
   if ('up' in card) card.up = !!v;
+  else if ('faceUp' in card) card.faceUp = !!v;
+  else if ('isFaceUp' in card) card.isFaceUp = !!v;
   else card.faceUp = !!v;
 }
 
@@ -812,17 +815,33 @@ function validateMove(matchId, move, actor = 'unknown') {
   if (!card) { report.reason = 'from_empty'; return report; }
 
   if (kind === 'toFound') {
+    let movingCard = card;
     if (wantId) {
       const topId = (card && (card.id || card.cardId || card.code)) || null;
-      if (!_sameCardId(topId, wantId)) { report.reason = 'card_not_on_top'; return report; }
+      if (!_sameCardId(topId, wantId)) {
+        // Waste orientation may differ (front vs back as top). Accept opposite-end top as fallback.
+        if (String(srcZone || '').toLowerCase() === 'waste' && Array.isArray(src) && src.length > 0) {
+          const first = src[0];
+          const firstId = (first && (first.id || first.cardId || first.code)) || null;
+          if (_sameCardId(firstId, wantId)) {
+            movingCard = first;
+          } else {
+            report.reason = 'card_not_on_top';
+            return report;
+          }
+        } else {
+          report.reason = 'card_not_on_top';
+          return report;
+        }
+      }
     }
     // cannot move face-down cards
-    if (!_isFaceUp(card)) { report.reason = 'card_face_down'; return report; }
+    if (!_isFaceUp(movingCard)) { report.reason = 'card_face_down'; return report; }
 
-    const suit = _legacySuitCode(m.toSuit || (card && card.suit));
-    const dst = _getPileRef(state, 'foundation', suit, move, card);
+    const suit = _legacySuitCode(m.toSuit || (movingCard && movingCard.suit));
+    const dst = _getPileRef(state, 'foundation', suit, move, movingCard);
     if (!dst) { report.reason = 'bad_foundation'; return report; }
-    const can = _canPlaceOnFoundationLegacy(card, dst);
+    const can = _canPlaceOnFoundationLegacy(movingCard, dst);
     if (!can.ok) { report.reason = can.reason; return report; }
     report.ok = true;
     return report;
@@ -972,6 +991,7 @@ function applyMove(matchId, move, meta = {}) {
   const moveCount = Number.isFinite(rawCount) && rawCount > 0 ? Math.floor(rawCount) : 1;
 
   if (kind === 'toFound') {
+    let useFrontWasteTop = false;
     if (wantId) {
       let top = _peek(src);
       let topId = (top && (top.id || top.cardId || top.code)) || null;
@@ -992,17 +1012,31 @@ function applyMove(matchId, move, meta = {}) {
         }
       }
 
-      if (!_sameCardId(topId, wantId)) return { ok: false, reason: 'card_not_on_top' };
+      if (!_sameCardId(topId, wantId)) {
+        // Waste orientation fallback: front element can be logical top.
+        if (String(srcZone || '').toLowerCase() === 'waste' && Array.isArray(src) && src.length > 0) {
+          const first = src[0];
+          const firstId = (first && (first.id || first.cardId || first.code)) || null;
+          if (_sameCardId(firstId, wantId)) {
+            useFrontWasteTop = true;
+          } else {
+            return { ok: false, reason: 'card_not_on_top' };
+          }
+        } else {
+          return { ok: false, reason: 'card_not_on_top' };
+        }
+      }
     }
 
-    const card = _pop(src);
+    const card = useFrontWasteTop ? src.shift() : _pop(src);
     if (!card) return { ok: false, reason: 'from_empty' };
 
     const suit = _legacySuitCode(m.toSuit || (card && card.suit));
     const dst = _getPileRef(state, 'foundation', suit, move, card);
     if (!dst) {
       // rollback
-      _push(src, card);
+      if (useFrontWasteTop) src.unshift(card);
+      else _push(src, card);
       return { ok: false, reason: 'bad_foundation' };
     }
     _push(dst, card);
