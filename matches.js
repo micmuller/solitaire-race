@@ -403,6 +403,11 @@ function _setFaceUp(card, v) {
 }
 
 function _pickSideKeyFromMove(move, card) {
+  // Explicit internal override (used by validator/apply fallback logic)
+  if (move && (move.__forceSideKey === 'you' || move.__forceSideKey === 'opp')) {
+    return move.__forceSideKey;
+  }
+
   // For v1: choose state.you vs state.opp based on cardId prefix.
   const cid = (move && (move.cardId || move.id)) || (card && (card.id || card.cardId)) || null;
   if (typeof cid === 'string') {
@@ -634,6 +639,22 @@ function _extractLegacyMoveFields(move) {
   };
 }
 
+function _normalizeCardIdForCompare(v) {
+  if (v == null) return null;
+  return String(v).replace(/\uFE0F/g, ''); // strip emoji variation selector (e.g. ♠️ -> ♠)
+}
+
+function _sameCardId(a, b) {
+  const na = _normalizeCardIdForCompare(a);
+  const nb = _normalizeCardIdForCompare(b);
+  if (!na || !nb) return false;
+  return na === nb;
+}
+
+function _otherSideKey(sideKey) {
+  return sideKey === 'you' ? 'opp' : (sideKey === 'opp' ? 'you' : null);
+}
+
 function validateMove(matchId, move, actor = 'unknown') {
   const snap = getSnapshot(matchId);
   const state = snap && snap.state ? snap.state : null;
@@ -671,10 +692,33 @@ function validateMove(matchId, move, actor = 'unknown') {
   }
 
   if (kind === 'draw') {
-    const stock = _getPileRef(state, 'stock', null, move, null);
-    const waste = _getPileRef(state, 'waste', null, move, null);
+    let stock = _getPileRef(state, 'stock', null, move, null);
+    let waste = _getPileRef(state, 'waste', null, move, null);
+
+    if ((!Array.isArray(stock) || stock.length <= 0) && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altStock = _getPileRef(state, 'stock', null, altMove, null);
+        const altWaste = _getPileRef(state, 'waste', null, altMove, null);
+        if (Array.isArray(altStock) && Array.isArray(altWaste) && altStock.length > 0) {
+          stock = altStock;
+          waste = altWaste;
+        }
+      }
+    }
+
     if (!Array.isArray(stock) || !Array.isArray(waste)) { report.reason = 'bad_piles'; return report; }
     if (stock.length <= 0) { report.reason = 'stock_empty'; return report; }
+
+    const wantId = (move && (move.cardId || move.id)) || null;
+    if (wantId) {
+      const top = _peek(stock);
+      const topId = (top && (top.id || top.cardId || top.code)) || null;
+      if (!_sameCardId(topId, wantId)) { report.reason = 'card_not_on_top'; return report; }
+    }
+
     report.ok = true;
     return report;
   }
@@ -697,18 +741,57 @@ function validateMove(matchId, move, actor = 'unknown') {
     }
   }
 
-  const src = _getPileRef(state, srcZone, srcIdx, move, null);
+  let src = _getPileRef(state, srcZone, srcIdx, move, null);
   if (!src || !Array.isArray(src)) { report.reason = 'bad_from'; return report; }
 
-  const card = _peek(src);
-  if (!card) { report.reason = 'from_empty'; return report; }
+  let card = _peek(src);
 
   // If the move specifies a cardId, it must match the current top-card of the source pile.
   // Otherwise bots can repeatedly propose a move for a card that isn't actually movable yet.
   const wantId = (move && (move.cardId || move.id)) || null;
+
+  // v1 fallback: if side mapping guessed the wrong half, retry on the opposite side.
+  // This protects against perspective drift between requester/authoritative snapshots.
+  if (schema === 'v1_sided' && wantId) {
+    const topId = (card && (card.id || card.cardId || card.code)) || null;
+    if (!card || !_sameCardId(topId, wantId)) {
+      const guessed = _pickSideKeyFromMove(move, card);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
+        const altCard = _peek(altSrc);
+        const altTopId = (altCard && (altCard.id || altCard.cardId || altCard.code)) || null;
+        if (altSrc && Array.isArray(altSrc) && altCard && _sameCardId(altTopId, wantId)) {
+          src = altSrc;
+          card = altCard;
+        }
+      }
+    }
+  }
+
+  if (!card) {
+    // draw/flip stock-empty rejects were observed with side mismatch; try opposite side once.
+    if (schema === 'v1_sided' && srcZone === 'stock') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
+        const altCard = _peek(altSrc);
+        if (altSrc && Array.isArray(altSrc) && altCard) {
+          src = altSrc;
+          card = altCard;
+        }
+      }
+    }
+  }
+
+  if (!card) { report.reason = 'from_empty'; return report; }
+
   if (wantId) {
     const topId = (card && (card.id || card.cardId || card.code)) || null;
-    if (topId !== wantId) { report.reason = 'card_not_on_top'; return report; }
+    if (!_sameCardId(topId, wantId)) { report.reason = 'card_not_on_top'; return report; }
   }
 
   // cannot move face-down cards
@@ -760,8 +843,30 @@ function applyMove(matchId, move, meta = {}) {
   }
 
   if (kind === 'draw') {
-    const stock = _getPileRef(state, 'stock', null, move, null);
-    const waste = _getPileRef(state, 'waste', null, move, null);
+    let stock = _getPileRef(state, 'stock', null, move, null);
+    let waste = _getPileRef(state, 'waste', null, move, null);
+
+    if ((!Array.isArray(stock) || stock.length <= 0) && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altStock = _getPileRef(state, 'stock', null, altMove, null);
+        const altWaste = _getPileRef(state, 'waste', null, altMove, null);
+        if (Array.isArray(altStock) && Array.isArray(altWaste) && altStock.length > 0) {
+          stock = altStock;
+          waste = altWaste;
+        }
+      }
+    }
+
+    const wantId = (move && (move.cardId || move.id)) || null;
+    if (wantId) {
+      const top = _peek(stock);
+      const topId = (top && (top.id || top.cardId || top.code)) || null;
+      if (!_sameCardId(topId, wantId)) return { ok: false, reason: 'card_not_on_top' };
+    }
+
     const c = _pop(stock);
     if (!c) return { ok: false, reason: 'stock_empty' };
     _setFaceUp(c, true);
@@ -781,18 +886,52 @@ function applyMove(matchId, move, meta = {}) {
     }
   }
 
-  const src = _getPileRef(state, srcZone, srcIdx, move, null);
+  let src = _getPileRef(state, srcZone, srcIdx, move, null);
   if (!src) return { ok: false, reason: 'bad_from' };
 
   // If the move specifies a cardId, it must match the current top-card of the source pile.
   const wantId = (move && (move.cardId || move.id)) || null;
   if (wantId) {
-    const top = _peek(src);
-    const topId = (top && (top.id || top.cardId || top.code)) || null;
-    if (topId !== wantId) return { ok: false, reason: 'card_not_on_top' };
+    let top = _peek(src);
+    let topId = (top && (top.id || top.cardId || top.code)) || null;
+
+    if (schema === 'v1_sided' && (!_sameCardId(topId, wantId))) {
+      const guessed = _pickSideKeyFromMove(move, top);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
+        const altTop = _peek(altSrc);
+        const altTopId = (altTop && (altTop.id || altTop.cardId || altTop.code)) || null;
+        if (altSrc && _sameCardId(altTopId, wantId)) {
+          src = altSrc;
+          top = altTop;
+          topId = altTopId;
+        }
+      }
+    }
+
+    if (!_sameCardId(topId, wantId)) return { ok: false, reason: 'card_not_on_top' };
   }
 
-  const card = _pop(src);
+  let card = _pop(src);
+  if (!card) {
+    if (schema === 'v1_sided' && srcZone === 'stock') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
+        if (altSrc) {
+          const popped = _pop(altSrc);
+          if (popped) {
+            src = altSrc;
+            card = popped;
+          }
+        }
+      }
+    }
+  }
   if (!card) return { ok: false, reason: 'from_empty' };
 
   if (kind === 'toFound') {
