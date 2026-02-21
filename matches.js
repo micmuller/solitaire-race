@@ -819,12 +819,11 @@ function validateMove(matchId, move, actor = 'unknown') {
     if (wantId) {
       const topId = (card && (card.id || card.cardId || card.code)) || null;
       if (!_sameCardId(topId, wantId)) {
-        // Waste orientation may differ (front vs back as top). Accept opposite-end top as fallback.
+        // Waste orientation/drift tolerance: accept cardId if it's currently present in waste.
         if (String(srcZone || '').toLowerCase() === 'waste' && Array.isArray(src) && src.length > 0) {
-          const first = src[0];
-          const firstId = (first && (first.id || first.cardId || first.code)) || null;
-          if (_sameCardId(firstId, wantId)) {
-            movingCard = first;
+          const idx = src.findIndex(c => _sameCardId((c && (c.id || c.cardId || c.code)) || null, wantId));
+          if (idx >= 0) {
+            movingCard = src[idx];
           } else {
             report.reason = 'card_not_on_top';
             return report;
@@ -876,19 +875,12 @@ function validateMove(matchId, move, actor = 'unknown') {
     // Waste -> tableau is always a single-card move.
     if (moveCount !== 1) { report.reason = 'bad_count'; return report; }
     if (wantId && Array.isArray(src) && src.length > 0) {
-      const back = src[src.length - 1];
-      const backId = (back && (back.id || back.cardId || back.code)) || null;
-      if (_sameCardId(backId, wantId)) {
-        movingCard = back;
+      const idx = src.findIndex(c => _sameCardId((c && (c.id || c.cardId || c.code)) || null, wantId));
+      if (idx >= 0) {
+        movingCard = src[idx];
       } else {
-        const front = src[0];
-        const frontId = (front && (front.id || front.cardId || front.code)) || null;
-        if (_sameCardId(frontId, wantId)) {
-          movingCard = front;
-        } else {
-          report.reason = 'card_not_on_top';
-          return report;
-        }
+        report.reason = 'card_not_on_top';
+        return report;
       }
     }
   } else if (wantId) {
@@ -1030,7 +1022,7 @@ function applyMove(matchId, move, meta = {}) {
   const moveCount = Number.isFinite(rawCount) && rawCount > 0 ? Math.floor(rawCount) : 1;
 
   if (kind === 'toFound') {
-    let useFrontWasteTop = false;
+    let wastePickIndex = -1;
     if (wantId) {
       let top = _peek(src);
       let topId = (top && (top.id || top.cardId || top.code)) || null;
@@ -1052,13 +1044,10 @@ function applyMove(matchId, move, meta = {}) {
       }
 
       if (!_sameCardId(topId, wantId)) {
-        // Waste orientation fallback: front element can be logical top.
+        // Waste orientation/drift tolerance: remove requested card if present in waste.
         if (String(srcZone || '').toLowerCase() === 'waste' && Array.isArray(src) && src.length > 0) {
-          const first = src[0];
-          const firstId = (first && (first.id || first.cardId || first.code)) || null;
-          if (_sameCardId(firstId, wantId)) {
-            useFrontWasteTop = true;
-          } else {
+          wastePickIndex = src.findIndex(c => _sameCardId((c && (c.id || c.cardId || c.code)) || null, wantId));
+          if (wastePickIndex < 0) {
             return { ok: false, reason: 'card_not_on_top' };
           }
         } else {
@@ -1067,14 +1056,14 @@ function applyMove(matchId, move, meta = {}) {
       }
     }
 
-    const card = useFrontWasteTop ? src.shift() : _pop(src);
+    const card = (wastePickIndex >= 0) ? src.splice(wastePickIndex, 1)[0] : _pop(src);
     if (!card) return { ok: false, reason: 'from_empty' };
 
     const suit = _legacySuitCode(m.toSuit || (card && card.suit));
     let dst = _getPileRef(state, 'foundation', suit, move, card);
     if (!dst) {
       // rollback
-      if (useFrontWasteTop) src.unshift(card);
+      if (wastePickIndex >= 0) src.splice(wastePickIndex, 0, card);
       else _push(src, card);
       return { ok: false, reason: 'bad_foundation' };
     }
@@ -1097,7 +1086,7 @@ function applyMove(matchId, move, meta = {}) {
     }
 
     if (!can.ok) {
-      if (useFrontWasteTop) src.unshift(card);
+      if (wastePickIndex >= 0) src.splice(wastePickIndex, 0, card);
       else _push(src, card);
       return { ok: false, reason: can.reason || 'foundation_invalid' };
     }
@@ -1113,25 +1102,19 @@ function applyMove(matchId, move, meta = {}) {
   if (srcZoneLower === 'waste') {
     if (moveCount !== 1) return { ok: false, reason: 'bad_count' };
 
-    let useFrontWasteTop = false;
+    let wastePickIndex = -1;
     if (wantId && Array.isArray(src) && src.length > 0) {
-      const back = src[src.length - 1];
-      const backId = (back && (back.id || back.cardId || back.code)) || null;
-      if (!_sameCardId(backId, wantId)) {
-        const front = src[0];
-        const frontId = (front && (front.id || front.cardId || front.code)) || null;
-        if (_sameCardId(frontId, wantId)) useFrontWasteTop = true;
-        else return { ok: false, reason: 'card_not_on_top' };
-      }
+      wastePickIndex = src.findIndex(c => _sameCardId((c && (c.id || c.cardId || c.code)) || null, wantId));
+      if (wastePickIndex < 0) return { ok: false, reason: 'card_not_on_top' };
     }
 
-    const movingCard = useFrontWasteTop ? src.shift() : _pop(src);
+    const movingCard = (wastePickIndex >= 0) ? src.splice(wastePickIndex, 1)[0] : _pop(src);
     if (!movingCard) return { ok: false, reason: 'from_empty' };
 
     const ft = _moveFromTo(move);
     const dst = _getPileRef(state, m.toZone || 'tableau', (m.toIndex != null) ? m.toIndex : ft.to, move, movingCard);
     if (!dst) {
-      if (useFrontWasteTop) src.unshift(movingCard);
+      if (wastePickIndex >= 0) src.splice(wastePickIndex, 0, movingCard);
       else _push(src, movingCard);
       return { ok: false, reason: 'bad_to' };
     }
