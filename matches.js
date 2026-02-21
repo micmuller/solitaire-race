@@ -367,11 +367,12 @@ function _detectStateSchema(state) {
 
 function _legacySuitCode(suit) {
   // Accept legacy codes and v1 suit glyphs, normalize to legacy codes.
-  if (suit === 'S' || suit === 'H' || suit === 'D' || suit === 'C') return suit;
-  if (suit === '♠') return 'S';
-  if (suit === '♥') return 'H';
-  if (suit === '♦') return 'D';
-  if (suit === '♣') return 'C';
+  const s = (typeof suit === 'string') ? suit.replace(/\uFE0F/g, '') : suit;
+  if (s === 'S' || s === 'H' || s === 'D' || s === 'C') return s;
+  if (s === '♠') return 'S';
+  if (s === '♥') return 'H';
+  if (s === '♦') return 'D';
+  if (s === '♣') return 'C';
   return null;
 }
 
@@ -959,6 +960,12 @@ function applyMove(matchId, move, meta = {}) {
   let src = _getPileRef(state, srcZone, srcIdx, move, null);
   if (!src) return { ok: false, reason: 'bad_from' };
 
+  const maybeAutoFlipSourceTableau = () => {
+    if (String(srcZone || '').toLowerCase() !== 'tableau') return;
+    const topAfter = _peek(src);
+    if (topAfter && !_isFaceUp(topAfter)) _setFaceUp(topAfter, true);
+  };
+
   // If the move specifies a cardId, it must match the moved card.
   const wantId = (move && (move.cardId || move.id)) || null;
   const rawCount = Number((move && move.count) || 1);
@@ -999,6 +1006,7 @@ function applyMove(matchId, move, meta = {}) {
       return { ok: false, reason: 'bad_foundation' };
     }
     _push(dst, card);
+    maybeAutoFlipSourceTableau();
     return { ok: true, state };
   }
 
@@ -1049,7 +1057,8 @@ function applyMove(matchId, move, meta = {}) {
   src.splice(startIdx, moving.length);
   for (const c of moving) _push(dst, c);
 
-  // Optional: if tableau source becomes empty, no auto-flip here; flip must be explicit.
+  // Reveal the new source top card after a valid tableau move (Klondike rule).
+  maybeAutoFlipSourceTableau();
   return { ok: true, state };
 }
 
