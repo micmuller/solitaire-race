@@ -251,7 +251,13 @@ function ingestServerGeneratedMove(matchId, payload) {
         } catch {}
 
         console.warn(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || 'bot'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${data.meta.moveId || '-'} sig=${sig || '-'}`);
-        // Drive convergence even on reject
+        // Drive convergence even on reject: push authoritative snapshot immediately to all peers.
+        try {
+          const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
+          if (snap && snap.state) {
+            broadcastServerSnapshotToRoom(matchId, snap, `move_reject:${reason}`);
+          }
+        } catch {}
         requestSnapshotFromRoom(matchId, data.meta.seed || null, `move_reject:${reason}`);
         return; // IMPORTANT: do not broadcast rejected server-generated moves
       }
@@ -1038,6 +1044,12 @@ ws.on('message', buf => {
             if (!gate || gate.ok !== true) {
               const reason = (gate && gate.reason) ? gate.reason : 'invalid_move';
               console.warn(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || ws.__cid || 'client'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${moveId || '-'} cid=${ws.__cid || 'n/a'}`);
+              try {
+                const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
+                if (snap && snap.state) {
+                  broadcastServerSnapshotToRoom(matchId, snap, `move_reject:${reason}`);
+                }
+              } catch {}
               requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, `move_reject:${reason}`);
               return;
             }
