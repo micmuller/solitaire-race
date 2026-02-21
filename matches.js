@@ -410,7 +410,7 @@ function _pickSideKeyFromMove(move, card) {
     if (cid.startsWith('O-')) return 'opp';
   }
   // fallback: if move.fromSide exists
-  const s = (move && (move.side || move.fromSide || move.owner)) || null;
+  const s = (move && (move.side || move.fromSide || move.owner || (move.from && move.from.sideOwner) || (move.to && move.to.sideOwner))) || null;
   if (typeof s === 'string') {
     const sl = s.toLowerCase();
     if (sl === 'you' || sl === 'y') return 'you';
@@ -569,18 +569,31 @@ function _extractLegacyMoveFields(move) {
   // A) { kind, fromZone, fromIndex, toZone, toIndex, toSuit }
   // B) { kind, from:{zone,idx}, to:{zone,idx|suit} }
   // C) historical: { kind, from:'waste'|'t3', to:'f:S'|'t5' }
+  // D) iOS/PWA-style: { from:{kind:'pile'|'stock'|'waste', uiIndex, sideOwner}, to:{kind:'pile'|'found', uiIndex|f} }
   const kind = _normalizeMoveKind(move && move.kind);
 
-  const fromZone = (move && (move.fromZone || (move.from && move.from.zone))) || null;
-  const fromIndex = (move && (move.fromIndex ?? (move.from && move.from.idx))) ?? null;
-  const toZone = (move && (move.toZone || (move.to && move.to.zone))) || null;
-  const toIndex = (move && (move.toIndex ?? (move.to && move.to.idx))) ?? null;
-  const toSuit = (move && (move.toSuit || (move.to && move.to.suit))) || null;
+  const mapZone = (z) => {
+    const s = String(z || '').toLowerCase();
+    if (!s) return null;
+    if (s === 'pile' || s === 'tableau' || s === 'tab') return 'tableau';
+    if (s === 'found' || s === 'foundation' || s === 'foundations' || s === 'fnd') return 'foundation';
+    if (s === 'waste' || s === 'stock') return s;
+    return z || null;
+  };
+
+  const fromObj = (move && typeof move.from === 'object' && move.from) ? move.from : null;
+  const toObj = (move && typeof move.to === 'object' && move.to) ? move.to : null;
+
+  const fromZone = (move && (move.fromZone || (fromObj && (fromObj.zone || fromObj.kind)))) || null;
+  const fromIndex = (move && (move.fromIndex ?? (fromObj && (fromObj.idx ?? fromObj.index ?? fromObj.uiIndex ?? fromObj.i ?? fromObj.f)))) ?? null;
+  const toZone = (move && (move.toZone || (toObj && (toObj.zone || toObj.kind)))) || null;
+  const toIndex = (move && (move.toIndex ?? (toObj && (toObj.idx ?? toObj.index ?? toObj.uiIndex ?? toObj.i ?? toObj.f)))) ?? null;
+  const toSuit = (move && (move.toSuit || (toObj && (toObj.suit ?? toObj.code)))) || null;
 
   // Parse compact strings if present
-  let fz = fromZone;
+  let fz = mapZone(fromZone);
   let fi = fromIndex;
-  let tz = toZone;
+  let tz = mapZone(toZone);
   let ti = toIndex;
   let ts = toSuit;
 
@@ -596,14 +609,23 @@ function _extractLegacyMoveFields(move) {
     else if (/^f[:=]/.test(s)) { tz = 'foundation'; ts = s.split(/[:=]/)[1]; }
   }
 
-  // If destination is foundation and suit was put into toIndex, accept it.
-  if ((String(tz || '').toLowerCase() === 'foundation' || String(tz || '').toLowerCase() === 'foundations') && !ts && ti != null) {
-    ts = ti;
-    ti = null;
+  // Normalize foundation index/suit hints.
+  // In iOS payloads `to.f` is a lane index (0..3 / 4..7), not a suit glyph/code.
+  if ((String(tz || '').toLowerCase() === 'foundation' || String(tz || '').toLowerCase() === 'foundations') && ts == null && ti != null) {
+    if (typeof ti === 'string' && !/^\d+$/.test(ti)) {
+      ts = ti;
+      ti = null;
+    }
+  }
+
+  // iOS uses `kind: flip` for stock->waste draw. Normalize to draw for validator/apply.
+  let normalizedKind = kind;
+  if (kind === 'flip' && fz === 'stock' && (tz === 'waste' || tz == null)) {
+    normalizedKind = 'draw';
   }
 
   return {
-    kind,
+    kind: normalizedKind,
     fromZone: fz,
     fromIndex: fi,
     toZone: tz,
