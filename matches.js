@@ -957,7 +957,27 @@ function applyMove(matchId, move, meta = {}) {
       }
     }
 
-    const c = _pop(stock);
+    if (!Array.isArray(stock) || !Array.isArray(waste)) return { ok: false, reason: 'bad_piles' };
+
+    const wantId = (move && (move.cardId || move.id)) || null;
+    let c = null;
+
+    if (wantId && stock.length > 0) {
+      const top = stock[stock.length - 1];
+      const topId = (top && (top.id || top.cardId || top.code)) || null;
+      if (_sameCardId(topId, wantId)) {
+        c = _pop(stock);
+      } else {
+        // Drift-tolerant fallback: if client names another card currently in stock,
+        // move that exact card to waste so follow-up move (waste->pile/foundation) stays consistent.
+        const idx = stock.findIndex(x => _sameCardId((x && (x.id || x.cardId || x.code)) || null, wantId));
+        if (idx >= 0) {
+          c = stock.splice(idx, 1)[0];
+        }
+      }
+    }
+
+    if (!c) c = _pop(stock);
     if (!c) return { ok: false, reason: 'stock_empty' };
     _setFaceUp(c, true);
     _push(waste, c);
