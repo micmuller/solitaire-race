@@ -1009,7 +1009,7 @@ ws.on('message', buf => {
       // Dropping the move forces convergence via snapshot.
       const isFlipMove = String(data.move.kind || '') === 'flip';
       const flipCardId = String(data.move.cardId || '');
-      const isValidFlipCardId = /^([YO])-\d+-(♠|♥|♦|♣)-\d+$/.test(flipCardId);
+      const isValidFlipCardId = /^([YO])-\d+-(♠️?|♥️?|♦️?|♣️?)-\d+$/.test(flipCardId);
       if (isFlipMove && !isValidFlipCardId) {
         console.warn(`[P1] ${isoNow()} DROP flip-invalid-cardId matchId="${matchId}" cid=${ws.__cid || 'n/a'} moveId=${moveId || '-'} from=${data.from || 'n/a'} cardId=${flipCardId || '-'}`);
         requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, 'flip_invalid_cardId');

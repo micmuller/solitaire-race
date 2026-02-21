@@ -566,6 +566,7 @@ function _normalizeMoveKind(kind) {
   if (k === 'topile' || k === 'totableau' || k === 'tableau') return 'toPile';
   if (k === 'flip' || k === 'fliptableau') return 'flip';
   if (k === 'draw' || k === 'stocktowaste' || k === 'deal') return 'draw';
+  if (k === 'recycle' || k === 'wastetostock') return 'recycle';
   return String(kind || '');
 }
 
@@ -712,12 +713,32 @@ function validateMove(matchId, move, actor = 'unknown') {
     if (!Array.isArray(stock) || !Array.isArray(waste)) { report.reason = 'bad_piles'; return report; }
     if (stock.length <= 0) { report.reason = 'stock_empty'; return report; }
 
-    const wantId = (move && (move.cardId || move.id)) || null;
-    if (wantId) {
-      const top = _peek(stock);
-      const topId = (top && (top.id || top.cardId || top.code)) || null;
-      if (!_sameCardId(topId, wantId)) { report.reason = 'card_not_on_top'; return report; }
+    // Intentionally do NOT hard-reject draw by cardId mismatch.
+    // iOS can be ahead locally (optimistic) and still be semantically valid as long as stock has cards.
+    report.ok = true;
+    return report;
+  }
+
+  if (kind === 'recycle') {
+    let stock = _getPileRef(state, 'stock', null, move, null);
+    let waste = _getPileRef(state, 'waste', null, move, null);
+
+    if ((!Array.isArray(waste) || waste.length <= 0) && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altStock = _getPileRef(state, 'stock', null, altMove, null);
+        const altWaste = _getPileRef(state, 'waste', null, altMove, null);
+        if (Array.isArray(altStock) && Array.isArray(altWaste) && altWaste.length > 0) {
+          stock = altStock;
+          waste = altWaste;
+        }
+      }
     }
+
+    if (!Array.isArray(stock) || !Array.isArray(waste)) { report.reason = 'bad_piles'; return report; }
+    if (waste.length <= 0) { report.reason = 'waste_empty'; return report; }
 
     report.ok = true;
     return report;
@@ -860,17 +881,41 @@ function applyMove(matchId, move, meta = {}) {
       }
     }
 
-    const wantId = (move && (move.cardId || move.id)) || null;
-    if (wantId) {
-      const top = _peek(stock);
-      const topId = (top && (top.id || top.cardId || top.code)) || null;
-      if (!_sameCardId(topId, wantId)) return { ok: false, reason: 'card_not_on_top' };
-    }
-
     const c = _pop(stock);
     if (!c) return { ok: false, reason: 'stock_empty' };
     _setFaceUp(c, true);
     _push(waste, c);
+    return { ok: true, state };
+  }
+
+  if (kind === 'recycle') {
+    let stock = _getPileRef(state, 'stock', null, move, null);
+    let waste = _getPileRef(state, 'waste', null, move, null);
+
+    if ((!Array.isArray(waste) || waste.length <= 0) && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altStock = _getPileRef(state, 'stock', null, altMove, null);
+        const altWaste = _getPileRef(state, 'waste', null, altMove, null);
+        if (Array.isArray(altStock) && Array.isArray(altWaste) && altWaste.length > 0) {
+          stock = altStock;
+          waste = altWaste;
+        }
+      }
+    }
+
+    if (!Array.isArray(stock) || !Array.isArray(waste)) return { ok: false, reason: 'bad_piles' };
+    if (waste.length <= 0) return { ok: false, reason: 'waste_empty' };
+
+    // Move all waste cards back to stock, face-down, preserving order for next draws.
+    while (waste.length > 0) {
+      const c = waste.pop();
+      if (!c) break;
+      _setFaceUp(c, false);
+      stock.push(c);
+    }
     return { ok: true, state };
   }
 
