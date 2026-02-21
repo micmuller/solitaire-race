@@ -839,9 +839,28 @@ function validateMove(matchId, move, actor = 'unknown') {
     if (!_isFaceUp(movingCard)) { report.reason = 'card_face_down'; return report; }
 
     const suit = _legacySuitCode(m.toSuit || (movingCard && movingCard.suit));
-    const dst = _getPileRef(state, 'foundation', suit, move, movingCard);
+    let dst = _getPileRef(state, 'foundation', suit, move, movingCard);
     if (!dst) { report.reason = 'bad_foundation'; return report; }
-    const can = _canPlaceOnFoundationLegacy(movingCard, dst);
+    let can = _canPlaceOnFoundationLegacy(movingCard, dst);
+
+    // Side fallback: if the inferred side points to an empty/wrong foundation lane,
+    // retry on the opposite side (perspective drift between Y/O vs you/opp mapping).
+    if (!can.ok && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, movingCard);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altDst = _getPileRef(state, 'foundation', suit, altMove, movingCard);
+        if (altDst) {
+          const altCan = _canPlaceOnFoundationLegacy(movingCard, altDst);
+          if (altCan.ok) {
+            dst = altDst;
+            can = altCan;
+          }
+        }
+      }
+    }
+
     if (!can.ok) { report.reason = can.reason; return report; }
     report.ok = true;
     return report;
@@ -1032,13 +1051,37 @@ function applyMove(matchId, move, meta = {}) {
     if (!card) return { ok: false, reason: 'from_empty' };
 
     const suit = _legacySuitCode(m.toSuit || (card && card.suit));
-    const dst = _getPileRef(state, 'foundation', suit, move, card);
+    let dst = _getPileRef(state, 'foundation', suit, move, card);
     if (!dst) {
       // rollback
       if (useFrontWasteTop) src.unshift(card);
       else _push(src, card);
       return { ok: false, reason: 'bad_foundation' };
     }
+
+    let can = _canPlaceOnFoundationLegacy(card, dst);
+    if (!can.ok && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, card);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altDst = _getPileRef(state, 'foundation', suit, altMove, card);
+        if (altDst) {
+          const altCan = _canPlaceOnFoundationLegacy(card, altDst);
+          if (altCan.ok) {
+            dst = altDst;
+            can = altCan;
+          }
+        }
+      }
+    }
+
+    if (!can.ok) {
+      if (useFrontWasteTop) src.unshift(card);
+      else _push(src, card);
+      return { ok: false, reason: can.reason || 'foundation_invalid' };
+    }
+
     _push(dst, card);
     maybeAutoFlipSourceTableau();
     return { ok: true, state };
