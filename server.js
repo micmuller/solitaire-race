@@ -826,6 +826,41 @@ function peersInRoom(room) {
   const set = rooms.get(room);
   return set ? set.size : 0;
 }
+
+function isMatchRoom(room) {
+  if (!room) return false;
+  return room !== 'lobby' && room !== 'default';
+}
+
+function forceEvictRoom(room, reason = 'peer_disconnect') {
+  if (!isMatchRoom(room)) return 0;
+  const set = rooms.get(room);
+  if (!set || set.size === 0) return 0;
+
+  let evicted = 0;
+  for (const client of Array.from(set)) {
+    try {
+      sendSys(client, {
+        type: 'match_terminated',
+        matchId: room,
+        reason,
+        at: isoNow()
+      }, { matchId: room });
+    } catch {}
+
+    try {
+      if (client.readyState === client.OPEN || client.readyState === client.CONNECTING) {
+        client.close(4001, `match_terminated:${reason}`);
+      }
+    } catch {}
+
+    evicted++;
+  }
+
+  console.warn(`[ROOM_RESET] ${isoNow()} room="${room}" reason=${reason} evicted=${evicted}`);
+  return evicted;
+}
+
 function broadcastToRoom(room, data, excludeWs = null) {
   const set = rooms.get(room);
 
@@ -2141,6 +2176,12 @@ ws.on('close', () => {
 
   // Leave room first, so peersInRoom(roomLeft) reflects remaining humans.
   leaveRoom(ws);
+
+  // Temporary fail-safe requested by project: if one peer disconnects in a match room,
+  // terminate the whole room so no one keeps playing on diverged local worlds.
+  if (isMatchRoom(roomLeft) && peersInRoom(roomLeft) > 0) {
+    forceEvictRoom(roomLeft, 'peer_disconnect');
+  }
 
   // If this was the last client in a bot match room, stop the bot.
   if (roomLeft) {
