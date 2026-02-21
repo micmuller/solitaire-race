@@ -870,8 +870,28 @@ function validateMove(matchId, move, actor = 'unknown') {
   let movingCard = card;
   const rawCount = Number((move && move.count) || 1);
   const moveCount = Number.isFinite(rawCount) && rawCount > 0 ? Math.floor(rawCount) : 1;
+  const srcZoneLower = String(srcZone || '').toLowerCase();
 
-  if (wantId) {
+  if (srcZoneLower === 'waste') {
+    // Waste -> tableau is always a single-card move.
+    if (moveCount !== 1) { report.reason = 'bad_count'; return report; }
+    if (wantId && Array.isArray(src) && src.length > 0) {
+      const back = src[src.length - 1];
+      const backId = (back && (back.id || back.cardId || back.code)) || null;
+      if (_sameCardId(backId, wantId)) {
+        movingCard = back;
+      } else {
+        const front = src[0];
+        const frontId = (front && (front.id || front.cardId || front.code)) || null;
+        if (_sameCardId(frontId, wantId)) {
+          movingCard = front;
+        } else {
+          report.reason = 'card_not_on_top';
+          return report;
+        }
+      }
+    }
+  } else if (wantId) {
     // Allow multi-card tableau moves where cardId identifies the first moved card (not the top card).
     let idx = -1;
     for (let i = src.length - 1; i >= 0; i--) {
@@ -1088,6 +1108,38 @@ function applyMove(matchId, move, meta = {}) {
   }
 
   // toPile (supports single- and multi-card stack moves)
+  const srcZoneLower = String(srcZone || '').toLowerCase();
+
+  if (srcZoneLower === 'waste') {
+    if (moveCount !== 1) return { ok: false, reason: 'bad_count' };
+
+    let useFrontWasteTop = false;
+    if (wantId && Array.isArray(src) && src.length > 0) {
+      const back = src[src.length - 1];
+      const backId = (back && (back.id || back.cardId || back.code)) || null;
+      if (!_sameCardId(backId, wantId)) {
+        const front = src[0];
+        const frontId = (front && (front.id || front.cardId || front.code)) || null;
+        if (_sameCardId(frontId, wantId)) useFrontWasteTop = true;
+        else return { ok: false, reason: 'card_not_on_top' };
+      }
+    }
+
+    const movingCard = useFrontWasteTop ? src.shift() : _pop(src);
+    if (!movingCard) return { ok: false, reason: 'from_empty' };
+
+    const ft = _moveFromTo(move);
+    const dst = _getPileRef(state, m.toZone || 'tableau', (m.toIndex != null) ? m.toIndex : ft.to, move, movingCard);
+    if (!dst) {
+      if (useFrontWasteTop) src.unshift(movingCard);
+      else _push(src, movingCard);
+      return { ok: false, reason: 'bad_to' };
+    }
+
+    _push(dst, movingCard);
+    return { ok: true, state };
+  }
+
   let startIdx = src.length - 1;
   if (wantId) {
     let idx = -1;
