@@ -37,6 +37,7 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-02-21        | v2.4.15  | Bugfixing A2 iterations: reject resync to all peers + disconnect room fail-safe
 // 2026-02-15        | v2.4.14  | Bugfixing A2: enforce server-side validation for client-originated moves before broadcast
 // 2026-02-14        | v2.4.13  | Bugfixing A1: drop flip moves with invalid cardId to prevent UNK drift
 // 2026-02-06        | v2.4.12  | AIRBAG: card-conservation invariant recovery (broadcast snapshot on failure)
@@ -62,7 +63,7 @@ const { URL } = require('node:url');
 
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.14';
+const VERSION = '2.4.15';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
