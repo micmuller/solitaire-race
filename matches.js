@@ -7,6 +7,7 @@
 // Date (YYYY-MM-DD) | Version  | Change
 // 2026-02-06        | v2.4.12  | AIRBAG: Card-conservation invariant after apply (dup/missing guard + snapshot recovery trigger)
 // 2026-01-25        | v2.4.10  | P1: Fix bot toPile moves with numeric from/to (no zones): normalize indices and default zones to tableau; prevents bad_from loops
+// 2026-02-22        | v2.4.21  | Foundation rules fix: global 8-lane deterministic placement (no side split) + resolved index repair
 // 2026-02-22        | v2.4.20  | Foundation canonicalization: expose resolvedFoundationIndex in applied toFound moves
 // 2026-01-25        | v2.4.9   | P1: Add server-side validate/apply helpers for legacy (iOS↔BOT) moves (toFound/toPile/flip/draw); export validateMove/applyMove/validateAndApplyMove
 // 2026-01-23        | v2.4.8   | Fix: Invariant collector double-counted card ids (id fields were traversed twice) causing false duplicate_card_ids (expected=52 found=208); skip id keys after capture
@@ -507,23 +508,30 @@ function _getPileRef(state, zone, idx, move, card) {
     if (z === 'foundation' || z === 'foundations') {
       const suitCode = _legacySuitCode(idx);
       if (!suitCode) return null;
-
-      // Determine which half (you vs opp foundations) to use based on card owner.
-      // In canonical owner='Y': you uses first 4, opp uses last 4.
-      const fromKey = _pickSideKeyFromMove(move, card);
-      const base = (fromKey === 'you') ? 0 : 4;
       const glyph = _suitGlyphFromCode(suitCode);
       if (!glyph) return null;
 
-      // Find the matching foundation object within the half.
-      const arr = state.foundations;
-      for (let i = base; i < base + 4 && i < arr.length; i++) {
+      // Foundations are GLOBAL (all 8), no ownership split by you/opp.
+      const arr = Array.isArray(state.foundations) ? state.foundations : [];
+      const candidates = [];
+      for (let i = 0; i < arr.length; i++) {
         const f = arr[i];
-        if (f && typeof f === 'object' && f.suit === glyph && Array.isArray(f.cards)) {
-          return f.cards;
-        }
+        if (!(f && typeof f === 'object' && f.suit === glyph && Array.isArray(f.cards))) continue;
+        const top = _peek(f.cards);
+        const topRank = (top && typeof top.rank === 'number') ? top.rank : -1;
+        const legal = card ? _canPlaceOnFoundationLegacy(card, f.cards).ok : true;
+        candidates.push({ i, cards: f.cards, topRank, legal });
       }
-      return null;
+
+      const legalCands = candidates.filter(c => c.legal);
+      if (!legalCands.length) return null;
+
+      // Deterministic tie-break (GAME_RULES.md): higher topRank, then lower index.
+      legalCands.sort((a, b) => {
+        if (a.topRank !== b.topRank) return b.topRank - a.topRank;
+        return a.i - b.i;
+      });
+      return legalCands[0].cards;
     }
     return null;
   }
@@ -534,7 +542,9 @@ function _getPileRef(state, zone, idx, move, card) {
 function _foundationIndexByRef(state, pileRef) {
   if (!state || !Array.isArray(state.foundations) || !pileRef) return -1;
   for (let i = 0; i < state.foundations.length; i++) {
-    if (state.foundations[i] === pileRef) return i;
+    const f = state.foundations[i];
+    if (f === pileRef) return i;
+    if (f && typeof f === 'object' && f.cards === pileRef) return i;
   }
   return -1;
 }

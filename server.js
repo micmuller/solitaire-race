@@ -37,6 +37,7 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-02-22        | v2.4.21  | A2 foundation rules fix: enforce global deterministic foundation selection (all 8 lanes)
 // 2026-02-22        | v2.4.20  | A2 foundation sync fix: broadcast canonical resolvedFoundationIndex for toFound
 // 2026-02-22        | v2.4.19  | A2 hotfix: re-enable throttled after_move snapshot requests (status/convergence recovery)
 // 2026-02-22        | v2.4.18  | A2 resync policy: remove after_move snapshot requests; resync only on reject/anomaly paths
@@ -71,7 +72,7 @@ const ANSI_RESET = '\x1b[0m';
 function redLog(line) { return `${ANSI_RED}${line}${ANSI_RESET}`; }
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.20';
+const VERSION = '2.4.21';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
