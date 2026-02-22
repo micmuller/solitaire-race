@@ -37,6 +37,7 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-02-22        | v2.4.17  | A2 foundation canonicalization: broadcast resolved foundation lane (fix concurrent toFound lane remap drift)
 // 2026-02-22        | v2.4.16  | A2 logging hardening: red-tag logs for MOVE_REJECT / STALE_SEQ_DROP / SNAPSHOT_RESYNC_SENT
 // 2026-02-21        | v2.4.15  | Bugfixing A2 iterations: reject resync to all peers + disconnect room fail-safe
 // 2026-02-15        | v2.4.14  | Bugfixing A2: enforce server-side validation for client-originated moves before broadcast
@@ -67,7 +68,7 @@ const ANSI_RESET = '\x1b[0m';
 function redLog(line) { return `${ANSI_RED}${line}${ANSI_RESET}`; }
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.16';
+const VERSION = '2.4.17';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}

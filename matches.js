@@ -530,6 +530,14 @@ function _getPileRef(state, zone, idx, move, card) {
   return null;
 }
 
+function _foundationIndexByRef(state, pileRef) {
+  if (!state || !Array.isArray(state.foundations) || !pileRef) return -1;
+  for (let i = 0; i < state.foundations.length; i++) {
+    if (state.foundations[i] === pileRef) return i;
+  }
+  return -1;
+}
+
 function _canPlaceOnFoundationLegacy(card, foundationPile) {
   if (!card) return { ok: false, reason: 'no_card' };
   const suit = _legacySuitCode(card.suit);
@@ -1109,6 +1117,15 @@ function applyMove(matchId, move, meta = {}) {
       if (wastePickIndex >= 0) src.splice(wastePickIndex, 0, card);
       else _push(src, card);
       return { ok: false, reason: can.reason || 'foundation_invalid' };
+    }
+
+    // A2: canonicalize foundation lane in outgoing move payload to actual resolved pile index.
+    // This avoids client drift when requested lane (e.g. f=1) is remapped server-side to another legal lane.
+    const resolvedF = _foundationIndexByRef(state, dst);
+    if (resolvedF >= 0) {
+      if (!move.to || typeof move.to !== 'object') move.to = {};
+      move.to.kind = 'found';
+      move.to.f = resolvedF;
     }
 
     _push(dst, card);
