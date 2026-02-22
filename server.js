@@ -37,6 +37,7 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-02-22        | v2.4.18  | A2 resync policy: remove after_move snapshot requests; resync only on reject/anomaly paths
 // 2026-02-22        | v2.4.17  | A2 foundation canonicalization: broadcast resolved foundation lane (fix concurrent toFound lane remap drift)
 // 2026-02-22        | v2.4.16  | A2 logging hardening: red-tag logs for MOVE_REJECT / STALE_SEQ_DROP / SNAPSHOT_RESYNC_SENT
 // 2026-02-21        | v2.4.15  | Bugfixing A2 iterations: reject resync to all peers + disconnect room fail-safe
@@ -68,7 +69,7 @@ const ANSI_RESET = '\x1b[0m';
 function redLog(line) { return `${ANSI_RED}${line}${ANSI_RESET}`; }
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.17';
+const VERSION = '2.4.18';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -1127,9 +1128,8 @@ ws.on('message', buf => {
           broadcastToRoom(matchId, out, ws);
         }
 
-        // P1 (minimal): after every accepted move, ask the room for a fresh snapshot.
-        // This drives convergence even before full server-side rule validation exists.
-        requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, 'after_move');
+        // A2 policy: do NOT request snapshot after every accepted move (too noisy under fast input).
+        // Resync stays active on reject/anomaly paths (MOVE_REJECT, AIRBAG/corruption, invalid flip, bot/error flows).
 
         // P1.1: If invariant failed on the latest authoritative snapshot, push an emergency resync.
         maybeTriggerCorruptionAirbag(matchId, 'after_move');
