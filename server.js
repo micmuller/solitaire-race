@@ -37,6 +37,7 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-02-22        | v2.4.16  | A2 logging hardening: red-tag logs for MOVE_REJECT / STALE_SEQ_DROP / SNAPSHOT_RESYNC_SENT
 // 2026-02-21        | v2.4.15  | Bugfixing A2 iterations: reject resync to all peers + disconnect room fail-safe
 // 2026-02-15        | v2.4.14  | Bugfixing A2: enforce server-side validation for client-originated moves before broadcast
 // 2026-02-14        | v2.4.13  | Bugfixing A1: drop flip moves with invalid cardId to prevent UNK drift
@@ -61,9 +62,12 @@ const os     = require('node:os');
 const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
+const ANSI_RED = '\x1b[31m';
+const ANSI_RESET = '\x1b[0m';
+function redLog(line) { return `${ANSI_RED}${line}${ANSI_RESET}`; }
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.15';
+const VERSION = '2.4.16';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -251,7 +255,7 @@ function ingestServerGeneratedMove(matchId, payload) {
           }
         } catch {}
 
-        console.warn(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || 'bot'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${data.meta.moveId || '-'} sig=${sig || '-'}`);
+        console.warn(redLog(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || 'bot'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${data.meta.moveId || '-'} sig=${sig || '-'}`));
         // Drive convergence even on reject: push authoritative snapshot immediately to all peers.
         try {
           const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
@@ -532,9 +536,7 @@ function maybeTriggerCorruptionAirbag(matchId, reason = 'invariant_failed') {
   requestSnapshotFromRoom(matchId, (snap && snap.seed) ? snap.seed : null, `corruption_airbag:${reason}`);
 
   // Highlight in console
-  const RED = '\x1b[31m';
-  const RESET = '\x1b[0m';
-  console.warn(`${RED}[AIRBAG] ${isoNow()} matchId="${matchId}" reason=${inv.reason} expected=${inv.expectedTotalCards} found=${inv.foundTotalCards} missing=${inv.missingCount} dupes=${(inv.dupes||[]).length} unk=${(inv.unknownIds||[]).length} hash=${inv.snapshotHash}${RESET}`);
+  console.warn(redLog(`[AIRBAG] ${isoNow()} matchId="${matchId}" reason=${inv.reason} expected=${inv.expectedTotalCards} found=${inv.foundTotalCards} missing=${inv.missingCount} dupes=${(inv.dupes||[]).length} unk=${(inv.unknownIds||[]).length} hash=${inv.snapshotHash}`));
   return true;
 }
 
@@ -547,14 +549,16 @@ function requestSnapshotFromRoom(matchId, seed = null, reason = 'server_request'
   if ((nowMs - lastReq) < RESYNC_THROTTLE_MS) return false;
   lastStateRequestByKey.set(key, nowMs);
 
+  const atIso = isoNow();
   broadcastSysToRoom(matchId, {
     type: 'state_request',
     matchId,
     seed: seed || null,
-    at: isoNow(),
+    at: atIso,
     fromCid: 'srv',
     reason
   });
+  console.warn(redLog(`[SNAPSHOT_RESYNC_SENT] ${atIso} matchId="${matchId}" reason=${reason}`));
   return true;
 }
 setInterval(() => cleanupOldMatches(), 10 * 60 * 1000).unref();
@@ -1062,7 +1066,7 @@ ws.on('message', buf => {
         if (moveId) {
           const isDup = rememberMoveId(matchId, String(moveId));
           if (isDup) {
-            console.log(`[M7] ${isoNow()} DUP move ignored matchId="${matchId}" moveId=${moveId} cid=${ws.__cid || 'n/a'}`);
+            console.warn(redLog(`[STALE_SEQ_DROP] ${isoNow()} matchId="${matchId}" moveId=${moveId} cid=${ws.__cid || 'n/a'} reason=duplicate_moveId`));
             return; // hard stop: do not forward duplicates
           }
         }
@@ -1079,7 +1083,7 @@ ws.on('message', buf => {
             });
             if (!gate || gate.ok !== true) {
               const reason = (gate && gate.reason) ? gate.reason : 'invalid_move';
-              console.warn(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || ws.__cid || 'client'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${moveId || '-'} cid=${ws.__cid || 'n/a'}`);
+              console.warn(redLog(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || ws.__cid || 'client'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${moveId || '-'} cid=${ws.__cid || 'n/a'}`));
               try {
                 const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
                 if (snap && snap.state) {
