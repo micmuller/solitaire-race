@@ -37,6 +37,7 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-02-22        | v2.4.19  | A2 hotfix: re-enable throttled after_move snapshot requests (status/convergence recovery)
 // 2026-02-22        | v2.4.18  | A2 resync policy: remove after_move snapshot requests; resync only on reject/anomaly paths
 // 2026-02-22        | v2.4.17  | A2 foundation canonicalization: broadcast resolved foundation lane (fix concurrent toFound lane remap drift)
 // 2026-02-22        | v2.4.16  | A2 logging hardening: red-tag logs for MOVE_REJECT / STALE_SEQ_DROP / SNAPSHOT_RESYNC_SENT
@@ -69,7 +70,7 @@ const ANSI_RESET = '\x1b[0m';
 function redLog(line) { return `${ANSI_RED}${line}${ANSI_RESET}`; }
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.18';
+const VERSION = '2.4.19';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -1128,8 +1129,8 @@ ws.on('message', buf => {
           broadcastToRoom(matchId, out, ws);
         }
 
-        // A2 policy: do NOT request snapshot after every accepted move (too noisy under fast input).
-        // Resync stays active on reject/anomaly paths (MOVE_REJECT, AIRBAG/corruption, invalid flip, bot/error flows).
+        // A2 hotfix: keep after_move snapshot requests enabled (throttled) to preserve status/convergence on iOS clients.
+        requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, 'after_move');
 
         // P1.1: If invariant failed on the latest authoritative snapshot, push an emergency resync.
         maybeTriggerCorruptionAirbag(matchId, 'after_move');
