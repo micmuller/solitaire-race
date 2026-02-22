@@ -37,6 +37,7 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-02-22        | v2.4.20  | A2 foundation sync fix: broadcast canonical resolvedFoundationIndex for toFound
 // 2026-02-22        | v2.4.19  | A2 hotfix: re-enable throttled after_move snapshot requests (status/convergence recovery)
 // 2026-02-22        | v2.4.18  | A2 resync policy: remove after_move snapshot requests; resync only on reject/anomaly paths
 // 2026-02-22        | v2.4.17  | A2 foundation canonicalization: broadcast resolved foundation lane (fix concurrent toFound lane remap drift)
@@ -70,7 +71,7 @@ const ANSI_RESET = '\x1b[0m';
 function redLog(line) { return `${ANSI_RED}${line}${ANSI_RESET}`; }
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.19';
+const VERSION = '2.4.20';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -1116,6 +1117,11 @@ ws.on('message', buf => {
         if (rev != null) {
           if (!data.meta) data.meta = {};
           data.meta.matchRev = rev;
+        }
+
+        if (String(data.move?.kind || '').toLowerCase() === 'tofound') {
+          const rf = (data.move && (data.move.resolvedFoundationIndex ?? data.move?.to?.resolvedFoundationIndex ?? data.move?.to?.f));
+          console.log(`[FOUND_RESOLVED] ${isoNow()} matchId="${matchId}" cid=${ws.__cid || 'n/a'} cardId=${data.move?.cardId || '-'} f=${rf ?? '-'} owner=${data.move?.owner || '-'} moveId=${moveId || '-'}`);
         }
 
         // Forward the move with additive meta (rev). Prefer compact re-stringify.

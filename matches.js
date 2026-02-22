@@ -7,6 +7,7 @@
 // Date (YYYY-MM-DD) | Version  | Change
 // 2026-02-06        | v2.4.12  | AIRBAG: Card-conservation invariant after apply (dup/missing guard + snapshot recovery trigger)
 // 2026-01-25        | v2.4.10  | P1: Fix bot toPile moves with numeric from/to (no zones): normalize indices and default zones to tableau; prevents bad_from loops
+// 2026-02-22        | v2.4.20  | Foundation canonicalization: expose resolvedFoundationIndex in applied toFound moves
 // 2026-01-25        | v2.4.9   | P1: Add server-side validate/apply helpers for legacy (iOS↔BOT) moves (toFound/toPile/flip/draw); export validateMove/applyMove/validateAndApplyMove
 // 2026-01-23        | v2.4.8   | Fix: Invariant collector double-counted card ids (id fields were traversed twice) causing false duplicate_card_ids (expected=52 found=208); skip id keys after capture
 // 2026-01-23        | v2.4.7   | TEMP: Legacy bot snapshot format (52-card, tableaus/stock/waste/foundations{S,H,D,C}, faceUp) for iOS↔BOT; ensureInitialSnapshot selects legacy when isBot present
@@ -1130,7 +1131,7 @@ function applyMove(matchId, move, meta = {}) {
 
     _push(dst, card);
     maybeAutoFlipSourceTableau();
-    return { ok: true, state };
+    return { ok: true, state, resolvedFoundationIndex: resolvedF };
   }
 
   // toPile (supports single- and multi-card stack moves)
@@ -1363,6 +1364,15 @@ function validateAndApplyMove(matchId, move, actor = 'unknown', sys = {}) {
 
   const res = applyMove(matchId, move, sys);
   if (!res.ok) return { ok: false, reason: res.reason };
+
+  // A2: carry canonical foundation lane into outbound move payload.
+  if (res && Number.isInteger(res.resolvedFoundationIndex)) {
+    if (!move.to || typeof move.to !== 'object') move.to = {};
+    move.to.kind = move.to.kind || 'found';
+    move.to.f = res.resolvedFoundationIndex;
+    move.to.resolvedFoundationIndex = res.resolvedFoundationIndex;
+    move.resolvedFoundationIndex = res.resolvedFoundationIndex;
+  }
 
   // persist authoritative snapshot
   setAuthoritativeState(matchId, res.state, {
