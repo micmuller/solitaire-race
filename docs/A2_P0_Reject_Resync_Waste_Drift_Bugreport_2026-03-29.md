@@ -2,8 +2,10 @@
 
 **Datum:** 2026-03-29  
 **Projekt:** Solitaire HighNoon / solitaire-race  
-**Status:** P0 / Release Blocker  
-**Test-Setup:** 2 iPads mit aktuellem iOS Client-Build `0.7.22 (3)` gegen Server `v2.4.21`
+**Status:** Behoben und auf 2 iPads erfolgreich retestet (`fixed / retested green`)  
+**Ursprünglicher Status:** P0 / Release Blocker  
+**Erstbefund-Test-Setup:** 2 iPads mit iOS Client-Build `0.7.22 (3)` gegen Server `v2.4.21`
+**Fix-validierter Stand:** Server `v2.4.23`, iOS `0.7.25 (6)`
 
 ---
 
@@ -144,12 +146,46 @@ Die Karte wird aus dem Waste genommen, aber Count / pile reconstruction / founda
 
 ---
 
-## Sofortige Empfehlung
+## Auflösung / verifizierter Fixstand
 
-- Diesen Bug als **A2 P0 Release Blocker** behandeln
-- T4/T5/T6/T7 **nicht** auf demselben fehlerhaften Match weiterfahren
-- gezielt einen Fix-Cluster für **Reject/Resync/Waste/Foundation-Konsistenz** aufmachen
-- erst nach Fix denselben Testpfad nochmals auf zwei Geräten fahren
+Nach mehreren Analyse- und Patch-Runden zeigte sich als wirksamste Root Cause:
+
+- **iOS-Client hat eigene lokale Moves optimistisch sofort angewendet**
+- der Server hat diese Moves an den Sender zurückge-echoed
+- der Sender hat den eigenen Move **nochmals inbound verarbeitet**
+- dadurch kam es im Waste-Pfad zu **Double-Apply / Double-Remove**
+- sichtbares Symptom: bei einer Ablage verschwand effektiv **eine Karte zu viel** aus dem Waste; daraus folgten Drift und spätere Count-/Missing-Card-Probleme
+
+Zusätzliche Härtung erfolgte über:
+- Unicode-/Suit-/CardId-Kanonisierung (`♣` vs `♣️` etc.)
+- robustere Gleichheitsprüfung für Card IDs im iOS-Client und auf dem Server
+
+### Wirksame Fixes
+- **Server Branch `bugfix/A2-server-move-validation`**
+  - `ac72721` — `A2: harden reject resync flow for stale optimistic clients`
+  - `948fb7c` — `A2 canonicalize FE0F card ids on server`
+- **iOS Branch `bugfix/A2-client-collision-hardening`**
+  - `aae2c15` — `A2 normalize FE0F card ids in iOS client`
+  - `fb07a95` — `Fix echoed iOS moves double-applying waste`
+
+### Verifizierter Re-Test (grün)
+Getestet auf zwei frisch kompilierten iPads mit neuem Server- und iOS-Build.
+
+**Ergebnis:**
+- kein Waste-Drift mehr zwischen iPad A und iPad B
+- Illegal-Move → legaler Folgezug (`waste -> foundation`) bleibt stabil
+- Waste-Count bleibt nach vollständigem Durchlauf plausibel und korrekt
+- kein erneutes "eine Karte gelegt, aber zwei weg"-Symptom
+
+Damit gilt dieser konkrete P0-Pfad aktuell als **funktional geschlossen**.
+
+---
+
+## Nächste Empfehlung
+
+- Bugreport als **fixed / retested green** stehen lassen
+- denselben Match **nicht** weiter für Grundlagenbefunde missbrauchen
+- nun geordnet mit den nächsten A2-Goldpfaden weitertesten (insb. T4/T5/T6/T7)
 
 ---
 
