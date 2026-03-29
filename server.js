@@ -72,7 +72,7 @@ const ANSI_RESET = '\x1b[0m';
 function redLog(line) { return `${ANSI_RED}${line}${ANSI_RESET}`; }
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.21';
+const VERSION = '2.4.22';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -261,6 +261,14 @@ function ingestServerGeneratedMove(matchId, payload) {
         } catch {}
 
         console.warn(redLog(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || 'bot'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${data.meta.moveId || '-'} sig=${sig || '-'}`));
+        notifyMoveReject(ws, matchId, reason, {
+          moveId: data.meta.moveId || data.meta.id || null,
+          seed: data.meta.seed || null
+        });
+        broadcastMoveReject(matchId, ws, matchId, reason, {
+          moveId: data.meta.moveId || data.meta.id || null,
+          seed: data.meta.seed || null
+        });
         // Drive convergence even on reject: push authoritative snapshot immediately to all peers.
         try {
           const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
@@ -947,6 +955,67 @@ function broadcastSysToRoom(room, sysPayload, extra = {}) {
   }
 }
 
+function notifyMoveReject(ws, matchId, reason, meta = {}) {
+  if (!ws || ws.readyState !== ws.OPEN) return;
+  const snap = (() => {
+    try { return getSnapshot(matchId) || getCachedSnapshot(matchId) || null; } catch { return null; }
+  })();
+  sendSys(ws, {
+    type: 'move_reject',
+    matchId,
+    reason: reason || 'invalid_move',
+    moveId: meta.moveId || meta.id || null,
+    matchRev: meta.matchRev != null ? meta.matchRev : (snap && typeof snap.matchRev === 'number' ? snap.matchRev : null),
+    snapshotHash: meta.snapshotHash || (snap && snap.snapshotHash) || null,
+    seed: meta.seed || (snap && snap.seed) || null,
+    at: isoNow()
+  });
+}
+
+function broadcastMoveReject(room, exceptWs, matchId, reason, meta = {}) {
+  const set = rooms.get(room);
+  if (!set) return;
+  const snap = (() => {
+    try { return getSnapshot(matchId) || getCachedSnapshot(matchId) || null; } catch { return null; }
+  })();
+  const envelope = JSON.stringify({
+    sys: {
+      type: 'move_reject',
+      matchId,
+      reason: reason || 'invalid_move',
+      moveId: meta.moveId || meta.id || null,
+      matchRev: meta.matchRev != null ? meta.matchRev : (snap && typeof snap.matchRev === 'number' ? snap.matchRev : null),
+      snapshotHash: meta.snapshotHash || (snap && snap.snapshotHash) || null,
+      seed: meta.seed || (snap && snap.seed) || null,
+      at: isoNow()
+    },
+    from: 'srv',
+    matchId
+  });
+  for (const client of set) {
+    if (client === exceptWs) continue;
+    if (client.readyState === client.OPEN) {
+      client.send(envelope);
+    }
+  }
+}
+
+function broadcastSysToRoom(room, sysPayload, extra = {}) {
+  const set = rooms.get(room);
+  if (!set) return;
+  const envelope = JSON.stringify({
+    sys: sysPayload,
+    from: 'srv',
+    matchId: sysPayload.matchId || extra.matchId || room,
+    ...extra
+  });
+  for (const client of set) {
+    if (client.readyState === client.OPEN) {
+      client.send(envelope);
+    }
+  }
+}
+
 function logStatus(roomHint = null) {
   const total = wss.clients.size;
   if (total === 0) return;
@@ -1089,6 +1158,14 @@ ws.on('message', buf => {
             if (!gate || gate.ok !== true) {
               const reason = (gate && gate.reason) ? gate.reason : 'invalid_move';
               console.warn(redLog(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || ws.__cid || 'client'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${moveId || '-'} cid=${ws.__cid || 'n/a'}`));
+              notifyMoveReject(ws, matchId, reason, {
+                moveId: moveId || null,
+                seed: (data.meta && data.meta.seed) ? data.meta.seed : null
+              });
+              broadcastMoveReject(matchId, ws, matchId, reason, {
+                moveId: moveId || null,
+                seed: (data.meta && data.meta.seed) ? data.meta.seed : null
+              });
               try {
                 const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
                 if (snap && snap.state) {

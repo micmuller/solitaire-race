@@ -1,6 +1,6 @@
 // game.js – main script for Solitaire HighNoon
 // Version wird hier gesetzt; scaling.js / UI lesen sie aus
-const VERSION = '3.2.8';   // neue Version
+const VERSION = '3.2.9';   // neue Version
 window.VERSION = VERSION;
 
 /* ============================================================
