@@ -86,3 +86,49 @@ test('reject does not mutate authoritative state; next legal waste->foundation m
   const invariant = getLastInvariant(matchId);
   assert.equal(invariant.ok, true);
 });
+
+test('server canonicalizes variation-selector card ids in authoritative state and follow-up moves', () => {
+  const ws = { __cid: 'c-test-vs16' };
+  const match = createMatchForClient(ws, 'Tester', new Set());
+  const matchId = match.matchId;
+
+  const clubsAceVs16 = card('Y-40-♣️-0', '♣️', 0, true);
+  const clubsTwoVs16 = card('Y-41-♣️-1', '♣️', 1, true);
+
+  setAuthoritativeState(matchId, {
+    owner: 'Y',
+    expectedTotalCards: 2,
+    foundations: [
+      { suit: '♠', cards: [] },
+      { suit: '♥', cards: [] },
+      { suit: '♦', cards: [] },
+      { suit: '♣', cards: [clubsAceVs16] },
+      { suit: '♠', cards: [] },
+      { suit: '♥', cards: [] },
+      { suit: '♦', cards: [] },
+      { suit: '♣', cards: [] }
+    ],
+    you: { tableau: [[], [], [], [], [], [], []], stock: [], waste: [clubsTwoVs16] },
+    opp: { tableau: [[], [], [], [], [], [], []], stock: [], waste: [] }
+  }, { seed: 'test-seed-vs16', fromCid: 'srv' });
+
+  const snap = getSnapshot(matchId).state;
+  assert.deepEqual(snap.you.waste.map(c => c.id), ['Y-41-♣-1']);
+  assert.deepEqual(snap.foundations[3].cards.map(c => c.id), ['Y-40-♣-0']);
+
+  const move = {
+    owner: 'Y',
+    kind: 'toFound',
+    cardId: 'Y-41-♣️-1',
+    count: 1,
+    from: { kind: 'waste', sideOwner: 'Y' },
+    to: { kind: 'found', f: 3 }
+  };
+
+  const gate = validateAndApplyMove(matchId, move, 'ios', { fromCid: 'c-test-vs16' });
+  assert.equal(gate.ok, true);
+
+  const after = getSnapshot(matchId).state;
+  assert.deepEqual(after.you.waste.map(c => c.id), []);
+  assert.deepEqual(after.foundations[3].cards.map(c => c.id), ['Y-40-♣-0', 'Y-41-♣-1']);
+});

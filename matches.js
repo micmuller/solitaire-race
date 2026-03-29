@@ -668,6 +668,25 @@ function _normalizeCardIdForCompare(v) {
   return String(v).replace(/\uFE0F/g, ''); // strip emoji variation selector (e.g. ♠️ -> ♠)
 }
 
+function _canonicalizeStateCardIds(value) {
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) value[i] = _canonicalizeStateCardIds(value[i]);
+    return value;
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  if (typeof value.id === 'string') value.id = _normalizeCardIdForCompare(value.id);
+  if (typeof value.cardId === 'string') value.cardId = _normalizeCardIdForCompare(value.cardId);
+  if (typeof value.code === 'string') value.code = _normalizeCardIdForCompare(value.code);
+  if (typeof value.suit === 'string') value.suit = value.suit.replace(/\uFE0F/g, '');
+
+  for (const key of Object.keys(value)) {
+    const child = value[key];
+    if (child && typeof child === 'object') value[key] = _canonicalizeStateCardIds(child);
+  }
+  return value;
+}
+
 function _sameCardId(a, b) {
   const na = _normalizeCardIdForCompare(a);
   const nb = _normalizeCardIdForCompare(b);
@@ -1366,6 +1385,13 @@ function assertCardConservation(state, ctx = {}) {
 }
 
 function validateAndApplyMove(matchId, move, actor = 'unknown', sys = {}) {
+  if (move && typeof move === 'object') {
+    if (typeof move.cardId === 'string') move.cardId = _normalizeCardIdForCompare(move.cardId);
+    if (typeof move.id === 'string') move.id = _normalizeCardIdForCompare(move.id);
+    if (move.from && typeof move.from === 'object' && typeof move.from.cardId === 'string') move.from.cardId = _normalizeCardIdForCompare(move.from.cardId);
+    if (move.to && typeof move.to === 'object' && typeof move.to.cardId === 'string') move.to.cardId = _normalizeCardIdForCompare(move.to.cardId);
+  }
+
   const v = validateMove(matchId, move, actor);
   if (!v.ok) return { ok: false, reason: v.reason, rejected: true };
 
@@ -1685,6 +1711,7 @@ function setAuthoritativeState(matchId, state, sys = {}) {
   const match = matches.get(matchId);
   if (!match || !state) return null;
 
+  _canonicalizeStateCardIds(state);
   match.lastGameState = state;
 
   // P1.1: validate invariants on authoritative state updates
