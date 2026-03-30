@@ -37,6 +37,7 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-03-30        | v1.0.0   | Stable 1.0 freeze after A2 merge and final validation
 // 2026-03-29        | v2.4.23  | A2 hardening: canonicalize cardIds/suits (strip FE0F) in authoritative state + move payloads
 // 2026-02-22        | v2.4.21  | A2 foundation rules fix: enforce global deterministic foundation selection (all 8 lanes)
 // 2026-02-22        | v2.4.20  | A2 foundation sync fix: broadcast canonical resolvedFoundationIndex for toFound
@@ -73,7 +74,7 @@ const ANSI_RESET = '\x1b[0m';
 function redLog(line) { return `${ANSI_RED}${line}${ANSI_RESET}`; }
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.23';
+const VERSION = '1.0.0';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
