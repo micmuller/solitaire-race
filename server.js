@@ -37,13 +37,22 @@
 // Versionierung / Patch-Log (BITTE bei JEDEM Patch aktualisieren)
 // -----------------------------------------------------------------------------
 // Date (YYYY-MM-DD) | Version  | Change
+// 2026-03-29        | v2.4.23  | A2 hardening: canonicalize cardIds/suits (strip FE0F) in authoritative state + move payloads
+// 2026-02-22        | v2.4.21  | A2 foundation rules fix: enforce global deterministic foundation selection (all 8 lanes)
+// 2026-02-22        | v2.4.20  | A2 foundation sync fix: broadcast canonical resolvedFoundationIndex for toFound
+// 2026-02-22        | v2.4.19  | A2 hotfix: re-enable throttled after_move snapshot requests (status/convergence recovery)
+// 2026-02-22        | v2.4.18  | A2 resync policy: remove after_move snapshot requests; resync only on reject/anomaly paths
+// 2026-02-22        | v2.4.17  | A2 foundation canonicalization: broadcast resolved foundation lane (fix concurrent toFound lane remap drift)
+// 2026-02-22        | v2.4.16  | A2 logging hardening: red-tag logs for MOVE_REJECT / STALE_SEQ_DROP / SNAPSHOT_RESYNC_SENT
+// 2026-02-21        | v2.4.15  | Bugfixing A2 iterations: reject resync to all peers + disconnect room fail-safe
+// 2026-02-15        | v2.4.14  | Bugfixing A2: enforce server-side validation for client-originated moves before broadcast
+// 2026-02-14        | v2.4.13  | Bugfixing A1: drop flip moves with invalid cardId to prevent UNK drift
 // 2026-02-06        | v2.4.12  | AIRBAG: card-conservation invariant recovery (broadcast snapshot on failure)
 // 2026-01-25        | v2.4.11  | P1: Gate server-generated (bot) moves through matches.validateAndApplyMove; reject illegal moves server-side (no broadcast), keep protocol stable
 // 2026-01-23        | v2.4.10  | Guardrails: route serverbot moves through M7 pipeline (moveId+matchRev+echo), add server-level duplicate bot-move signature suppression
 // 2026-01-23        | v2.4.9   | P1.3 wiring: snapshotFromCidForRecipient() to ensure fromCid==selfCid for server snapshots
 // 2026-01-23        | v2.4.6   | P1.3 wiring: server-authoritative initial STATE_SNAPSHOT via matches.ensureInitialSnapshot + per-player getSnapshotForPlayer; stop legacy snapshot recycling
 // 2026-01-23        | v2.4.5   | Baseline: P1.2 + M7 Drift Hardening (pre P1.3 wiring)
-// 2026-02-14        | v2.4.13  | Bugfixing A1: drop flip moves with invalid cardId to prevent UNK drift
 //                  |          | Hinweis: Neue Einträge oben anfügen (neueste zuerst).
 // -----------------------------------------------------------------------------
 //
@@ -59,9 +68,12 @@ const os     = require('node:os');
 const { WebSocketServer } = require('ws');
 const { URL } = require('node:url');
 
+const ANSI_RED = '\x1b[31m';
+const ANSI_RESET = '\x1b[0m';
+function redLog(line) { return `${ANSI_RED}${line}${ANSI_RESET}`; }
 
 // ---------- Version / CLI ----------
-const VERSION = '2.4.13';
+const VERSION = '2.4.23';
 let PORT = 3001;
 const HELP = `
 Solitaire HighNoon Server v${VERSION}
@@ -249,8 +261,22 @@ function ingestServerGeneratedMove(matchId, payload) {
           }
         } catch {}
 
-        console.warn(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || 'bot'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${data.meta.moveId || '-'} sig=${sig || '-'}`);
-        // Drive convergence even on reject
+        console.warn(redLog(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || 'bot'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${data.meta.moveId || '-'} sig=${sig || '-'}`));
+        notifyMoveReject(ws, matchId, reason, {
+          moveId: data.meta.moveId || data.meta.id || null,
+          seed: data.meta.seed || null
+        });
+        broadcastMoveReject(matchId, ws, matchId, reason, {
+          moveId: data.meta.moveId || data.meta.id || null,
+          seed: data.meta.seed || null
+        });
+        // Drive convergence even on reject: push authoritative snapshot immediately to all peers.
+        try {
+          const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
+          if (snap && snap.state) {
+            broadcastServerSnapshotToRoom(matchId, snap, `move_reject:${reason}`);
+          }
+        } catch {}
         requestSnapshotFromRoom(matchId, data.meta.seed || null, `move_reject:${reason}`);
         return; // IMPORTANT: do not broadcast rejected server-generated moves
       }
@@ -524,9 +550,7 @@ function maybeTriggerCorruptionAirbag(matchId, reason = 'invariant_failed') {
   requestSnapshotFromRoom(matchId, (snap && snap.seed) ? snap.seed : null, `corruption_airbag:${reason}`);
 
   // Highlight in console
-  const RED = '\x1b[31m';
-  const RESET = '\x1b[0m';
-  console.warn(`${RED}[AIRBAG] ${isoNow()} matchId="${matchId}" reason=${inv.reason} expected=${inv.expectedTotalCards} found=${inv.foundTotalCards} missing=${inv.missingCount} dupes=${(inv.dupes||[]).length} unk=${(inv.unknownIds||[]).length} hash=${inv.snapshotHash}${RESET}`);
+  console.warn(redLog(`[AIRBAG] ${isoNow()} matchId="${matchId}" reason=${inv.reason} expected=${inv.expectedTotalCards} found=${inv.foundTotalCards} missing=${inv.missingCount} dupes=${(inv.dupes||[]).length} unk=${(inv.unknownIds||[]).length} hash=${inv.snapshotHash}`));
   return true;
 }
 
@@ -539,14 +563,16 @@ function requestSnapshotFromRoom(matchId, seed = null, reason = 'server_request'
   if ((nowMs - lastReq) < RESYNC_THROTTLE_MS) return false;
   lastStateRequestByKey.set(key, nowMs);
 
+  const atIso = isoNow();
   broadcastSysToRoom(matchId, {
     type: 'state_request',
     matchId,
     seed: seed || null,
-    at: isoNow(),
+    at: atIso,
     fromCid: 'srv',
     reason
   });
+  console.warn(redLog(`[SNAPSHOT_RESYNC_SENT] ${atIso} matchId="${matchId}" reason=${reason}`));
   return true;
 }
 setInterval(() => cleanupOldMatches(), 10 * 60 * 1000).unref();
@@ -819,6 +845,41 @@ function peersInRoom(room) {
   const set = rooms.get(room);
   return set ? set.size : 0;
 }
+
+function isMatchRoom(room) {
+  if (!room) return false;
+  return room !== 'lobby' && room !== 'default';
+}
+
+function forceEvictRoom(room, reason = 'peer_disconnect') {
+  if (!isMatchRoom(room)) return 0;
+  const set = rooms.get(room);
+  if (!set || set.size === 0) return 0;
+
+  let evicted = 0;
+  for (const client of Array.from(set)) {
+    try {
+      sendSys(client, {
+        type: 'match_terminated',
+        matchId: room,
+        reason,
+        at: isoNow()
+      }, { matchId: room });
+    } catch {}
+
+    try {
+      if (client.readyState === client.OPEN || client.readyState === client.CONNECTING) {
+        client.close(4001, `match_terminated:${reason}`);
+      }
+    } catch {}
+
+    evicted++;
+  }
+
+  console.warn(`[ROOM_RESET] ${isoNow()} room="${room}" reason=${reason} evicted=${evicted}`);
+  return evicted;
+}
+
 function broadcastToRoom(room, data, excludeWs = null) {
   const set = rooms.get(room);
 
@@ -877,6 +938,67 @@ function sendSys(ws, sysPayload, extra = {}) {
     ...extra
   };
   ws.send(JSON.stringify(envelope));
+}
+
+function broadcastSysToRoom(room, sysPayload, extra = {}) {
+  const set = rooms.get(room);
+  if (!set) return;
+  const envelope = JSON.stringify({
+    sys: sysPayload,
+    from: 'srv',
+    matchId: sysPayload.matchId || extra.matchId || room,
+    ...extra
+  });
+  for (const client of set) {
+    if (client.readyState === client.OPEN) {
+      client.send(envelope);
+    }
+  }
+}
+
+function notifyMoveReject(ws, matchId, reason, meta = {}) {
+  if (!ws || ws.readyState !== ws.OPEN) return;
+  const snap = (() => {
+    try { return getSnapshot(matchId) || getCachedSnapshot(matchId) || null; } catch { return null; }
+  })();
+  sendSys(ws, {
+    type: 'move_reject',
+    matchId,
+    reason: reason || 'invalid_move',
+    moveId: meta.moveId || meta.id || null,
+    matchRev: meta.matchRev != null ? meta.matchRev : (snap && typeof snap.matchRev === 'number' ? snap.matchRev : null),
+    snapshotHash: meta.snapshotHash || (snap && snap.snapshotHash) || null,
+    seed: meta.seed || (snap && snap.seed) || null,
+    at: isoNow()
+  });
+}
+
+function broadcastMoveReject(room, exceptWs, matchId, reason, meta = {}) {
+  const set = rooms.get(room);
+  if (!set) return;
+  const snap = (() => {
+    try { return getSnapshot(matchId) || getCachedSnapshot(matchId) || null; } catch { return null; }
+  })();
+  const envelope = JSON.stringify({
+    sys: {
+      type: 'move_reject',
+      matchId,
+      reason: reason || 'invalid_move',
+      moveId: meta.moveId || meta.id || null,
+      matchRev: meta.matchRev != null ? meta.matchRev : (snap && typeof snap.matchRev === 'number' ? snap.matchRev : null),
+      snapshotHash: meta.snapshotHash || (snap && snap.snapshotHash) || null,
+      seed: meta.seed || (snap && snap.seed) || null,
+      at: isoNow()
+    },
+    from: 'srv',
+    matchId
+  });
+  for (const client of set) {
+    if (client === exceptWs) continue;
+    if (client.readyState === client.OPEN) {
+      client.send(envelope);
+    }
+  }
 }
 
 function broadcastSysToRoom(room, sysPayload, extra = {}) {
@@ -1008,7 +1130,7 @@ ws.on('message', buf => {
       // Dropping the move forces convergence via snapshot.
       const isFlipMove = String(data.move.kind || '') === 'flip';
       const flipCardId = String(data.move.cardId || '');
-      const isValidFlipCardId = /^([YO])-\d+-(♠|♥|♦|♣)-\d+$/.test(flipCardId);
+      const isValidFlipCardId = /^([YO])-\d+-(♠️?|♥️?|♦️?|♣️?)-\d+$/.test(flipCardId);
       if (isFlipMove && !isValidFlipCardId) {
         console.warn(`[P1] ${isoNow()} DROP flip-invalid-cardId matchId="${matchId}" cid=${ws.__cid || 'n/a'} moveId=${moveId || '-'} from=${data.from || 'n/a'} cardId=${flipCardId || '-'}`);
         requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, 'flip_invalid_cardId');
@@ -1019,15 +1141,66 @@ ws.on('message', buf => {
         if (moveId) {
           const isDup = rememberMoveId(matchId, String(moveId));
           if (isDup) {
-            console.log(`[M7] ${isoNow()} DUP move ignored matchId="${matchId}" moveId=${moveId} cid=${ws.__cid || 'n/a'}`);
+            console.warn(redLog(`[STALE_SEQ_DROP] ${isoNow()} matchId="${matchId}" moveId=${moveId} cid=${ws.__cid || 'n/a'} reason=duplicate_moveId`));
             return; // hard stop: do not forward duplicates
           }
         }
 
-        const rev = bumpMatchRev(matchId);
+        // A2: Enforce server-side move validation for client-originated moves as well.
+        // If validation rejects, do not broadcast the move.
+        let appliedByGate = false;
+        try {
+          if (typeof validateAndApplyMove === 'function') {
+            const gate = validateAndApplyMove(matchId, data.move, data.from || ws.__cid || 'client', {
+              seed: (data.meta && data.meta.seed) ? data.meta.seed : null,
+              fromCid: ws.__cid || null,
+              at: isoNow()
+            });
+            if (!gate || gate.ok !== true) {
+              const reason = (gate && gate.reason) ? gate.reason : 'invalid_move';
+              console.warn(redLog(`[MOVE_REJECT] ${isoNow()} matchId="${matchId}" actor=${data.from || ws.__cid || 'client'} kind=${data.move?.kind || 'n/a'} reason=${reason} moveId=${moveId || '-'} cid=${ws.__cid || 'n/a'}`));
+              notifyMoveReject(ws, matchId, reason, {
+                moveId: moveId || null,
+                seed: (data.meta && data.meta.seed) ? data.meta.seed : null
+              });
+              broadcastMoveReject(matchId, ws, matchId, reason, {
+                moveId: moveId || null,
+                seed: (data.meta && data.meta.seed) ? data.meta.seed : null
+              });
+              try {
+                const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
+                if (snap && snap.state) {
+                  broadcastServerSnapshotToRoom(matchId, snap, `move_reject:${reason}`);
+                }
+              } catch {}
+              requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, `move_reject:${reason}`);
+              return;
+            }
+            appliedByGate = true;
+          }
+        } catch (e) {
+          console.error('[A2] validateAndApplyMove gate failed (falling back to legacy forward)', e);
+        }
+
+        // Keep additive matchRev for clients. If gated, read authoritative rev; otherwise bump legacy rev.
+        let rev = null;
+        if (appliedByGate) {
+          try {
+            const snap = getSnapshot(matchId) || getCachedSnapshot(matchId);
+            rev = snap && typeof snap.matchRev === 'number' ? snap.matchRev : null;
+          } catch {}
+        }
+        if (rev == null) {
+          rev = bumpMatchRev(matchId);
+        }
         if (rev != null) {
           if (!data.meta) data.meta = {};
           data.meta.matchRev = rev;
+        }
+
+        if (String(data.move?.kind || '').toLowerCase() === 'tofound') {
+          const rf = (data.move && (data.move.resolvedFoundationIndex ?? data.move?.to?.resolvedFoundationIndex ?? data.move?.to?.f));
+          console.log(`[FOUND_RESOLVED] ${isoNow()} matchId="${matchId}" cid=${ws.__cid || 'n/a'} cardId=${data.move?.cardId || '-'} f=${rf ?? '-'} owner=${data.move?.owner || '-'} moveId=${moveId || '-'}`);
         }
 
         // Forward the move with additive meta (rev). Prefer compact re-stringify.
@@ -1041,8 +1214,7 @@ ws.on('message', buf => {
           broadcastToRoom(matchId, out, ws);
         }
 
-        // P1 (minimal): after every accepted move, ask the room for a fresh snapshot.
-        // This drives convergence even before full server-side rule validation exists.
+        // A2 hotfix: keep after_move snapshot requests enabled (throttled) to preserve status/convergence on iOS clients.
         requestSnapshotFromRoom(matchId, (data.meta && data.meta.seed) ? data.meta.seed : null, 'after_move');
 
         // P1.1: If invariant failed on the latest authoritative snapshot, push an emergency resync.
@@ -2096,6 +2268,12 @@ ws.on('close', () => {
 
   // Leave room first, so peersInRoom(roomLeft) reflects remaining humans.
   leaveRoom(ws);
+
+  // Temporary fail-safe requested by project: if one peer disconnects in a match room,
+  // terminate the whole room so no one keeps playing on diverged local worlds.
+  if (isMatchRoom(roomLeft) && peersInRoom(roomLeft) > 0) {
+    forceEvictRoom(roomLeft, 'peer_disconnect');
+  }
 
   // If this was the last client in a bot match room, stop the bot.
   if (roomLeft) {

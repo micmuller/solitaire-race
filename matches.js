@@ -7,6 +7,8 @@
 // Date (YYYY-MM-DD) | Version  | Change
 // 2026-02-06        | v2.4.12  | AIRBAG: Card-conservation invariant after apply (dup/missing guard + snapshot recovery trigger)
 // 2026-01-25        | v2.4.10  | P1: Fix bot toPile moves with numeric from/to (no zones): normalize indices and default zones to tableau; prevents bad_from loops
+// 2026-02-22        | v2.4.21  | Foundation rules fix: global 8-lane deterministic placement (no side split) + resolved index repair
+// 2026-02-22        | v2.4.20  | Foundation canonicalization: expose resolvedFoundationIndex in applied toFound moves
 // 2026-01-25        | v2.4.9   | P1: Add server-side validate/apply helpers for legacy (iOS↔BOT) moves (toFound/toPile/flip/draw); export validateMove/applyMove/validateAndApplyMove
 // 2026-01-23        | v2.4.8   | Fix: Invariant collector double-counted card ids (id fields were traversed twice) causing false duplicate_card_ids (expected=52 found=208); skip id keys after capture
 // 2026-01-23        | v2.4.7   | TEMP: Legacy bot snapshot format (52-card, tableaus/stock/waste/foundations{S,H,D,C}, faceUp) for iOS↔BOT; ensureInitialSnapshot selects legacy when isBot present
@@ -367,11 +369,12 @@ function _detectStateSchema(state) {
 
 function _legacySuitCode(suit) {
   // Accept legacy codes and v1 suit glyphs, normalize to legacy codes.
-  if (suit === 'S' || suit === 'H' || suit === 'D' || suit === 'C') return suit;
-  if (suit === '♠') return 'S';
-  if (suit === '♥') return 'H';
-  if (suit === '♦') return 'D';
-  if (suit === '♣') return 'C';
+  const s = (typeof suit === 'string') ? suit.replace(/\uFE0F/g, '') : suit;
+  if (s === 'S' || s === 'H' || s === 'D' || s === 'C') return s;
+  if (s === '♠') return 'S';
+  if (s === '♥') return 'H';
+  if (s === '♦') return 'D';
+  if (s === '♣') return 'C';
   return null;
 }
 
@@ -390,19 +393,27 @@ function _legacyColor(suitCode) {
 
 function _isFaceUp(card) {
   if (!card || typeof card !== 'object') return false;
-  // legacy uses faceUp, v1 uses up
+  // legacy uses faceUp, v1 often uses up; iOS model can carry isFaceUp
   if (card.faceUp === true) return true;
   if (card.up === true) return true;
+  if (card.isFaceUp === true) return true;
   return false;
 }
 
 function _setFaceUp(card, v) {
   if (!card || typeof card !== 'object') return;
   if ('up' in card) card.up = !!v;
+  else if ('faceUp' in card) card.faceUp = !!v;
+  else if ('isFaceUp' in card) card.isFaceUp = !!v;
   else card.faceUp = !!v;
 }
 
 function _pickSideKeyFromMove(move, card) {
+  // Explicit internal override (used by validator/apply fallback logic)
+  if (move && (move.__forceSideKey === 'you' || move.__forceSideKey === 'opp')) {
+    return move.__forceSideKey;
+  }
+
   // For v1: choose state.you vs state.opp based on cardId prefix.
   const cid = (move && (move.cardId || move.id)) || (card && (card.id || card.cardId)) || null;
   if (typeof cid === 'string') {
@@ -410,7 +421,7 @@ function _pickSideKeyFromMove(move, card) {
     if (cid.startsWith('O-')) return 'opp';
   }
   // fallback: if move.fromSide exists
-  const s = (move && (move.side || move.fromSide || move.owner)) || null;
+  const s = (move && (move.side || move.fromSide || move.owner || (move.from && move.from.sideOwner) || (move.to && move.to.sideOwner))) || null;
   if (typeof s === 'string') {
     const sl = s.toLowerCase();
     if (sl === 'you' || sl === 'y') return 'you';
@@ -497,28 +508,45 @@ function _getPileRef(state, zone, idx, move, card) {
     if (z === 'foundation' || z === 'foundations') {
       const suitCode = _legacySuitCode(idx);
       if (!suitCode) return null;
-
-      // Determine which half (you vs opp foundations) to use based on card owner.
-      // In canonical owner='Y': you uses first 4, opp uses last 4.
-      const fromKey = _pickSideKeyFromMove(move, card);
-      const base = (fromKey === 'you') ? 0 : 4;
       const glyph = _suitGlyphFromCode(suitCode);
       if (!glyph) return null;
 
-      // Find the matching foundation object within the half.
-      const arr = state.foundations;
-      for (let i = base; i < base + 4 && i < arr.length; i++) {
+      // Foundations are GLOBAL (all 8), no ownership split by you/opp.
+      const arr = Array.isArray(state.foundations) ? state.foundations : [];
+      const candidates = [];
+      for (let i = 0; i < arr.length; i++) {
         const f = arr[i];
-        if (f && typeof f === 'object' && f.suit === glyph && Array.isArray(f.cards)) {
-          return f.cards;
-        }
+        if (!(f && typeof f === 'object' && f.suit === glyph && Array.isArray(f.cards))) continue;
+        const top = _peek(f.cards);
+        const topRank = (top && typeof top.rank === 'number') ? top.rank : -1;
+        const legal = card ? _canPlaceOnFoundationLegacy(card, f.cards).ok : true;
+        candidates.push({ i, cards: f.cards, topRank, legal });
       }
-      return null;
+
+      const legalCands = candidates.filter(c => c.legal);
+      if (!legalCands.length) return null;
+
+      // Deterministic tie-break (GAME_RULES.md): higher topRank, then lower index.
+      legalCands.sort((a, b) => {
+        if (a.topRank !== b.topRank) return b.topRank - a.topRank;
+        return a.i - b.i;
+      });
+      return legalCands[0].cards;
     }
     return null;
   }
 
   return null;
+}
+
+function _foundationIndexByRef(state, pileRef) {
+  if (!state || !Array.isArray(state.foundations) || !pileRef) return -1;
+  for (let i = 0; i < state.foundations.length; i++) {
+    const f = state.foundations[i];
+    if (f === pileRef) return i;
+    if (f && typeof f === 'object' && f.cards === pileRef) return i;
+  }
+  return -1;
 }
 
 function _canPlaceOnFoundationLegacy(card, foundationPile) {
@@ -561,6 +589,7 @@ function _normalizeMoveKind(kind) {
   if (k === 'topile' || k === 'totableau' || k === 'tableau') return 'toPile';
   if (k === 'flip' || k === 'fliptableau') return 'flip';
   if (k === 'draw' || k === 'stocktowaste' || k === 'deal') return 'draw';
+  if (k === 'recycle' || k === 'wastetostock') return 'recycle';
   return String(kind || '');
 }
 
@@ -569,18 +598,31 @@ function _extractLegacyMoveFields(move) {
   // A) { kind, fromZone, fromIndex, toZone, toIndex, toSuit }
   // B) { kind, from:{zone,idx}, to:{zone,idx|suit} }
   // C) historical: { kind, from:'waste'|'t3', to:'f:S'|'t5' }
+  // D) iOS/PWA-style: { from:{kind:'pile'|'stock'|'waste', uiIndex, sideOwner}, to:{kind:'pile'|'found', uiIndex|f} }
   const kind = _normalizeMoveKind(move && move.kind);
 
-  const fromZone = (move && (move.fromZone || (move.from && move.from.zone))) || null;
-  const fromIndex = (move && (move.fromIndex ?? (move.from && move.from.idx))) ?? null;
-  const toZone = (move && (move.toZone || (move.to && move.to.zone))) || null;
-  const toIndex = (move && (move.toIndex ?? (move.to && move.to.idx))) ?? null;
-  const toSuit = (move && (move.toSuit || (move.to && move.to.suit))) || null;
+  const mapZone = (z) => {
+    const s = String(z || '').toLowerCase();
+    if (!s) return null;
+    if (s === 'pile' || s === 'tableau' || s === 'tab') return 'tableau';
+    if (s === 'found' || s === 'foundation' || s === 'foundations' || s === 'fnd') return 'foundation';
+    if (s === 'waste' || s === 'stock') return s;
+    return z || null;
+  };
+
+  const fromObj = (move && typeof move.from === 'object' && move.from) ? move.from : null;
+  const toObj = (move && typeof move.to === 'object' && move.to) ? move.to : null;
+
+  const fromZone = (move && (move.fromZone || (fromObj && (fromObj.zone || fromObj.kind)))) || null;
+  const fromIndex = (move && (move.fromIndex ?? (fromObj && (fromObj.idx ?? fromObj.index ?? fromObj.uiIndex ?? fromObj.i ?? fromObj.f)))) ?? null;
+  const toZone = (move && (move.toZone || (toObj && (toObj.zone || toObj.kind)))) || null;
+  const toIndex = (move && (move.toIndex ?? (toObj && (toObj.idx ?? toObj.index ?? toObj.uiIndex ?? toObj.i ?? toObj.f)))) ?? null;
+  const toSuit = (move && (move.toSuit || (toObj && (toObj.suit ?? toObj.code)))) || null;
 
   // Parse compact strings if present
-  let fz = fromZone;
+  let fz = mapZone(fromZone);
   let fi = fromIndex;
-  let tz = toZone;
+  let tz = mapZone(toZone);
   let ti = toIndex;
   let ts = toSuit;
 
@@ -596,20 +638,64 @@ function _extractLegacyMoveFields(move) {
     else if (/^f[:=]/.test(s)) { tz = 'foundation'; ts = s.split(/[:=]/)[1]; }
   }
 
-  // If destination is foundation and suit was put into toIndex, accept it.
-  if ((String(tz || '').toLowerCase() === 'foundation' || String(tz || '').toLowerCase() === 'foundations') && !ts && ti != null) {
-    ts = ti;
-    ti = null;
+  // Normalize foundation index/suit hints.
+  // In iOS payloads `to.f` is a lane index (0..3 / 4..7), not a suit glyph/code.
+  if ((String(tz || '').toLowerCase() === 'foundation' || String(tz || '').toLowerCase() === 'foundations') && ts == null && ti != null) {
+    if (typeof ti === 'string' && !/^\d+$/.test(ti)) {
+      ts = ti;
+      ti = null;
+    }
+  }
+
+  // iOS uses `kind: flip` for stock->waste draw. Normalize to draw for validator/apply.
+  let normalizedKind = kind;
+  if (kind === 'flip' && fz === 'stock' && (tz === 'waste' || tz == null)) {
+    normalizedKind = 'draw';
   }
 
   return {
-    kind,
+    kind: normalizedKind,
     fromZone: fz,
     fromIndex: fi,
     toZone: tz,
     toIndex: ti,
     toSuit: ts
   };
+}
+
+function _normalizeCardIdForCompare(v) {
+  if (v == null) return null;
+  return String(v).replace(/\uFE0F/g, ''); // strip emoji variation selector (e.g. ♠️ -> ♠)
+}
+
+function _canonicalizeStateCardIds(value) {
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) value[i] = _canonicalizeStateCardIds(value[i]);
+    return value;
+  }
+  if (!value || typeof value !== 'object') return value;
+
+  if (typeof value.id === 'string') value.id = _normalizeCardIdForCompare(value.id);
+  if (typeof value.cardId === 'string') value.cardId = _normalizeCardIdForCompare(value.cardId);
+  if (typeof value.code === 'string') value.code = _normalizeCardIdForCompare(value.code);
+  if (typeof value.suit === 'string') value.suit = value.suit.replace(/\uFE0F/g, '');
+
+  for (const key of Object.keys(value)) {
+    const child = value[key];
+    if (child && typeof child === 'object') value[key] = _canonicalizeStateCardIds(child);
+  }
+  return value;
+}
+
+function _sameCardId(a, b) {
+  const na = _normalizeCardIdForCompare(a);
+  const nb = _normalizeCardIdForCompare(b);
+  if (!na || !nb) return false;
+  return na === nb;
+}
+
+function _otherSideKey(sideKey) {
+  return sideKey === 'you' ? 'opp' : (sideKey === 'opp' ? 'you' : null);
 }
 
 function validateMove(matchId, move, actor = 'unknown') {
@@ -649,10 +735,53 @@ function validateMove(matchId, move, actor = 'unknown') {
   }
 
   if (kind === 'draw') {
-    const stock = _getPileRef(state, 'stock', null, move, null);
-    const waste = _getPileRef(state, 'waste', null, move, null);
+    let stock = _getPileRef(state, 'stock', null, move, null);
+    let waste = _getPileRef(state, 'waste', null, move, null);
+
+    if ((!Array.isArray(stock) || stock.length <= 0) && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altStock = _getPileRef(state, 'stock', null, altMove, null);
+        const altWaste = _getPileRef(state, 'waste', null, altMove, null);
+        if (Array.isArray(altStock) && Array.isArray(altWaste) && altStock.length > 0) {
+          stock = altStock;
+          waste = altWaste;
+        }
+      }
+    }
+
     if (!Array.isArray(stock) || !Array.isArray(waste)) { report.reason = 'bad_piles'; return report; }
     if (stock.length <= 0) { report.reason = 'stock_empty'; return report; }
+
+    // Intentionally do NOT hard-reject draw by cardId mismatch.
+    // iOS can be ahead locally (optimistic) and still be semantically valid as long as stock has cards.
+    report.ok = true;
+    return report;
+  }
+
+  if (kind === 'recycle') {
+    let stock = _getPileRef(state, 'stock', null, move, null);
+    let waste = _getPileRef(state, 'waste', null, move, null);
+
+    if ((!Array.isArray(waste) || waste.length <= 0) && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altStock = _getPileRef(state, 'stock', null, altMove, null);
+        const altWaste = _getPileRef(state, 'waste', null, altMove, null);
+        if (Array.isArray(altStock) && Array.isArray(altWaste) && altWaste.length > 0) {
+          stock = altStock;
+          waste = altWaste;
+        }
+      }
+    }
+
+    if (!Array.isArray(stock) || !Array.isArray(waste)) { report.reason = 'bad_piles'; return report; }
+    if (waste.length <= 0) { report.reason = 'waste_empty'; return report; }
+
     report.ok = true;
     return report;
   }
@@ -675,41 +804,152 @@ function validateMove(matchId, move, actor = 'unknown') {
     }
   }
 
-  const src = _getPileRef(state, srcZone, srcIdx, move, null);
+  let src = _getPileRef(state, srcZone, srcIdx, move, null);
   if (!src || !Array.isArray(src)) { report.reason = 'bad_from'; return report; }
 
-  const card = _peek(src);
-  if (!card) { report.reason = 'from_empty'; return report; }
+  let card = _peek(src);
 
   // If the move specifies a cardId, it must match the current top-card of the source pile.
   // Otherwise bots can repeatedly propose a move for a card that isn't actually movable yet.
   const wantId = (move && (move.cardId || move.id)) || null;
-  if (wantId) {
+
+  // v1 fallback: if side mapping guessed the wrong half, retry on the opposite side.
+  // This protects against perspective drift between requester/authoritative snapshots.
+  if (schema === 'v1_sided' && wantId) {
     const topId = (card && (card.id || card.cardId || card.code)) || null;
-    if (topId !== wantId) { report.reason = 'card_not_on_top'; return report; }
+    if (!card || !_sameCardId(topId, wantId)) {
+      const guessed = _pickSideKeyFromMove(move, card);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
+        const altCard = _peek(altSrc);
+        const altTopId = (altCard && (altCard.id || altCard.cardId || altCard.code)) || null;
+        if (altSrc && Array.isArray(altSrc) && altCard && _sameCardId(altTopId, wantId)) {
+          src = altSrc;
+          card = altCard;
+        }
+      }
+    }
   }
 
-  // cannot move face-down cards
-  if (!_isFaceUp(card)) { report.reason = 'card_face_down'; return report; }
+  if (!card) {
+    // draw/flip stock-empty rejects were observed with side mismatch; try opposite side once.
+    if (schema === 'v1_sided' && srcZone === 'stock') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
+        const altCard = _peek(altSrc);
+        if (altSrc && Array.isArray(altSrc) && altCard) {
+          src = altSrc;
+          card = altCard;
+        }
+      }
+    }
+  }
+
+  if (!card) { report.reason = 'from_empty'; return report; }
 
   if (kind === 'toFound') {
-    const suit = _legacySuitCode(m.toSuit || (card && card.suit));
-    const dst = _getPileRef(state, 'foundation', suit, move, card);
+    let movingCard = card;
+    if (wantId) {
+      const topId = (card && (card.id || card.cardId || card.code)) || null;
+      if (!_sameCardId(topId, wantId)) {
+        // Waste orientation/drift tolerance: accept cardId if it's currently present in waste.
+        if (String(srcZone || '').toLowerCase() === 'waste' && Array.isArray(src) && src.length > 0) {
+          const idx = src.findIndex(c => _sameCardId((c && (c.id || c.cardId || c.code)) || null, wantId));
+          if (idx >= 0) {
+            movingCard = src[idx];
+          } else {
+            report.reason = 'card_not_on_top';
+            return report;
+          }
+        } else {
+          report.reason = 'card_not_on_top';
+          return report;
+        }
+      }
+    }
+    // cannot move face-down cards
+    if (!_isFaceUp(movingCard)) { report.reason = 'card_face_down'; return report; }
+
+    const suit = _legacySuitCode(m.toSuit || (movingCard && movingCard.suit));
+    let dst = _getPileRef(state, 'foundation', suit, move, movingCard);
     if (!dst) { report.reason = 'bad_foundation'; return report; }
-    const can = _canPlaceOnFoundationLegacy(card, dst);
+    let can = _canPlaceOnFoundationLegacy(movingCard, dst);
+
+    // Side fallback: if the inferred side points to an empty/wrong foundation lane,
+    // retry on the opposite side (perspective drift between Y/O vs you/opp mapping).
+    if (!can.ok && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, movingCard);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altDst = _getPileRef(state, 'foundation', suit, altMove, movingCard);
+        if (altDst) {
+          const altCan = _canPlaceOnFoundationLegacy(movingCard, altDst);
+          if (altCan.ok) {
+            dst = altDst;
+            can = altCan;
+          }
+        }
+      }
+    }
+
     if (!can.ok) { report.reason = can.reason; return report; }
     report.ok = true;
     return report;
   }
 
   // kind === 'toPile'
+  let movingCard = card;
+  const rawCount = Number((move && move.count) || 1);
+  const moveCount = Number.isFinite(rawCount) && rawCount > 0 ? Math.floor(rawCount) : 1;
+  const srcZoneLower = String(srcZone || '').toLowerCase();
+
+  if (srcZoneLower === 'waste') {
+    // Waste -> tableau is always a single-card move.
+    if (moveCount !== 1) { report.reason = 'bad_count'; return report; }
+    if (wantId && Array.isArray(src) && src.length > 0) {
+      const idx = src.findIndex(c => _sameCardId((c && (c.id || c.cardId || c.code)) || null, wantId));
+      if (idx >= 0) {
+        movingCard = src[idx];
+      } else {
+        report.reason = 'card_not_on_top';
+        return report;
+      }
+    }
+  } else if (wantId) {
+    // Allow multi-card tableau moves where cardId identifies the first moved card (not the top card).
+    let idx = -1;
+    for (let i = src.length - 1; i >= 0; i--) {
+      const id = src[i] && (src[i].id || src[i].cardId || src[i].code);
+      if (_sameCardId(id, wantId)) { idx = i; break; }
+    }
+    if (idx < 0) { report.reason = 'card_not_on_top'; return report; }
+
+    const available = src.length - idx;
+    if (moveCount > available) { report.reason = 'bad_count'; return report; }
+
+    if (moveCount > 1 || idx !== src.length - 1) {
+      // For stack moves, requested card must start the moved tail.
+      if (available !== moveCount) { report.reason = 'bad_count'; return report; }
+    }
+
+    movingCard = src[idx];
+  }
+
+  if (!_isFaceUp(movingCard)) { report.reason = 'card_face_down'; return report; }
+
   const ft = _moveFromTo(move);
   const dstZone = m.toZone || 'tableau';
   const dstIdx = (m.toIndex != null) ? m.toIndex : ft.to;
-  const dst = _getPileRef(state, dstZone, dstIdx, move, card);
+  const dst = _getPileRef(state, dstZone, dstIdx, move, movingCard);
   if (!dst || !Array.isArray(dst)) { report.reason = 'bad_to'; return report; }
 
-  const can = _canPlaceOnTableauLegacy(card, dst);
+  const can = _canPlaceOnTableauLegacy(movingCard, dst);
   if (!can.ok) { report.reason = can.reason; return report; }
 
   report.ok = true;
@@ -738,12 +978,78 @@ function applyMove(matchId, move, meta = {}) {
   }
 
   if (kind === 'draw') {
-    const stock = _getPileRef(state, 'stock', null, move, null);
-    const waste = _getPileRef(state, 'waste', null, move, null);
-    const c = _pop(stock);
+    let stock = _getPileRef(state, 'stock', null, move, null);
+    let waste = _getPileRef(state, 'waste', null, move, null);
+
+    if ((!Array.isArray(stock) || stock.length <= 0) && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altStock = _getPileRef(state, 'stock', null, altMove, null);
+        const altWaste = _getPileRef(state, 'waste', null, altMove, null);
+        if (Array.isArray(altStock) && Array.isArray(altWaste) && altStock.length > 0) {
+          stock = altStock;
+          waste = altWaste;
+        }
+      }
+    }
+
+    if (!Array.isArray(stock) || !Array.isArray(waste)) return { ok: false, reason: 'bad_piles' };
+
+    const wantId = (move && (move.cardId || move.id)) || null;
+    let c = null;
+
+    if (wantId && stock.length > 0) {
+      const top = stock[stock.length - 1];
+      const topId = (top && (top.id || top.cardId || top.code)) || null;
+      if (_sameCardId(topId, wantId)) {
+        c = _pop(stock);
+      } else {
+        // Drift-tolerant fallback: if client names another card currently in stock,
+        // move that exact card to waste so follow-up move (waste->pile/foundation) stays consistent.
+        const idx = stock.findIndex(x => _sameCardId((x && (x.id || x.cardId || x.code)) || null, wantId));
+        if (idx >= 0) {
+          c = stock.splice(idx, 1)[0];
+        }
+      }
+    }
+
+    if (!c) c = _pop(stock);
     if (!c) return { ok: false, reason: 'stock_empty' };
     _setFaceUp(c, true);
     _push(waste, c);
+    return { ok: true, state };
+  }
+
+  if (kind === 'recycle') {
+    let stock = _getPileRef(state, 'stock', null, move, null);
+    let waste = _getPileRef(state, 'waste', null, move, null);
+
+    if ((!Array.isArray(waste) || waste.length <= 0) && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altStock = _getPileRef(state, 'stock', null, altMove, null);
+        const altWaste = _getPileRef(state, 'waste', null, altMove, null);
+        if (Array.isArray(altStock) && Array.isArray(altWaste) && altWaste.length > 0) {
+          stock = altStock;
+          waste = altWaste;
+        }
+      }
+    }
+
+    if (!Array.isArray(stock) || !Array.isArray(waste)) return { ok: false, reason: 'bad_piles' };
+    if (waste.length <= 0) return { ok: false, reason: 'waste_empty' };
+
+    // Move all waste cards back to stock, face-down, preserving order for next draws.
+    while (waste.length > 0) {
+      const c = waste.pop();
+      if (!c) break;
+      _setFaceUp(c, false);
+      stock.push(c);
+    }
     return { ok: true, state };
   }
 
@@ -759,44 +1065,179 @@ function applyMove(matchId, move, meta = {}) {
     }
   }
 
-  const src = _getPileRef(state, srcZone, srcIdx, move, null);
+  let src = _getPileRef(state, srcZone, srcIdx, move, null);
   if (!src) return { ok: false, reason: 'bad_from' };
 
-  // If the move specifies a cardId, it must match the current top-card of the source pile.
-  const wantId = (move && (move.cardId || move.id)) || null;
-  if (wantId) {
-    const top = _peek(src);
-    const topId = (top && (top.id || top.cardId || top.code)) || null;
-    if (topId !== wantId) return { ok: false, reason: 'card_not_on_top' };
-  }
+  const maybeAutoFlipSourceTableau = () => {
+    if (String(srcZone || '').toLowerCase() !== 'tableau') return;
+    const topAfter = _peek(src);
+    if (topAfter && !_isFaceUp(topAfter)) _setFaceUp(topAfter, true);
+  };
 
-  const card = _pop(src);
-  if (!card) return { ok: false, reason: 'from_empty' };
+  // If the move specifies a cardId, it must match the moved card.
+  const wantId = (move && (move.cardId || move.id)) || null;
+  const rawCount = Number((move && move.count) || 1);
+  const moveCount = Number.isFinite(rawCount) && rawCount > 0 ? Math.floor(rawCount) : 1;
 
   if (kind === 'toFound') {
+    let wastePickIndex = -1;
+    if (wantId) {
+      let top = _peek(src);
+      let topId = (top && (top.id || top.cardId || top.code)) || null;
+
+      if (schema === 'v1_sided' && (!_sameCardId(topId, wantId))) {
+        const guessed = _pickSideKeyFromMove(move, top);
+        const alt = _otherSideKey(guessed);
+        if (alt) {
+          const altMove = { ...(move || {}), __forceSideKey: alt };
+          const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
+          const altTop = _peek(altSrc);
+          const altTopId = (altTop && (altTop.id || altTop.cardId || altTop.code)) || null;
+          if (altSrc && _sameCardId(altTopId, wantId)) {
+            src = altSrc;
+            top = altTop;
+            topId = altTopId;
+          }
+        }
+      }
+
+      if (!_sameCardId(topId, wantId)) {
+        // Waste orientation/drift tolerance: remove requested card if present in waste.
+        if (String(srcZone || '').toLowerCase() === 'waste' && Array.isArray(src) && src.length > 0) {
+          wastePickIndex = src.findIndex(c => _sameCardId((c && (c.id || c.cardId || c.code)) || null, wantId));
+          if (wastePickIndex < 0) {
+            return { ok: false, reason: 'card_not_on_top' };
+          }
+        } else {
+          return { ok: false, reason: 'card_not_on_top' };
+        }
+      }
+    }
+
+    const card = (wastePickIndex >= 0) ? src.splice(wastePickIndex, 1)[0] : _pop(src);
+    if (!card) return { ok: false, reason: 'from_empty' };
+
     const suit = _legacySuitCode(m.toSuit || (card && card.suit));
-    const dst = _getPileRef(state, 'foundation', suit, move, card);
+    let dst = _getPileRef(state, 'foundation', suit, move, card);
     if (!dst) {
       // rollback
-      _push(src, card);
+      if (wastePickIndex >= 0) src.splice(wastePickIndex, 0, card);
+      else _push(src, card);
       return { ok: false, reason: 'bad_foundation' };
     }
+
+    let can = _canPlaceOnFoundationLegacy(card, dst);
+    if (!can.ok && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, card);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altDst = _getPileRef(state, 'foundation', suit, altMove, card);
+        if (altDst) {
+          const altCan = _canPlaceOnFoundationLegacy(card, altDst);
+          if (altCan.ok) {
+            dst = altDst;
+            can = altCan;
+          }
+        }
+      }
+    }
+
+    if (!can.ok) {
+      if (wastePickIndex >= 0) src.splice(wastePickIndex, 0, card);
+      else _push(src, card);
+      return { ok: false, reason: can.reason || 'foundation_invalid' };
+    }
+
+    // A2: canonicalize foundation lane in outgoing move payload to actual resolved pile index.
+    // This avoids client drift when requested lane (e.g. f=1) is remapped server-side to another legal lane.
+    const resolvedF = _foundationIndexByRef(state, dst);
+    if (resolvedF >= 0) {
+      if (!move.to || typeof move.to !== 'object') move.to = {};
+      move.to.kind = 'found';
+      move.to.f = resolvedF;
+    }
+
     _push(dst, card);
+    maybeAutoFlipSourceTableau();
+    return { ok: true, state, resolvedFoundationIndex: resolvedF };
+  }
+
+  // toPile (supports single- and multi-card stack moves)
+  const srcZoneLower = String(srcZone || '').toLowerCase();
+
+  if (srcZoneLower === 'waste') {
+    if (moveCount !== 1) return { ok: false, reason: 'bad_count' };
+
+    let wastePickIndex = -1;
+    if (wantId && Array.isArray(src) && src.length > 0) {
+      wastePickIndex = src.findIndex(c => _sameCardId((c && (c.id || c.cardId || c.code)) || null, wantId));
+      if (wastePickIndex < 0) return { ok: false, reason: 'card_not_on_top' };
+    }
+
+    const movingCard = (wastePickIndex >= 0) ? src.splice(wastePickIndex, 1)[0] : _pop(src);
+    if (!movingCard) return { ok: false, reason: 'from_empty' };
+
+    const ft = _moveFromTo(move);
+    const dst = _getPileRef(state, m.toZone || 'tableau', (m.toIndex != null) ? m.toIndex : ft.to, move, movingCard);
+    if (!dst) {
+      if (wastePickIndex >= 0) src.splice(wastePickIndex, 0, movingCard);
+      else _push(src, movingCard);
+      return { ok: false, reason: 'bad_to' };
+    }
+
+    _push(dst, movingCard);
     return { ok: true, state };
   }
 
-  // toPile
-  const ft = _moveFromTo(move);
-  const dst = _getPileRef(state, m.toZone || 'tableau', (m.toIndex != null) ? m.toIndex : ft.to, move, card);
-  if (!dst) {
-    // rollback
-    _push(src, card);
-    return { ok: false, reason: 'bad_to' };
+  let startIdx = src.length - 1;
+  if (wantId) {
+    let idx = -1;
+    for (let i = src.length - 1; i >= 0; i--) {
+      const id = src[i] && (src[i].id || src[i].cardId || src[i].code);
+      if (_sameCardId(id, wantId)) { idx = i; break; }
+    }
+
+    if (idx < 0 && schema === 'v1_sided') {
+      const guessed = _pickSideKeyFromMove(move, null);
+      const alt = _otherSideKey(guessed);
+      if (alt) {
+        const altMove = { ...(move || {}), __forceSideKey: alt };
+        const altSrc = _getPileRef(state, srcZone, srcIdx, altMove, null);
+        if (altSrc && Array.isArray(altSrc)) {
+          for (let i = altSrc.length - 1; i >= 0; i--) {
+            const id = altSrc[i] && (altSrc[i].id || altSrc[i].cardId || altSrc[i].code);
+            if (_sameCardId(id, wantId)) { idx = i; src = altSrc; break; }
+          }
+        }
+      }
+    }
+
+    if (idx < 0) return { ok: false, reason: 'card_not_on_top' };
+    const available = src.length - idx;
+    if (moveCount > available) return { ok: false, reason: 'bad_count' };
+    if ((moveCount > 1 || idx !== src.length - 1) && available !== moveCount) return { ok: false, reason: 'bad_count' };
+    startIdx = idx;
+  } else {
+    if (moveCount > 1) {
+      if (moveCount > src.length) return { ok: false, reason: 'bad_count' };
+      startIdx = src.length - moveCount;
+    }
   }
 
-  _push(dst, card);
+  const moving = src.slice(startIdx);
+  if (!moving.length) return { ok: false, reason: 'from_empty' };
 
-  // Optional: if tableau source becomes empty, no auto-flip here; flip must be explicit.
+  const anchor = moving[0];
+  const ft = _moveFromTo(move);
+  const dst = _getPileRef(state, m.toZone || 'tableau', (m.toIndex != null) ? m.toIndex : ft.to, move, anchor);
+  if (!dst) return { ok: false, reason: 'bad_to' };
+
+  src.splice(startIdx, moving.length);
+  for (const c of moving) _push(dst, c);
+
+  // Reveal the new source top card after a valid tableau move (Klondike rule).
+  maybeAutoFlipSourceTableau();
   return { ok: true, state };
 }
 
@@ -944,6 +1385,13 @@ function assertCardConservation(state, ctx = {}) {
 }
 
 function validateAndApplyMove(matchId, move, actor = 'unknown', sys = {}) {
+  if (move && typeof move === 'object') {
+    if (typeof move.cardId === 'string') move.cardId = _normalizeCardIdForCompare(move.cardId);
+    if (typeof move.id === 'string') move.id = _normalizeCardIdForCompare(move.id);
+    if (move.from && typeof move.from === 'object' && typeof move.from.cardId === 'string') move.from.cardId = _normalizeCardIdForCompare(move.from.cardId);
+    if (move.to && typeof move.to === 'object' && typeof move.to.cardId === 'string') move.to.cardId = _normalizeCardIdForCompare(move.to.cardId);
+  }
+
   const v = validateMove(matchId, move, actor);
   if (!v.ok) return { ok: false, reason: v.reason, rejected: true };
 
@@ -952,6 +1400,15 @@ function validateAndApplyMove(matchId, move, actor = 'unknown', sys = {}) {
 
   const res = applyMove(matchId, move, sys);
   if (!res.ok) return { ok: false, reason: res.reason };
+
+  // A2: carry canonical foundation lane into outbound move payload.
+  if (res && Number.isInteger(res.resolvedFoundationIndex)) {
+    if (!move.to || typeof move.to !== 'object') move.to = {};
+    move.to.kind = move.to.kind || 'found';
+    move.to.f = res.resolvedFoundationIndex;
+    move.to.resolvedFoundationIndex = res.resolvedFoundationIndex;
+    move.resolvedFoundationIndex = res.resolvedFoundationIndex;
+  }
 
   // persist authoritative snapshot
   setAuthoritativeState(matchId, res.state, {
@@ -1254,6 +1711,7 @@ function setAuthoritativeState(matchId, state, sys = {}) {
   const match = matches.get(matchId);
   if (!match || !state) return null;
 
+  _canonicalizeStateCardIds(state);
   match.lastGameState = state;
 
   // P1.1: validate invariants on authoritative state updates
