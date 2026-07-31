@@ -18,6 +18,10 @@ outside this directory may be reused through explicit adapters.
 The normative contract starts at `vnext/docs/CONTRACT_PACK.md`. No engine code
 may define behavior that conflicts with it.
 
+The first executable authoritative shell starts through `npm run start:vnext`.
+See `vnext/server/README.md` for endpoints and the manual smoke-test flow. The
+frozen v1 server remains available through `npm start`.
+
 ## Branch Rule
 
 - `main` remains the Stable 1.0 line.

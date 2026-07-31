@@ -67,6 +67,7 @@ Out of Scope:
 - `adr/ADR-007-versioning.md`
 - `adr/ADR-008-apply-action-transaction.md`
 - `adr/ADR-009-replay-harness-and-golden-gate.md`
+- `adr/ADR-010-authoritative-server-shell.md`
 
 ## Status
 - [ ] Draft

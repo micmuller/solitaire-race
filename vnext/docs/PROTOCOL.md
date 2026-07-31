@@ -40,6 +40,16 @@ Server MUST respond with exactly one of:
 - `reject`: action invalid or malformed, no state change
 - `snapshot`: authoritative full state, sent on connect/recovery
 
+vNext shell response binding:
+- Every response includes `kind`, `matchId`, `protocolVersion`, `rev` and
+  `stateHash`.
+- `ack` additionally includes the accepted `clientId`, `seq` and authoritative
+  `state`; it is broadcast to all connected match peers.
+- `reject` includes `clientId` and `code`, is sent only to the submitting peer,
+  and does not contain a replacement state.
+- `snapshot` includes authoritative `state` and `reason` and is sent to the peer
+  that needs initialization or recovery. AIRBAG snapshots are broadcast.
+
 Snapshot MUST be sent on:
 - initial connect or explicit `state_request`
 - sequence gap (`seq > expectedSeq`)
@@ -95,6 +105,10 @@ Rules (normative):
 - If `seq > expectedSeq`: GAP / Out-of-Sync. Server MUST send `snapshot` and MUST NOT apply the action.
 - If `seq == expectedSeq` and `baseRev != currentRev`: Out-of-Sync. Server MUST send `snapshot` and MUST NOT apply the action.
 - If `seq == expectedSeq` and `baseRev == currentRev`: Server applies the action atomically and responds with `ack`.
+
+Only an accepted Core action advances `lastAcceptedSeq`. A rules/schema reject
+does not consume the sequence, allowing the client to correct and retry with the
+same `seq` against the unchanged revision.
 
 Applied order is defined by accepted `seq` per `clientId`. Server MUST NOT reorder accepted actions.
 
@@ -159,7 +173,7 @@ Example 3: Server snapshot message (stub)
 - [X] Frozen (Phase 1)
 
 ## Decisions
-- (leer – wird über ADRs oder Review gefüllt)
+- ADR-010 binds the first executable authoritative server shell.
 
 ## Open Questions
 - (leer – bewusst offen)
