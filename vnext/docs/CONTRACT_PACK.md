@@ -63,6 +63,7 @@ Out of Scope:
 - `adr/ADR-003-empty-tableau.md`
 - `adr/ADR-004-reject-vs-airbag.md`
 - `adr/ADR-005-state-hash.md`
+- `adr/ADR-006-state-and-card-model.md`
 
 ## Status
 - [ ] Draft
