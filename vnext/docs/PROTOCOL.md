@@ -1,9 +1,9 @@
 ---
 Document: PROTOCOL.md
 Version: vNext-0.1
-Status: DRAFT
+Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
-Last-Updated: 2026-02-07
+Last-Updated: 2026-07-31
 ---
 
 # Protocol
@@ -122,8 +122,8 @@ Example 1: Full client-to-server message
   "protocolVersion": "0.1.0",
   "kind": "draw",
   "payload": {
-    "source": {"zone": "stock", "owner": "global"},
-    "target": {"zone": "waste", "owner": "global"}
+    "source": {"zone": "stock", "owner": "p1"},
+    "target": {"zone": "waste", "owner": "p1"}
   }
 }
 ```
@@ -150,7 +150,7 @@ Example 3: Server snapshot message (stub)
 
 ## Status
 - [ ] Draft
-- [ ] Reviewed
+- [X] Reviewed
 - [X] Approved
 - [X] Frozen (Phase 1)
 

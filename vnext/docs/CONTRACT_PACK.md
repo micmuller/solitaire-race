@@ -1,15 +1,19 @@
 ---
 Document: CONTRACT_PACK.md
 Version: vNext-0.1
-Status: DRAFT
+Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
-Last-Updated: 2026-02-07
+Last-Updated: 2026-07-31
 ---
 
 # Contract Pack
 
 ## Purpose
 Single Entry Point für den Phase-1-Contract. Dieses Dokument ist die normative Einstiegsreferenz für Phase 1 und definiert die verbindliche Lesereihenfolge. Alle Phase-1-Implementierungen und Reviews müssen diese Struktur als Quelle der Wahrheit verwenden. Bei Widerspruch zwischen Contract-Dokumenten gilt die Reading Order (oben nach unten) als Auflösungsregel.
+
+Dieses Contract-Pack ist die einzige normative Quelle für vNext. Das Repository
+`highnoon-protocol` ist als Legacy-v1-Archiv klassifiziert und darf keine
+abweichenden vNext-Verträge definieren.
 
 ## Normative Basis
 - `GAME_RULES_vNext.md`
@@ -62,7 +66,7 @@ Out of Scope:
 
 ## Status
 - [ ] Draft
-- [ ] Reviewed
+- [X] Reviewed
 - [X] Approved
 - [X] Frozen (Phase 1)
 

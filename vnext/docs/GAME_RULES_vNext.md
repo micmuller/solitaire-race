@@ -90,15 +90,22 @@ Diese Regel ist **bindend** für:
 
 ### 4.1 Split Mode
 - Jeder Spieler erhält **ein vollständiges Deck (52 Karten)**
+- Beide Decks werden über getrennte, deterministisch aus dem Match-Seed
+  abgeleitete RNG-Streams unabhängig gemischt
 - Karten werden **ausschließlich** in die eigenen Zonen verteilt:
   - `you.stock / waste / tableau`
   - `opp.stock / waste / tableau`
 - Foundations bleiben **global**
 
 ### 4.2 Shared Mode
-- Beide Decks (104 Karten) werden **zufällig über beide Spielerzonen verteilt**
-- Jeder Spieler erhält einen zufälligen Anteil
+- Beide Decks bilden ein gemeinsames **104-Karten-Doppeldeck**
+- Das Doppeldeck wird einmal deterministisch gemischt
+- Die Karten werden in Shuffle-Reihenfolge alternierend an `p1` und `p2`
+  verteilt; jeder Spieler erhält exakt 52 Karten
 - Foundations bleiben **global**
+
+Die exakten Seed-Ableitungen und Deal-Schritte sind in
+`adr/ADR-001-initial-deal.md` festgelegt.
 
 ➡️ **Split vs Shared beeinflusst ausschließlich die Initialverteilung**  
 ➡️ Alle weiteren Regeln sind identisch
@@ -170,9 +177,12 @@ Nach **jedem** `applyAction` muss gelten:
 5. **Determinism**
    - Gleicher State + gleiche Action ⇒ gleicher Next-State
 
-Verletzungen führen zu:
-- **Reject** oder
-- **AIRBAG Snapshot-Convergence**
+Eine bereits vor der State-Transition erkennbare Regel- oder
+Vorbedingungsverletzung führt zu **Reject** ohne State-Änderung. Verletzt der
+atomar erzeugte Kandidaten-State eine Invariant, wird er verworfen und der
+Server sendet den letzten gültigen State als **AIRBAG Snapshot-Convergence**.
+Die genaue Transaktionssemantik ist in `adr/ADR-004-reject-vs-airbag.md`
+festgelegt.
 
 ---
 

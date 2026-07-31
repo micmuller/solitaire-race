@@ -1,9 +1,9 @@
 ---
 Document: TEST_MATRIX.md
 Version: vNext-0.1
-Status: DRAFT
+Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
-Last-Updated: 2026-02-07
+Last-Updated: 2026-07-31
 ---
 
 # Test Matrix
@@ -40,7 +40,7 @@ Last-Updated: 2026-02-07
 
 ## Status
 - [ ] Draft
-- [ ] Reviewed
+- [X] Reviewed
 - [X] Approved
 - [X] Frozen (Phase 1)
 

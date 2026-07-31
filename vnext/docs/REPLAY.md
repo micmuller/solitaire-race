@@ -1,9 +1,9 @@
 ---
 Document: REPLAY.md
 Version: vNext-0.1
-Status: DRAFT
+Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
-Last-Updated: 2026-02-07
+Last-Updated: 2026-07-31
 ---
 
 # Replay
@@ -78,7 +78,11 @@ Runner MUST output:
 - `failureStep` (only if `FAIL`)
 - `failureReason` (only if `FAIL`)
 
-## Golden Seeds (Placeholder, 20)
+## Golden Seed Set (Normative Identifiers, 20)
+
+Die folgenden Seed-Strings sind die verbindliche Startmenge für Phase-2-Testvektoren.
+Erwartete Start-Hashes und ActionLogs werden durch die erste conforming Engine
+erzeugt, gegengeprüft und anschließend als Golden Artifacts versioniert.
 - SEED-0001
 - SEED-0002
 - SEED-0003
@@ -102,7 +106,7 @@ Runner MUST output:
 
 ## Status
 - [ ] Draft
-- [ ] Reviewed
+- [X] Reviewed
 - [X] Approved
 - [X] Frozen (Phase 1)
 

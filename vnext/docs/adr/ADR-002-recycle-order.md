@@ -1,9 +1,9 @@
 ---
 Document: ADR-002-recycle-order.md
-Version: vNext-0.1
-Status: DRAFT
+Version: vNext-0.2
+Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
-Last-Updated: 2026-02-07
+Last-Updated: 2026-07-31
 ---
 
 # ADR-002: Recycle Order
@@ -12,7 +12,12 @@ Last-Updated: 2026-02-07
 Die Reihenfolge beim Recycling (waste → stock) beeinflusst Determinismus.
 
 ## Entscheidung
-Waste wird in umgekehrter Reihenfolge auf Stock gelegt (reverse order).
+- Für Stock und Waste ist die oberste Karte immer das letzte Array-Element.
+- Vor dem Recycle ist der Stock leer.
+- Der neue Stock ist `reverse(waste)`; Waste wird anschließend leer.
+- Damit wird die älteste Waste-Karte zur nächsten ziehbaren Stock-Karte.
+- Alle recycelten Karten sind im Stock verdeckt.
+- Der Recycle ist eine atomare State-Transition.
 
 ## Konsequenzen
 - Deterministische, eindeutige Reihenfolge.
@@ -20,12 +25,12 @@ Waste wird in umgekehrter Reihenfolge auf Stock gelegt (reverse order).
 
 ## Status
 - [ ] Draft
-- [ ] Reviewed
-- [ ] Approved
-- [ ] Frozen (Phase 1)
+- [X] Reviewed
+- [X] Approved
+- [X] Frozen (Phase 1)
 
 ## Decisions
-- (leer – wird über ADRs oder Review gefüllt)
+- 2026-07-31: Stack-Top und Reverse-Semantik explizit definiert.
 
 ## Open Questions
 - (leer – bewusst offen)
