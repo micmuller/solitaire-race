@@ -1,0 +1,137 @@
+{
+  "header": {
+    "seed": "SEED-0001",
+    "protocolVersion": "2.0.0",
+    "rulesVersion": "1.0.0",
+    "mode": "shared"
+  },
+  "steps": [
+    {
+      "i": 0,
+      "clientId": "p1",
+      "seq": 0,
+      "baseRev": 0,
+      "action": {
+        "kind": "draw",
+        "payload": {
+          "source": {
+            "zone": "stock",
+            "owner": "p1"
+          },
+          "target": {
+            "zone": "waste",
+            "owner": "p1"
+          }
+        }
+      },
+      "expectedResult": "ack",
+      "expectedStateHashAfter": "0f190e60509cb5bdc760df6c45c03eac09f485621b20118097187a76839c4963"
+    },
+    {
+      "i": 1,
+      "clientId": "p2",
+      "seq": 0,
+      "baseRev": 1,
+      "action": {
+        "kind": "draw",
+        "payload": {
+          "source": {
+            "zone": "stock",
+            "owner": "p2"
+          },
+          "target": {
+            "zone": "waste",
+            "owner": "p2"
+          }
+        }
+      },
+      "expectedResult": "ack",
+      "expectedStateHashAfter": "a1535da5c5abac3d97e3b7964aa0cca6267b94d0664135634ec033e56705c5ed"
+    },
+    {
+      "i": 2,
+      "clientId": "p1",
+      "seq": 1,
+      "baseRev": 2,
+      "action": {
+        "kind": "draw",
+        "payload": {
+          "source": {
+            "zone": "stock",
+            "owner": "p1"
+          },
+          "target": {
+            "zone": "stock",
+            "owner": "p1"
+          }
+        }
+      },
+      "expectedResult": "reject",
+      "expectedStateHashAfter": "a1535da5c5abac3d97e3b7964aa0cca6267b94d0664135634ec033e56705c5ed",
+      "expectedRejectCode": "INVALID_TARGET"
+    },
+    {
+      "i": 3,
+      "clientId": "p1",
+      "seq": 1,
+      "baseRev": 2,
+      "action": {
+        "kind": "draw",
+        "payload": {
+          "source": {
+            "zone": "stock",
+            "owner": "p1"
+          },
+          "target": {
+            "zone": "waste",
+            "owner": "p1"
+          }
+        }
+      },
+      "expectedResult": "ack",
+      "expectedStateHashAfter": "d4e0d2d253d0a14e01e6b9867b62413cf30e0169074d9726e9283d943acda348"
+    },
+    {
+      "i": 4,
+      "clientId": "p2",
+      "seq": 2,
+      "baseRev": 3,
+      "action": {
+        "kind": "draw",
+        "payload": {
+          "source": {
+            "zone": "stock",
+            "owner": "p2"
+          },
+          "target": {
+            "zone": "waste",
+            "owner": "p2"
+          }
+        }
+      },
+      "expectedResult": "snapshot",
+      "expectedStateHashAfter": "d4e0d2d253d0a14e01e6b9867b62413cf30e0169074d9726e9283d943acda348"
+    },
+    {
+      "i": 5,
+      "clientId": "p2",
+      "seq": 1,
+      "baseRev": 3,
+      "action": {
+        "kind": "draw",
+        "payload": {
+          "source": {
+            "zone": "stock",
+            "owner": "p2"
+          },
+          "target": {
+            "zone": "waste",
+            "owner": "p2"
+          }
+        }
+      },
+      "expectedResult": "ack",
+      "expectedStateHashAfter": "7f87720ade6c6939060e7dbcf1136bd6ee3620e93eb1909483fa1c9361d3ca24"
+    }
+  ]
+}

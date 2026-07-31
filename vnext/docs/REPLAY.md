@@ -1,6 +1,6 @@
 ---
 Document: REPLAY.md
-Version: vNext-0.1
+Version: 1.0.0
 Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
 Last-Updated: 2026-07-31
@@ -40,6 +40,14 @@ Step object MUST contain:
 - `action.payload`: object
 - `expectedResult`: `ack` | `reject` | `snapshot`
 
+Phase-2 binding:
+- `clientId` MUST be the trusted actor identifier `p1` or `p2` in executable
+  core replay artifacts. A later server adapter MAY map transport client IDs to
+  these actor identifiers before recording the core ActionLog.
+- Sequence tracking starts at `-1` per client, therefore the first expected
+  sequence is `0`.
+- Only an `ack` advances `lastAcceptedSeq`. Rejects and snapshots do not.
+
 Step object MAY contain:
 - `expectedRejectCode`: string (if `expectedResult` == `reject`)
 - `expectedStateHashAfter`: string (SHA-256, recommended)
@@ -78,6 +86,21 @@ Runner MUST output:
 - `failureStep` (only if `FAIL`)
 - `failureReason` (only if `FAIL`)
 
+## Versioned Golden Artifacts
+
+The conforming reference artifacts live in `vnext/replay/golden`:
+- `start-hashes.json`: split and shared start hashes for all 20 normative seeds.
+- `SEED-0001.split.json`: executable split ActionLog.
+- `SEED-0001.shared.json`: executable shared ActionLog.
+
+Both ActionLogs cover accepted actions, a deterministic rule reject, an
+Out-of-Sync recovery snapshot and continued execution. The generator in
+`vnext/replay/generateGolden.js` MUST reproduce checked-in artifacts byte for
+byte at the parsed JSON value level.
+
+The executable runner is `vnext/replay/index.js`. Replay equality and artifact
+regeneration are mandatory CI/test gates via `npm run test:replay`.
+
 ## Golden Seed Set (Normative Identifiers, 20)
 
 Die folgenden Seed-Strings sind die verbindliche Startmenge für Phase-2-Testvektoren.
@@ -111,10 +134,10 @@ erzeugt, gegengeprüft und anschließend als Golden Artifacts versioniert.
 - [X] Frozen (Phase 1)
 
 ## Decisions
-- (leer – wird über ADRs oder Review gefüllt)
+- ADR-009 binds the executable runner, trusted actor IDs and Golden Gate.
 
 ## Open Questions
 - (leer – bewusst offen)
 
 ## Next Steps
-- (leer – vom Orchestrator gepflegt)
+- Integrate the replay gate into the authoritative server-shell workflow.

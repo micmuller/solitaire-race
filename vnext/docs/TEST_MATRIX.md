@@ -1,6 +1,6 @@
 ---
 Document: TEST_MATRIX.md
-Version: vNext-0.1
+Version: 1.0.0
 Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
 Last-Updated: 2026-07-31
@@ -28,6 +28,16 @@ Last-Updated: 2026-07-31
 | invariants | invalid action | reject code | reject log |
 | protocol | envelope schema | schema valid | validation report |
 
+## Implemented Phase-2 Gates
+
+- 20 normative seeds x `split` and `shared`: 40 checked-in start hashes.
+- Checked-in Golden ActionLogs for both modes.
+- Per-step result, reject-code and state-hash equality.
+- First-divergence reporting for tampered hashes and malformed steps.
+- Header/configuration mismatch rejection before match initialization.
+- Protocol recovery coverage for duplicate sequence and Out-of-Sync snapshot.
+- Artifact regeneration equality against the checked-in JSON files.
+
 ## Acceptance Criteria
 - Hash-Match für gleiche Seeds und Logs.
 - Rejections sind deterministisch und code-stabil.
@@ -45,10 +55,10 @@ Last-Updated: 2026-07-31
 - [X] Frozen (Phase 1)
 
 ## Decisions
-- (leer – wird über ADRs oder Review gefüllt)
+- Replay equality is executable through `npm run test:replay`.
 
 ## Open Questions
 - (leer – bewusst offen)
 
 ## Next Steps
-- (leer – vom Orchestrator gepflegt)
+- Add server-shell envelope integration tests without weakening the core gate.

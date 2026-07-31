@@ -66,6 +66,7 @@ Out of Scope:
 - `adr/ADR-006-state-and-card-model.md`
 - `adr/ADR-007-versioning.md`
 - `adr/ADR-008-apply-action-transaction.md`
+- `adr/ADR-009-replay-harness-and-golden-gate.md`
 
 ## Status
 - [ ] Draft

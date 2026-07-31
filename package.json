@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "test:vnext": "node --test vnext/test/*.test.js"
+    "test:vnext": "node --test vnext/test/*.test.js",
+    "test:replay": "node --test vnext/test/replay.test.js",
+    "generate:replay": "node vnext/replay/generateGolden.js"
   },
   "repository": {
     "type": "git",

@@ -1,0 +1,246 @@
+{
+  "protocolVersion": "2.0.0",
+  "rulesVersion": "1.0.0",
+  "starts": [
+    {
+      "seed": "SEED-0001",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "60cea223ff8547e8faaa24c61f1c6e575bf2a74d02446254fab3cf0b6f66fd2b"
+    },
+    {
+      "seed": "SEED-0001",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "af2b02e16fa39f43181ca9c8c15e524e9e657b4a5d76691451ab25f3d4a0c7df"
+    },
+    {
+      "seed": "SEED-0002",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "25ba74b807f1930cce006a902fa92c7f4befc2cf45c9b5bf6824311b155bee9c"
+    },
+    {
+      "seed": "SEED-0002",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "1a1ed3248ef6d578e0bf34690d7637c5c06dbb4c27e4d89eedca974c59c82f74"
+    },
+    {
+      "seed": "SEED-0003",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "007e6d8692392ce77791c69da9d3cf30b6253ecd93fbf5bc8ea2ac7099b2af06"
+    },
+    {
+      "seed": "SEED-0003",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "7fa38ce86c04b1a5c4f5e5186b40fda662f7441708f118d0a1fe41890197cfc2"
+    },
+    {
+      "seed": "SEED-0004",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "2235b388c079b3051a8076bc5568e8da33e46f464825792db6921afe2777db39"
+    },
+    {
+      "seed": "SEED-0004",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "abe5497c0d21022de2f63241bd5a5c0fe64fc70fdaf935256fb93a9128b8c20b"
+    },
+    {
+      "seed": "SEED-0005",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "4415b8d9276fcd56afb405273ad718bf57effa3040d227aca215d97d74076f0e"
+    },
+    {
+      "seed": "SEED-0005",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "e29274cfc033c844441762cae696b516676fcd26de8aa47cd6a33bcef60b4b5d"
+    },
+    {
+      "seed": "SEED-0006",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "e7a58be235a3aa1acfbc93b3e97c1d9964c21335e1e3080d621adb8a7eaf38f7"
+    },
+    {
+      "seed": "SEED-0006",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "965a658049a4406eeaa4dbbf615747e33b996a127a64a7b3cb6aa9d3570df0a5"
+    },
+    {
+      "seed": "SEED-0007",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "fe5aabccc093ecee434437d10902924df35fb82039355fab69f953f7fb4f5f3f"
+    },
+    {
+      "seed": "SEED-0007",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "6e2e507de5ccc730d37ef4eac519e9c67252cf6e9d16fbc48466bb4cb9d7ae6b"
+    },
+    {
+      "seed": "SEED-0008",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "87935b6c09bd1d5ba8e967e542cd4ab4797ac0948e2907f295aa6a080589c92b"
+    },
+    {
+      "seed": "SEED-0008",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "93c6d7e0e82e644b678dde8d4711114768bae54e813cdbaa2733bbb2b8140836"
+    },
+    {
+      "seed": "SEED-0009",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "8172af4e9e48592a44a825e998f5d5bbf9167e50822e5b6e8aef8a5719b1e09f"
+    },
+    {
+      "seed": "SEED-0009",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "47a00fa613cec6bca3176c08d697f519f639c6f2b2e84eae59ab6c0dc8408b4c"
+    },
+    {
+      "seed": "SEED-0010",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "c496c5eb75dba4df3886e8cee5c033b149d3100120f42ff988e33c2aebac0c2d"
+    },
+    {
+      "seed": "SEED-0010",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "d756f187ed6656890006c8118bfed2e6123da4ea7ce54a904f991b2e2943abea"
+    },
+    {
+      "seed": "SEED-0011",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "79b8c8c956699b9a1c54d7abb54f3ba221d8ee93d5fb577e40d34b7e00ad885f"
+    },
+    {
+      "seed": "SEED-0011",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "66aa56435161b502a25009e19fb289fb69756f548747580a319497ad20761700"
+    },
+    {
+      "seed": "SEED-0012",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "63e15c5478bd196e9208651932827fa2b699c0fd67200670561e475fcb34ec9d"
+    },
+    {
+      "seed": "SEED-0012",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "8964bd7bc7fed81dfe341b042913bd8b16b7ceeafad29c7cc677cecd2b0ad5a9"
+    },
+    {
+      "seed": "SEED-0013",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "8b561c230d839c44c3bd61d8d6d27128d22a09e72889ccbf3a58f0febe0f1110"
+    },
+    {
+      "seed": "SEED-0013",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "b2a77f012d82cc2de8efb626fb4d9bc42a51919d8f673c2e159397ace79a4686"
+    },
+    {
+      "seed": "SEED-0014",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "a8ec05156afd7a55f1c3851bfe7391cf848f25475882bfa0d1b5a85e22057869"
+    },
+    {
+      "seed": "SEED-0014",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "ad3db1eb4366d73154c12c25a04444b5b35900f1b4a9987baa4550d3e1585d99"
+    },
+    {
+      "seed": "SEED-0015",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "aa236fa49668bd20936e802ae68b7f63879ba02ad989b10dac54677a80498bae"
+    },
+    {
+      "seed": "SEED-0015",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "65107a9409727565e13242b1a8a2af86bd3196585d7f6c31ce67639d281353b6"
+    },
+    {
+      "seed": "SEED-0016",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "1d8c22531ebdf0b56f895677246e7baab039bba9007e2e79162cedb30ddc0d70"
+    },
+    {
+      "seed": "SEED-0016",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "3e7be4a2b6b2e11127bc46e36968ebce85b152ed2743f5e38567c2ab6b798ac6"
+    },
+    {
+      "seed": "SEED-0017",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "ca2403330d9e7c2feb776bdf3f4d69fe8d8f573a9d90f203f3710cc47218ac77"
+    },
+    {
+      "seed": "SEED-0017",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "91fbdfb034113b16278af40d9a5fa6442d467f096cf2204cd8d71d7a2f22ebcf"
+    },
+    {
+      "seed": "SEED-0018",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "3cf1e29b0d540c6916e3ea2383946499754431ef400918ff886579784c45c0e0"
+    },
+    {
+      "seed": "SEED-0018",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "4a1818897ca1130d6bcc2b68c0041d372c2a8e9a4622bf241d95b2e293dc2dbf"
+    },
+    {
+      "seed": "SEED-0019",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "85fc359041158a3571e28dff78e1f8cbbaba963d8ef87248f1d804da1927ca7e"
+    },
+    {
+      "seed": "SEED-0019",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "f0d1f9c8effdef13fbf06e593636bde6f41d3513f9963e56fc8cfef17f5729be"
+    },
+    {
+      "seed": "SEED-0020",
+      "mode": "split",
+      "rev": 0,
+      "stateHash": "4c10c8a9e25defeac06623ea062e9859e2eab94917a6620d638955f2c6e0b99e"
+    },
+    {
+      "seed": "SEED-0020",
+      "mode": "shared",
+      "rev": 0,
+      "stateHash": "be5d3ac8aaf5e7dbdec9bb4d823e0c75c0c838203abe65c9375181709b50ff50"
+    }
+  ]
+}
