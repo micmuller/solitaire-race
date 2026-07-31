@@ -1,6 +1,6 @@
 ---
 Document: ADR-006-state-and-card-model.md
-Version: vNext-0.1
+Version: 1.0.0
 Status: FROZEN
 Phase: Phase 2 - Greenfield Server Engine
 Last-Updated: 2026-07-31
@@ -26,6 +26,7 @@ needs one platform-neutral model before `initMatch` can be implemented.
 - Card identity never contains or changes with zone ownership.
 - Stack top is always the last array element.
 - Foundation indices are fixed as `C,C,D,D,H,H,S,S`.
+- Initial `schemaVersion` and `rulesVersion` are both `1.0.0`.
 - Canonical state contains `schemaVersion`, `rulesVersion`, `seed`, `mode`,
   `players` and `foundations`. Revision remains outside state and is included
   only by the StateHash wrapper `{rev,state}`.

@@ -1,6 +1,6 @@
 ---
 Document: PROTOCOL.md
-Version: vNext-0.1
+Version: 2.0.0
 Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
 Last-Updated: 2026-07-31
@@ -14,6 +14,8 @@ Last-Updated: 2026-07-31
 
 ## Protocol Versioning
 - SemVer: `MAJOR.MINOR.PATCH`.
+- Current vNext protocol version: `2.0.0`.
+- Legacy v1 messages are incompatible and MUST NOT enter the vNext core.
 - Additive changes preferred (MINOR/PATCH).
 - Breaking changes require ADR approval and MAJOR bump.
 
@@ -68,6 +70,8 @@ Payloads are minimal and MUST be validated by server.
 - `foundationMove`
   - `source`: ZoneRef (`tableau` or `waste`)
   - `target`: ZoneRef (`foundation`)
+  - `target.index` is a client presentation hint; the server MUST resolve the
+    legal global lane deterministically and return `resolvedFoundationIndex`
 
 ## ZoneRef Concept
 A ZoneRef identifies a logical zone and MUST be structured (no parsing):
@@ -119,7 +123,7 @@ Example 1: Full client-to-server message
   "clientId": "p1",
   "seq": 42,
   "baseRev": 310,
-  "protocolVersion": "0.1.0",
+  "protocolVersion": "2.0.0",
   "kind": "draw",
   "payload": {
     "source": {"zone": "stock", "owner": "p1"},

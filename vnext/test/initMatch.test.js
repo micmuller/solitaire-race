@@ -41,11 +41,11 @@ for (const mode of ['split', 'shared']) {
 test('golden seed start hashes remain stable', () => {
   assert.equal(
     initMatch('SEED-0001', 'split').stateHash,
-    '038ef037e45bfd8022f88993f117f0a2cffb4c7489527f920c303f488197b5fe'
+    '60cea223ff8547e8faaa24c61f1c6e575bf2a74d02446254fab3cf0b6f66fd2b'
   );
   assert.equal(
     initMatch('SEED-0001', 'shared').stateHash,
-    '0dfa4df62e9f4384b2dbe54d5f673fe4c1acce93c37714b937c30bb5901a78da'
+    'af2b02e16fa39f43181ca9c8c15e524e9e657b4a5d76691451ab25f3d4a0c7df'
   );
 });
 

@@ -13,6 +13,11 @@ const {
 const { createCardCatalog } = require('./cards');
 
 const EXPECTED_CARDS = new Map(createCardCatalog().map((card) => [card.cardId, card]));
+const RED_SUITS = new Set(['D', 'H']);
+
+function oppositeColor(first, second) {
+  return RED_SUITS.has(first.suit) !== RED_SUITS.has(second.suit);
+}
 
 function validateCard(card, path, violations, seen) {
   if (!card || typeof card !== 'object' || Array.isArray(card)) {
@@ -52,6 +57,27 @@ function validateStack(stack, path, violations, seen) {
   stack.forEach((card, index) => validateCard(card, `${path}[${index}]`, violations, seen));
 }
 
+function validateTableauStack(stack, path, violations, seen) {
+  validateStack(stack, path, violations, seen);
+  if (!Array.isArray(stack)) return;
+
+  let faceUpStarted = false;
+  for (let index = 0; index < stack.length; index += 1) {
+    const card = stack[index];
+    if (!card || typeof card !== 'object') continue;
+    if (!card.faceDown) faceUpStarted = true;
+    else if (faceUpStarted) {
+      violations.push({ code: 'INVALID_TABLEAU_VISIBILITY', path: `${path}[${index}]`, message: 'Face-down card above face-up card' });
+    }
+    const below = index > 0 ? stack[index - 1] : null;
+    if (below && typeof below === 'object' && !card.faceDown && !below.faceDown) {
+      if (below.rank !== card.rank + 1 || !oppositeColor(below, card)) {
+        violations.push({ code: 'INVALID_TABLEAU_SEQUENCE', path: `${path}[${index}]`, message: 'Face-up tableau sequence must descend with alternating colors' });
+      }
+    }
+  }
+}
+
 function checkInvariants(state) {
   const violations = [];
   const seen = new Set();
@@ -85,11 +111,17 @@ function checkInvariants(state) {
     }
 
     validateStack(player.stock, `${path}.stock`, violations, seen);
+    if (Array.isArray(player.stock) && player.stock.some((card) => card && card.faceDown !== true)) {
+      violations.push({ code: 'INVALID_STOCK_VISIBILITY', path: `${path}.stock`, message: 'Stock cards must be face-down' });
+    }
     validateStack(player.waste, `${path}.waste`, violations, seen);
+    if (Array.isArray(player.waste) && player.waste.some((card) => card && card.faceDown !== false)) {
+      violations.push({ code: 'INVALID_WASTE_VISIBILITY', path: `${path}.waste`, message: 'Waste cards must be face-up' });
+    }
     if (!Array.isArray(player.tableau) || player.tableau.length !== TABLEAU_COUNT) {
       violations.push({ code: 'INVALID_TABLEAU', path: `${path}.tableau`, message: `Tableau must contain ${TABLEAU_COUNT} stacks` });
     } else {
-      player.tableau.forEach((stack, index) => validateStack(stack, `${path}.tableau[${index}]`, violations, seen));
+      player.tableau.forEach((stack, index) => validateTableauStack(stack, `${path}.tableau[${index}]`, violations, seen));
     }
   }
 
@@ -103,6 +135,14 @@ function checkInvariants(state) {
         return;
       }
       validateStack(foundation.cards, `${path}.cards`, violations, seen);
+      if (Array.isArray(foundation.cards)) {
+        foundation.cards.forEach((card, cardIndex) => {
+          if (!card || typeof card !== 'object') return;
+          if (card.suit !== foundation.suit || card.rank !== cardIndex + 1 || card.faceDown !== false) {
+            violations.push({ code: 'INVALID_FOUNDATION_SEQUENCE', path: `${path}.cards[${cardIndex}]`, message: 'Foundation must be face-up and ascend from Ace in its suit' });
+          }
+        });
+      }
     });
   }
 

@@ -9,6 +9,9 @@ code. `vnext/test/core-boundary.test.js` enforces that boundary.
 Import from `vnext/core/index.js`.
 
 - `initMatch(seed, mode)` returns `{ rev, state, stateHash }`.
+- `applyAction(current, actorId, action)` returns `ack`, `reject` or an
+  `AIRBAG` snapshot without mutating `current`. `actorId` comes from trusted
+  server session context, never from client payload.
 - `checkInvariants(state)` returns `{ ok, violations }`.
 - `assertInvariants(state)` throws `INTERNAL_INVARIANT_BREACH` on failure.
 - `canonicalize(value)` creates canonical JSON.
@@ -21,5 +24,5 @@ The normative representation is defined in
 
 ## Next Boundary
 
-`applyAction` will be added here as a pure transactional operation. Network and
-legacy compatibility behavior belongs in later adapters, not in this module.
+Network and legacy compatibility behavior belongs in later adapters, not in
+this module.

@@ -1,6 +1,6 @@
 # 🃏 Solitaire HighNoon – Game Rules (vNext)
 
-Version: **vNext-1.0**  
+Version: **1.0.0**
 Status: **Normative / Server-Authoritative**  
 Scope: **Server Engine, Bot, Replay Harness, Clients (iOS/Web)**
 
