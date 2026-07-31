@@ -18,6 +18,18 @@ Run the first smoke test in a second terminal:
 npm run smoke:vnext
 ```
 
+Current smoke scope:
+
+- Each invocation creates a new match with seed `MANUAL-SMOKE-001` in `split`
+  mode.
+- The smoke client connects only as `p1`, receives the initial snapshot and
+  submits one `draw` action.
+- Running the command in another terminal creates another independent match; it
+  does not join the first match as `p2`.
+- The server already supports one `p1` and one `p2` connection in the same
+  match. A separate interactive two-terminal smoke client is intentionally not
+  part of this first server-shell milestone.
+
 HTTP endpoints:
 
 - `GET /health`
@@ -34,3 +46,7 @@ The terminal logs compact structured events such as `MATCH_CREATED`,
 `WS_CONNECTED`, `SNAPSHOT_SENT`, `ACTION_RECEIVED`, `ACTION_ACK`,
 `ACTION_REJECT`, `REPLAY_EXPORTED` and `WS_DISCONNECTED`. State hashes are
 shortened for correlation; complete states and card arrays are not logged.
+
+Expected activity for `npm run smoke:vnext` includes `MATCH_CREATED`,
+`WS_CONNECTED`, `SNAPSHOT_SENT`, `ACTION_RECEIVED`, `ACTION_ACK` and
+`WS_DISCONNECTED`.
