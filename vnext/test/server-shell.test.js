@@ -84,7 +84,10 @@ test('out-of-sync envelope returns an unchanged replayable snapshot', () => {
 });
 
 test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritative ack', async (t) => {
-  const app = createVNextServer({ logger: silentLogger });
+  const logLines = [];
+  const app = createVNextServer({
+    logger: { log(line) { logLines.push(line); }, error: silentLogger.error }
+  });
   const address = await app.start({ port: 0 });
   const httpBase = `http://127.0.0.1:${address.port}`;
   const wsBase = `ws://127.0.0.1:${address.port}`;
@@ -136,4 +139,19 @@ test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritativ
   const log = await fetch(`${httpBase}/vnext/matches/${created.matchId}/replay`).then((response) => response.json());
   assert.equal(log.steps.length, 2);
   assert.equal(replay(log, defaultExpectedConfig('SMOKE-SEED', 'shared')).status, 'SUCCESS');
+
+  const runtimeLog = logLines.join('\n');
+  for (const event of [
+    'SERVER_STARTED',
+    'MATCH_CREATED',
+    'WS_CONNECTED',
+    'SNAPSHOT_SENT',
+    'ACTION_RECEIVED',
+    'ACTION_ACK',
+    'ACTION_REJECT',
+    'REPLAY_EXPORTED'
+  ]) {
+    assert.match(runtimeLog, new RegExp(`\\[vNext\\] ${event}`));
+  }
+  assert.doesNotMatch(runtimeLog, /"state"|"players"|"foundations"/);
 });

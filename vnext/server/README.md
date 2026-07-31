@@ -29,3 +29,8 @@ WebSocket connections use
 `/vnext?matchId=<id>&clientId=p1|p2`. The server sends an initial snapshot and
 accepts protocol-2.0.0 action envelopes. Accepted actions are broadcast as
 authoritative acks containing the resulting state, revision and hash.
+
+The terminal logs compact structured events such as `MATCH_CREATED`,
+`WS_CONNECTED`, `SNAPSHOT_SENT`, `ACTION_RECEIVED`, `ACTION_ACK`,
+`ACTION_REJECT`, `REPLAY_EXPORTED` and `WS_DISCONNECTED`. State hashes are
+shortened for correlation; complete states and card arrays are not logged.

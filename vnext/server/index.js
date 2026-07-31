@@ -49,6 +49,18 @@ function createVNextServer({ logger = console } = {}) {
   const sessions = new Map();
   const peers = new Map();
 
+  function log(event, fields = {}) {
+    const details = Object.entries(fields)
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+      .join(' ');
+    logger.log(`[vNext] ${event}${details ? ` ${details}` : ''}`);
+  }
+
+  function shortHash(hash) {
+    return typeof hash === 'string' ? hash.slice(0, 12) : undefined;
+  }
+
   function broadcast(matchId, payload) {
     const encoded = JSON.stringify(payload);
     for (const socket of peers.get(matchId)?.values() || []) {
@@ -77,6 +89,12 @@ function createVNextServer({ logger = console } = {}) {
         const matchId = `m-${crypto.randomUUID()}`;
         const session = new MatchSession({ matchId, seed: body.seed, mode: body.mode });
         sessions.set(matchId, session);
+        log('MATCH_CREATED', {
+          matchId,
+          mode: body.mode,
+          rev: session.current.rev,
+          hash: shortHash(session.current.stateHash)
+        });
         sendJson(response, 201, {
           matchId,
           mode: body.mode,
@@ -98,8 +116,19 @@ function createVNextServer({ logger = console } = {}) {
         sendJson(response, 404, { error: 'match not found' });
         return;
       }
-      if (matchPath[2]) sendJson(response, 200, session.actionLog());
-      else sendJson(response, 200, session.initialSnapshot());
+      if (matchPath[2]) {
+        log('REPLAY_EXPORTED', { matchId: session.matchId, steps: session.steps.length });
+        sendJson(response, 200, session.actionLog());
+      } else {
+        log('SNAPSHOT_SENT', {
+          matchId: session.matchId,
+          transport: 'http',
+          reason: 'STATE_REQUEST',
+          rev: session.current.rev,
+          hash: shortHash(session.current.stateHash)
+        });
+        sendJson(response, 200, session.initialSnapshot());
+      }
       return;
     }
     sendJson(response, 404, { error: 'not found' });
@@ -138,7 +167,16 @@ function createVNextServer({ logger = console } = {}) {
     const { matchId, clientId } = socket;
     if (!peers.has(matchId)) peers.set(matchId, new Map());
     peers.get(matchId).set(clientId, socket);
+    log('WS_CONNECTED', { matchId, clientId, peers: peers.get(matchId).size });
     socket.send(JSON.stringify(sessions.get(matchId).initialSnapshot()));
+    log('SNAPSHOT_SENT', {
+      matchId,
+      clientId,
+      transport: 'websocket',
+      reason: 'INITIAL_CONNECT',
+      rev: sessions.get(matchId).current.rev,
+      hash: shortHash(sessions.get(matchId).current.stateHash)
+    });
 
     socket.on('message', (data, isBinary) => {
       if (isBinary) {
@@ -149,10 +187,47 @@ function createVNextServer({ logger = console } = {}) {
       try {
         envelope = JSON.parse(data.toString('utf8'));
       } catch {
+        log('ACTION_REJECT', { matchId, clientId, code: 'MALFORMED_MESSAGE', reason: 'invalid_json' });
         socket.send(JSON.stringify({ kind: 'reject', code: 'MALFORMED_MESSAGE', matchId, clientId }));
         return;
       }
+      log('ACTION_RECEIVED', {
+        matchId,
+        clientId,
+        seq: envelope?.seq,
+        baseRev: envelope?.baseRev,
+        action: envelope?.kind
+      });
       const outcome = sessions.get(matchId).process(clientId, envelope);
+      if (outcome.response.kind === 'ack') {
+        log('ACTION_ACK', {
+          matchId,
+          clientId,
+          seq: envelope.seq,
+          action: envelope.kind,
+          rev: outcome.response.rev,
+          hash: shortHash(outcome.response.stateHash)
+        });
+      } else if (outcome.response.kind === 'reject') {
+        log('ACTION_REJECT', {
+          matchId,
+          clientId,
+          seq: envelope.seq,
+          action: envelope.kind,
+          code: outcome.response.code,
+          rev: outcome.response.rev,
+          hash: shortHash(outcome.response.stateHash)
+        });
+      } else {
+        log('SNAPSHOT_SENT', {
+          matchId,
+          clientId,
+          transport: 'websocket',
+          reason: outcome.response.reason,
+          rev: outcome.response.rev,
+          hash: shortHash(outcome.response.stateHash)
+        });
+      }
       if (outcome.broadcast) broadcast(matchId, outcome.response);
       else socket.send(JSON.stringify(outcome.response));
     });
@@ -161,6 +236,7 @@ function createVNextServer({ logger = console } = {}) {
       const room = peers.get(matchId);
       if (room?.get(clientId) === socket) room.delete(clientId);
       if (room?.size === 0) peers.delete(matchId);
+      log('WS_DISCONNECTED', { matchId, clientId, peers: room?.size || 0 });
     });
   });
 
@@ -170,8 +246,11 @@ function createVNextServer({ logger = console } = {}) {
       server.listen(port, host, () => {
         server.off('error', reject);
         const address = server.address();
-        logger.log(`[vNext] Solitaire HighNoon ${APP_VERSION} / protocol ${PROTOCOL_VERSION}`);
-        logger.log(`[vNext] listening on http://${address.address}:${address.port}`);
+        log('SERVER_STARTED', {
+          appVersion: APP_VERSION,
+          protocolVersion: PROTOCOL_VERSION,
+          url: `http://${address.address}:${address.port}`
+        });
         resolve(address);
       });
     });
