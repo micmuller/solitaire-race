@@ -154,11 +154,13 @@ Alle Aktionen sind **atomar** und werden ausschließlich serverseitig validiert.
   - abwechselnde Farben
   - absteigende Ranks
 - Quelle und Ziel müssen valide sein
+- Wird dadurch eine verdeckte Karte an der Quelle zur Top-Card, wird sie innerhalb derselben atomaren Action automatisch aufgedeckt.
 
 ### 6.5 Foundation Move
 - Quelle: `waste` oder `tableau`
 - Nur **Top-Card**
 - Siehe Foundation-Regeln (Kapitel 3)
+- Wird dadurch eine verdeckte Karte an einer Tableau-Quelle zur Top-Card, wird sie innerhalb derselben atomaren Action automatisch aufgedeckt.
 
 ---
 

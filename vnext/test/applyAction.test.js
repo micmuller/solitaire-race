@@ -129,6 +129,21 @@ test('tableauMove moves a valid face-up sequence and preserves order', () => {
   assert.equal(result.state.players.p1.tableau[0].length, 0);
 });
 
+test('tableauMove atomically reveals the newly exposed source card', () => {
+  const current = controlledMatch((state, card) => {
+    state.players.p1.tableau[0].push(card('d0:D:13', true), card('d0:H:12', false), card('d0:S:11', false));
+    state.players.p1.tableau[1].push(card('d0:C:13', false));
+  });
+  const result = applyAction(current, 'p1', action('tableauMove', {
+    source: zone('tableau', 'p1', 0),
+    target: zone('tableau', 'p1', 1),
+    count: 2
+  }));
+  assert.equal(result.result, 'ack');
+  assert.equal(result.state.players.p1.tableau[0].at(-1).cardId, 'd0:D:13');
+  assert.equal(result.state.players.p1.tableau[0].at(-1).faceDown, false);
+});
+
 test('tableauMove accepts a face-up waste card on a legal target', () => {
   const current = controlledMatch((state, card) => {
     state.players.p1.waste.push(card('d0:H:12', false));
@@ -184,6 +199,19 @@ test('foundationMove ignores the client lane hint and resolves deterministically
   assert.equal(result.result, 'ack');
   assert.equal(result.resolvedFoundationIndex, 0);
   assert.equal(result.state.foundations[0].cards[0].cardId, 'd0:C:01');
+});
+
+test('foundationMove atomically reveals the newly exposed source card', () => {
+  const current = controlledMatch((state, card) => {
+    state.players.p1.tableau[2].push(card('d0:H:02', true), card('d0:C:01', false));
+  });
+  const result = applyAction(current, 'p1', action('foundationMove', {
+    source: zone('tableau', 'p1', 2),
+    target: zone('foundation', 'global', 0)
+  }));
+  assert.equal(result.result, 'ack');
+  assert.equal(result.state.players.p1.tableau[2].at(-1).cardId, 'd0:H:02');
+  assert.equal(result.state.players.p1.tableau[2].at(-1).faceDown, false);
 });
 
 test('foundationMove builds the resolved suit lane in ascending order', () => {

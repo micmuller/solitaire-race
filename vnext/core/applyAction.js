@@ -126,6 +126,14 @@ function takeTableauCards(player, source, count) {
   return validFaceUpSequence(cards) ? cards : null;
 }
 
+function revealTableauTop(player, source) {
+  if (source.zone !== 'tableau') return;
+  const stack = player.tableau[source.index];
+  if (stack.length > 0 && stack.at(-1).faceDown) {
+    stack[stack.length - 1] = { ...stack.at(-1), faceDown: false };
+  }
+}
+
 function applyTableauMove(state, action) {
   const { playerId, payload } = action;
   if (ownershipViolation(payload.source, playerId) || ownershipViolation(payload.target, playerId)) return { code: 'OWNERSHIP_VIOLATION' };
@@ -158,6 +166,7 @@ function applyTableauMove(state, action) {
   if (payload.source.zone === 'waste') player.waste.pop();
   else player.tableau[payload.source.index].splice(-payload.count, payload.count);
   destination.push(...moving);
+  revealTableauTop(player, payload.source);
   return {};
 }
 
@@ -192,6 +201,7 @@ function applyFoundationMove(state, action) {
 
   source.pop();
   state.foundations[resolvedFoundationIndex].cards.push({ ...card, faceDown: false });
+  revealTableauTop(player, payload.source);
   return { resolvedFoundationIndex };
 }
 
