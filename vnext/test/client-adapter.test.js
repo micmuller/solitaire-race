@@ -1,0 +1,119 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const { ProtocolClient, createMatch, validateAuthoritativeResponse } = require('../client/protocolClient');
+const { PROTOCOL_VERSION } = require('../core');
+const { createVNextServer } = require('../server');
+const { runTwoPlayerSimulation } = require('../simulator/twoPlayer');
+
+const silentLogger = { log() {}, error() {} };
+
+function zone(zoneName, owner) {
+  return { zone: zoneName, owner };
+}
+
+async function withServer(t) {
+  const app = createVNextServer({ logger: silentLogger });
+  const address = await app.start({ port: 0 });
+  t.after(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await app.close();
+  });
+  return `http://127.0.0.1:${address.port}`;
+}
+
+function waitForRev(client, rev, timeoutMs = 2000) {
+  if (client.current?.rev >= rev) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      reject(new Error(`client did not reach revision ${rev}`));
+    }, timeoutMs);
+    const unsubscribe = client.subscribe((event) => {
+      if (event.type === 'state' && event.current.rev >= rev) {
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve();
+      }
+    });
+  });
+}
+
+test('two-player simulator converges both thin clients', async (t) => {
+  const baseUrl = await withServer(t);
+  const report = await runTwoPlayerSimulation(baseUrl);
+  assert.equal(report.status, 'PASS');
+  assert.equal(report.finalRev, 2);
+  assert.equal(report.p1Seq, 1);
+  assert.equal(report.p2Seq, 1);
+  assert.equal(report.rejectCode, 'INVALID_TARGET');
+});
+
+test('client keeps state and sequence on reject, then reuses the sequence', async (t) => {
+  const baseUrl = await withServer(t);
+  const match = await createMatch(baseUrl, { seed: 'CLIENT-REJECT', mode: 'split' });
+  const client = new ProtocolClient({ baseUrl, matchId: match.matchId, clientId: 'p1' });
+  t.after(() => client.close());
+  await client.connect();
+
+  const initial = client.current;
+  const rejected = await client.sendIntent('draw', {
+    source: zone('stock', 'p1'),
+    target: zone('stock', 'p1')
+  });
+  assert.equal(rejected.kind, 'reject');
+  assert.equal(client.nextSeq, 0);
+  assert.deepEqual(client.current, initial);
+
+  const accepted = await client.sendIntent('draw', {
+    source: zone('stock', 'p1'),
+    target: zone('waste', 'p1')
+  });
+  assert.equal(accepted.kind, 'ack');
+  assert.equal(accepted.seq, 0);
+  assert.equal(client.nextSeq, 1);
+  assert.equal(client.current.rev, 1);
+});
+
+test('stale client consumes recovery snapshot and retries the same sequence', async (t) => {
+  const baseUrl = await withServer(t);
+  const match = await createMatch(baseUrl, { seed: 'CLIENT-RECOVERY', mode: 'shared' });
+  const p1 = new ProtocolClient({ baseUrl, matchId: match.matchId, clientId: 'p1' });
+  const p2 = new ProtocolClient({ baseUrl, matchId: match.matchId, clientId: 'p2' });
+  t.after(() => { p1.close(); p2.close(); });
+  await Promise.all([p1.connect(), p2.connect()]);
+
+  await p1.sendIntent('draw', { source: zone('stock', 'p1'), target: zone('waste', 'p1') });
+  await waitForRev(p2, 1);
+  p2.current = { ...p2.current, rev: 0 };
+
+  const snapshot = await p2.sendIntent('draw', {
+    source: zone('stock', 'p2'),
+    target: zone('waste', 'p2')
+  });
+  assert.equal(snapshot.kind, 'snapshot');
+  assert.equal(snapshot.reason, 'OUT_OF_SYNC');
+  assert.equal(p2.current.rev, 1);
+  assert.equal(p2.nextSeq, 0);
+
+  const ack = await p2.sendIntent('draw', {
+    source: zone('stock', 'p2'),
+    target: zone('waste', 'p2')
+  });
+  assert.equal(ack.kind, 'ack');
+  assert.equal(ack.seq, 0);
+  assert.equal(p2.nextSeq, 1);
+});
+
+test('client rejects malformed or mismatched authoritative responses', () => {
+  assert.equal(validateAuthoritativeResponse(null, 'm-1'), 'response must be an object');
+  assert.equal(validateAuthoritativeResponse({
+    kind: 'reject',
+    matchId: 'm-other',
+    protocolVersion: PROTOCOL_VERSION,
+    rev: 0,
+    stateHash: '0'.repeat(64),
+    code: 'RULE_VIOLATION'
+  }, 'm-1'), 'response matchId does not match');
+});

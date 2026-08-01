@@ -112,6 +112,19 @@ same `seq` against the unchanged revision.
 
 Applied order is defined by accepted `seq` per `clientId`. Server MUST NOT reorder accepted actions.
 
+## Thin Client Binding
+
+- Clients MUST NOT mutate gameplay state optimistically.
+- Clients MUST allow at most one in-flight action intent.
+- An ack replaces local authoritative state. The submitting client advances its
+  sequence only when `clientId` and `seq` match its pending action.
+- A broadcast ack from the other actor replaces state but does not affect the
+  local sequence or complete a pending local action.
+- A reject changes neither authoritative state nor sequence.
+- A recovery snapshot replaces local authoritative state; the triggering action
+  was not accepted and MAY be retried with the same sequence.
+- ADR-011 and `vnext/client` define the executable reference behavior.
+
 ## Reject Codes (Normative)
 - `MALFORMED_MESSAGE` (missing required fields or schema violation)
 - `INVALID_ACTION_KIND`
@@ -174,6 +187,7 @@ Example 3: Server snapshot message (stub)
 
 ## Decisions
 - ADR-010 binds the first executable authoritative server shell.
+- ADR-011 binds the thin client state machine used by Web and iOS.
 
 ## Open Questions
 - (leer – bewusst offen)

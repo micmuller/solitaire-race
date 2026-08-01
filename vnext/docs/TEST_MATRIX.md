@@ -37,6 +37,10 @@ Last-Updated: 2026-07-31
 - Header/configuration mismatch rejection before match initialization.
 - Protocol recovery coverage for duplicate sequence and Out-of-Sync snapshot.
 - Artifact regeneration equality against the checked-in JSON files.
+- Two Protocol-2.0.0 reference clients converge after both actors submit
+  accepted actions in one shared match.
+- Client reject keeps state/sequence unchanged and allows corrected retry.
+- Client Out-of-Sync snapshot replaces state and allows same-sequence retry.
 
 ## Acceptance Criteria
 - Hash-Match für gleiche Seeds und Logs.
@@ -61,4 +65,4 @@ Last-Updated: 2026-07-31
 - (leer – bewusst offen)
 
 ## Next Steps
-- Add server-shell envelope integration tests without weakening the core gate.
+- Port the frozen reference client state machine to Web and iOS adapters.

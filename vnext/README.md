@@ -22,6 +22,10 @@ The first executable authoritative shell starts through `npm run start:vnext`.
 See `vnext/server/README.md` for endpoints and the manual smoke-test flow. The
 frozen v1 server remains available through `npm start`.
 
+The platform-neutral behavioral client reference lives under `vnext/client`.
+With the vNext server running, `npm run simulate:vnext` connects both `p1` and
+`p2` to one match and verifies authoritative convergence without a UI.
+
 ## Branch Rule
 
 - `main` remains the Stable 1.0 line.

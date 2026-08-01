@@ -10,7 +10,8 @@
     "test:vnext": "node --test vnext/test/*.test.js",
     "test:replay": "node --test vnext/test/replay.test.js",
     "generate:replay": "node vnext/replay/generateGolden.js",
-    "smoke:vnext": "node vnext/smoke/serverSmoke.js"
+    "smoke:vnext": "node vnext/smoke/serverSmoke.js",
+    "simulate:vnext": "node vnext/simulator/twoPlayer.js"
   },
   "repository": {
     "type": "git",
