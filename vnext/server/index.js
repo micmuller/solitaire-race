@@ -1,13 +1,22 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const http = require('node:http');
+const path = require('node:path');
 const { URL } = require('node:url');
 const { WebSocket, WebSocketServer } = require('ws');
 const { APP_VERSION, MODES, PLAYER_IDS, PROTOCOL_VERSION } = require('../core');
 const { MatchSession } = require('./matchSession');
 
 const MAX_BODY_BYTES = 64 * 1024;
+const WEB_ROOT = path.join(__dirname, '..', 'web');
+const WEB_MIME = Object.freeze({
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8'
+});
 
 function sendJson(response, statusCode, value) {
   const body = JSON.stringify(value);
@@ -45,6 +54,24 @@ function readJson(request) {
   });
 }
 
+function serveWebAsset(urlPath, response) {
+  const relative = urlPath === '/vnext/web' || urlPath === '/vnext/web/'
+    ? 'index.html'
+    : decodeURIComponent(urlPath.slice('/vnext/web/'.length));
+  const filePath = path.resolve(WEB_ROOT, relative);
+  if (!filePath.startsWith(`${WEB_ROOT}${path.sep}`) || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return false;
+  }
+  const body = fs.readFileSync(filePath);
+  response.writeHead(200, {
+    'content-type': WEB_MIME[path.extname(filePath)] || 'application/octet-stream',
+    'content-length': body.length,
+    'cache-control': 'no-store'
+  });
+  response.end(body);
+  return true;
+}
+
 function createVNextServer({ logger = console } = {}) {
   const sessions = new Map();
   const peers = new Map();
@@ -70,6 +97,10 @@ function createVNextServer({ logger = console } = {}) {
 
   async function handleRequest(request, response) {
     const url = new URL(request.url, 'http://localhost');
+    if (request.method === 'GET' && url.pathname.startsWith('/vnext/web')) {
+      if (!serveWebAsset(url.pathname, response)) sendJson(response, 404, { error: 'web asset not found' });
+      return;
+    }
     if (request.method === 'GET' && url.pathname === '/health') {
       sendJson(response, 200, {
         status: 'ok',

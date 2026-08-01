@@ -69,6 +69,7 @@ Out of Scope:
 - `adr/ADR-009-replay-harness-and-golden-gate.md`
 - `adr/ADR-010-authoritative-server-shell.md`
 - `adr/ADR-011-thin-client-state-machine.md`
+- `adr/ADR-012-web-client-migration-slice.md`
 
 ## Status
 - [ ] Draft

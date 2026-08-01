@@ -73,6 +73,16 @@ test('server shell imports no frozen gameplay modules', () => {
   }
 });
 
+test('vNext Web adapter imports neither v1 scripts nor gameplay authority', () => {
+  const directory = path.join(__dirname, '..', 'web');
+  const source = fs.readdirSync(directory)
+    .filter((name) => /\.(?:html|mjs)$/.test(name))
+    .map((name) => fs.readFileSync(path.join(directory, name), 'utf8'))
+    .join('\n');
+  assert.doesNotMatch(source, /public\/js|game\.js|bot\.js|startmenu\.js/);
+  assert.doesNotMatch(source, /applyAction|initMatch|canPlaceOn|shuffle\s*\(/);
+});
+
 test('out-of-sync envelope returns an unchanged replayable snapshot', () => {
   const session = new MatchSession({ matchId: 'm-sync', seed: 'SYNC-SEED', mode: 'shared' });
   const outcome = session.process('p2', drawEnvelope('m-sync', 'p2', 1, 0));
@@ -101,6 +111,17 @@ test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritativ
   const health = await fetch(`${httpBase}/health`).then((response) => response.json());
   assert.equal(health.status, 'ok');
   assert.equal(health.protocolVersion, PROTOCOL_VERSION);
+
+  const webResponse = await fetch(`${httpBase}/vnext/web/`);
+  assert.equal(webResponse.status, 200);
+  const webHtml = await webResponse.text();
+  assert.match(webHtml, /Solitaire HighNoon/);
+  assert.match(webHtml, /\.\/app\.mjs/);
+  assert.doesNotMatch(webHtml, /public\/js|game\.js|bot\.js/);
+
+  const browserClient = await fetch(`${httpBase}/vnext/web/protocol-client.mjs`);
+  assert.equal(browserClient.status, 200);
+  assert.match(browserClient.headers.get('content-type'), /text\/javascript/);
 
   const createResponse = await fetch(`${httpBase}/vnext/matches`, {
     method: 'POST',

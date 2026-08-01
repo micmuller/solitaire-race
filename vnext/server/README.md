@@ -12,6 +12,9 @@ npm run start:vnext
 The default address is `http://127.0.0.1:3011`. Use
 `npm run start:vnext -- --host 0.0.0.0 --port 3011` for LAN access.
 
+The first vNext Web adapter is available at `http://127.0.0.1:3011/vnext/web/`.
+It is separate from the frozen v1 Web client.
+
 Run the first smoke test in a second terminal:
 
 ```sh
