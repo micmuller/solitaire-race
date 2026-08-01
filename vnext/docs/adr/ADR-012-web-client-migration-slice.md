@@ -20,9 +20,10 @@ rendering modules. It implements ADR-011 directly in browser APIs and imports no
 v1 JavaScript and no server GameCore. UI interaction emits only Action Intents;
 rendering consumes only authoritative ack/snapshot state.
 
-The first vertical slice covers match create/join, full board rendering,
-draw/recycle and face-down tableau flip. Remaining move gestures are added to
-this path after the state and transport boundary is stable.
+The first vertical slices cover match create/join, full board rendering,
+draw/recycle, face-down tableau flip and click/tap source-target intents for
+tableau and foundation moves. Drag gestures, animation and audio remain
+presentation-only follow-up work on this path.
 
 ## Consequences
 

@@ -65,7 +65,11 @@
 
   <footer class="status-bar">
     <span id="message">Match erstellen oder bestehender Match-ID beitreten.</span>
-    <span id="pending" hidden>Action wird geprüft ...</span>
+    <div class="status-actions">
+      <span id="selection-label" hidden></span>
+      <button id="cancel-selection" class="icon-button" title="Auswahl aufheben" aria-label="Auswahl aufheben" hidden>×</button>
+      <span id="pending" hidden>Action wird geprüft ...</span>
+    </div>
   </footer>
 
   <script type="module" src="./app.mjs"></script>

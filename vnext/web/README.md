@@ -9,6 +9,10 @@ Current vertical slice:
 - connect through Protocol 2.0.0 and render the initial authoritative snapshot;
 - render both players, all tableaus and eight global foundations;
 - submit stock draw/recycle and top-tableau flip as Action Intents;
+- select waste or a face-up tableau suffix and submit tableau/foundation moves
+  through a second target click/tap;
+- keep a rejected selection available for another target and allow explicit or
+  Escape-key cancellation;
 - update only after authoritative ack/snapshot;
 - expose connection, revision, short hash, pending and reject status.
 
@@ -18,7 +22,7 @@ echo, bot or local deal code is included.
 
 Still pending:
 
-- waste/tableau/foundation selection and move gestures;
+- drag gestures in addition to the complete click/tap intent flow;
 - animation and audio adaptation;
 - lobby/invite flow and production identity assignment;
 - PWA packaging for the new entry point.
