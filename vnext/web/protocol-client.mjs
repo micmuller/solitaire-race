@@ -128,3 +128,13 @@ export async function restartMatch(baseUrl, matchId, seed, mode) {
   if (!response.ok) throw new Error(`Restart fehlgeschlagen (${response.status})`);
   return response.json();
 }
+
+export async function startBot(baseUrl, matchId, { clientId = 'p2', speed = 'normal', maxActions = 1000 } = {}) {
+  const response = await fetch(`${baseUrl}/vnext/matches/${encodeURIComponent(matchId)}/bot`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clientId, speed, maxActions })
+  });
+  if (!response.ok) throw new Error(`Bot-Start fehlgeschlagen (${response.status})`);
+  return response.json();
+}

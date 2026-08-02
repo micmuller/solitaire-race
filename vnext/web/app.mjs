@@ -1,4 +1,4 @@
-import { ProtocolClient, createMatch, restartMatch } from './protocol-client.mjs';
+import { ProtocolClient, createMatch, restartMatch, startBot } from './protocol-client.mjs';
 import { cueForIntentResult } from './effects.mjs';
 import { dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
 import { inviteUrl, matchUrl, readLaunchParams } from './lobby.mjs';
@@ -446,7 +446,7 @@ async function connectToMatch() {
   setMessage(`Match ${matchId.slice(0, 18)} aktiv`, 'ok');
 }
 
-async function startHostMatch({ randomSeed = false } = {}) {
+async function startHostMatch({ randomSeed = false, withBot = false } = {}) {
   try {
     await configReady;
     if (randomSeed) setRandomSeed();
@@ -456,8 +456,13 @@ async function startHostMatch({ randomSeed = false } = {}) {
     $('#match-id').value = match.matchId;
     $('#client-id').value = 'p1';
     setRoute(match.matchId, 'p1');
-    setInvite(match.matchId, true);
+    setInvite(match.matchId, !withBot);
     await connectToMatch();
+    if (withBot) {
+      await startBot(baseUrl, match.matchId, { clientId: 'p2', speed: 'normal', maxActions: 1000 });
+      setInvite(match.matchId, false);
+      setMessage(`Match ${match.matchId.slice(0, 18)} mit Bot aktiv`, 'ok');
+    }
   } catch (error) {
     setMessage(error.message, 'error');
   }
@@ -488,6 +493,7 @@ async function restartHostMatch({ randomSeed = false } = {}) {
 
 $('#random-seed').addEventListener('click', () => setRandomSeed());
 $('#create-match').addEventListener('click', () => startHostMatch());
+$('#create-bot-match').addEventListener('click', () => startHostMatch({ withBot: true }));
 $('#restart-match').addEventListener('click', () => {
   if (!canRestartCurrentMatch()) {
     updateRestartControl();

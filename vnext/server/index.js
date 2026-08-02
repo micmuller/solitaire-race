@@ -8,6 +8,8 @@ const path = require('node:path');
 const { URL } = require('node:url');
 const { WebSocket, WebSocketServer } = require('ws');
 const { APP_VERSION, MODES, PLAYER_IDS, PROTOCOL_VERSION } = require('../core');
+const { createManagedBot } = require('../bot/managedBot');
+const { SPEEDS } = require('../bot/runner');
 const { MatchSession } = require('./matchSession');
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -95,6 +97,7 @@ function serveWebAsset(urlPath, response) {
 function createVNextServer({ logger = console, publicUrl } = {}) {
   const sessions = new Map();
   const peers = new Map();
+  const bots = new Map();
   let listenPort = 3011;
 
   function log(event, fields = {}) {
@@ -119,6 +122,14 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       }
     }
     return sent;
+  }
+
+  function botKey(matchId, clientId) {
+    return `${matchId}:${clientId}`;
+  }
+
+  function localBaseUrl() {
+    return `http://127.0.0.1:${listenPort}`;
   }
 
   async function handleRequest(request, response) {
@@ -175,7 +186,53 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       return;
     }
 
-    const matchPath = url.pathname.match(/^\/vnext\/matches\/([^/]+)(\/replay|\/restart)?$/);
+    const matchPath = url.pathname.match(/^\/vnext\/matches\/([^/]+)(\/replay|\/restart|\/bot)?$/);
+    if (request.method === 'POST' && matchPath?.[2] === '/bot') {
+      const session = sessions.get(decodeURIComponent(matchPath[1]));
+      if (!session) {
+        sendJson(response, 404, { error: 'match not found' });
+        return;
+      }
+      try {
+        const body = await readJson(request);
+        const clientId = typeof body.clientId === 'string' && body.clientId.length > 0 ? body.clientId : 'p2';
+        const speed = typeof body.speed === 'string' && body.speed.length > 0 ? body.speed : 'normal';
+        const maxActions = Number.isSafeInteger(body.maxActions) && body.maxActions > 0 ? body.maxActions : 1000;
+        if (!PLAYER_IDS.includes(clientId)) {
+          sendJson(response, 400, { error: 'clientId must be p1 or p2' });
+          return;
+        }
+        if (!Object.prototype.hasOwnProperty.call(SPEEDS, speed)) {
+          sendJson(response, 400, { error: 'speed must be slow, normal or fast' });
+          return;
+        }
+        if (peers.get(session.matchId)?.has(clientId) || bots.has(botKey(session.matchId, clientId))) {
+          sendJson(response, 409, { error: `${clientId} is already connected` });
+          return;
+        }
+        const managedBot = createManagedBot({
+          baseUrl: localBaseUrl(),
+          matchId: session.matchId,
+          clientId,
+          speed,
+          maxActions,
+          logger
+        });
+        bots.set(botKey(session.matchId, clientId), managedBot);
+        managedBot.done.finally(() => bots.delete(botKey(session.matchId, clientId)));
+        log('BOT_STARTED', { matchId: session.matchId, clientId, speed, maxActions });
+        sendJson(response, 202, {
+          matchId: session.matchId,
+          clientId,
+          speed,
+          maxActions,
+          status: managedBot.report.status
+        });
+      } catch (error) {
+        if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
+      }
+      return;
+    }
     if (request.method === 'POST' && matchPath?.[2] === '/restart') {
       const session = sessions.get(decodeURIComponent(matchPath[1]));
       if (!session) {
@@ -355,6 +412,8 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
   }
 
   function close() {
+    for (const bot of bots.values()) bot.stop();
+    bots.clear();
     for (const room of peers.values()) {
       for (const socket of room.values()) socket.close(1001, 'server shutdown');
     }
@@ -363,7 +422,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     });
   }
 
-  return { close, server, sessions, start, wss };
+  return { bots, close, server, sessions, start, wss };
 }
 
 module.exports = { createVNextServer };

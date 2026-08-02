@@ -2,6 +2,7 @@
 'use strict';
 
 const { runBotVsBot } = require('./runner');
+const { formatBotReport } = require('./format');
 
 function readArgs(argv) {
   const options = {
@@ -18,13 +19,15 @@ function readArgs(argv) {
     else if (arg === '--mode') options.mode = argv[++index];
     else if (arg === '--speed') options.speed = argv[++index];
     else if (arg === '--max-actions') options.maxActions = Number(argv[++index]);
+    else if (arg === '--json') options.json = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
   return options;
 }
 
-runBotVsBot(readArgs(process.argv.slice(2))).then((report) => {
-  console.log(JSON.stringify(report, null, 2));
+const options = readArgs(process.argv.slice(2));
+runBotVsBot(options).then((report) => {
+  console.log(options.json ? JSON.stringify(report, null, 2) : formatBotReport(report));
 }).catch((error) => {
   console.error(`[bot] FAIL: ${error.message}`);
   process.exit(1);

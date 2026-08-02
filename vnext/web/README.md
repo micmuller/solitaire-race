@@ -7,6 +7,8 @@ Current vertical slice:
 
 - create a split/shared match as host `p1` and expose a shareable invite URL
   that auto-joins as `p2`;
+- create a split/shared match as host `p1` with a server-managed bot connected
+  as `p2`;
 - restore host/join identity from `?matchId=...&role=p1|p2` URL state;
 - connect through Protocol 2.0.0 and render the initial authoritative snapshot;
 - render both players, all tableaus and eight global foundations;

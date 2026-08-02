@@ -2,6 +2,7 @@
 'use strict';
 
 const { runHumanVsBot } = require('./runner');
+const { formatBotReport } = require('./format');
 
 function readArgs(argv) {
   const options = {
@@ -21,14 +22,19 @@ function readArgs(argv) {
     else if (arg === '--client-id') options.clientId = argv[++index];
     else if (arg === '--speed') options.speed = argv[++index];
     else if (arg === '--max-actions') options.maxActions = Number(argv[++index]);
+    else if (arg === '--json') options.json = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
   return options;
 }
 
-runHumanVsBot(readArgs(process.argv.slice(2))).then((report) => {
-  console.log(JSON.stringify(report, null, 2));
+const options = readArgs(process.argv.slice(2));
+runHumanVsBot(options).then((report) => {
+  console.log(options.json ? JSON.stringify(report, null, 2) : formatBotReport(report));
 }).catch((error) => {
-  console.error(`[bot] FAIL: ${error.message}`);
+  const hint = /409/.test(error.message)
+    ? ' Tipp: Diese Spielerrolle ist vermutlich schon verbunden. Fuer Web-Spiele den Button "Match mit Bot" verwenden.'
+    : '';
+  console.error(`[bot] FAIL: ${error.message}${hint}`);
   process.exit(1);
 });

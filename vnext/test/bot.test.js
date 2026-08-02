@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { generateActionCandidates } = require('../bot/actionGenerator');
+const { formatBotReport } = require('../bot/format');
 const { actionLogHash, runBotVsBot, speedDelay } = require('../bot/runner');
 const { initMatch } = require('../core');
 const { createVNextServer } = require('../server');
@@ -50,6 +51,57 @@ test('bot action log hash ignores wall-clock startedAt only', () => {
 
   assert.equal(actionLogHash(sameRun), actionLogHash(log));
   assert.notEqual(actionLogHash(differentRun), actionLogHash(log));
+});
+
+test('bot report formatter prints a readable summary', () => {
+  const text = formatBotReport({
+    mode: 'bot-vs-bot',
+    matchId: 'm-readable',
+    seed: 'BOT-READABLE',
+    gameMode: 'split',
+    speed: 'fast',
+    stopReason: 'MAX_ACTIONS',
+    actionLogSteps: 20,
+    maxActions: 20,
+    finalRev: 20,
+    finalStateHash: 'abc123',
+    actionLogHash: 'def456',
+    bots: {
+      p1: { acks: 10, rejects: 0, snapshots: 0, nextSeq: 10 },
+      p2: { acks: 10, rejects: 0, snapshots: 0, nextSeq: 10 }
+    }
+  });
+
+  assert.match(text, /Bot run: bot-vs-bot/);
+  assert.match(text, /Actions: 20\/20/);
+  assert.match(text, /p1: 10 ack, 0 reject, 0 snapshot/);
+});
+
+test('server-managed bot can join a web-hosted match as p2', async (t) => {
+  const baseUrl = await withServer(t);
+  const createResponse = await fetch(`${baseUrl}/vnext/matches`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed: 'BOT-WEB-START', mode: 'split' })
+  });
+  const match = await createResponse.json();
+
+  const startResponse = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clientId: 'p2', speed: 'fast', maxActions: 5 })
+  });
+  assert.equal(startResponse.status, 202);
+  const started = await startResponse.json();
+  assert.equal(started.clientId, 'p2');
+  assert.equal(started.speed, 'fast');
+
+  const occupiedResponse = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clientId: 'p2', speed: 'fast', maxActions: 5 })
+  });
+  assert.equal(occupiedResponse.status, 409);
 });
 
 test('bot-vs-bot runs are deterministic for the same seed and mode', async (t) => {
