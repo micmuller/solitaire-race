@@ -11,7 +11,9 @@
     "test:replay": "node --test vnext/test/replay.test.js",
     "generate:replay": "node vnext/replay/generateGolden.js",
     "smoke:vnext": "node vnext/smoke/serverSmoke.js",
-    "simulate:vnext": "node vnext/simulator/twoPlayer.js"
+    "simulate:vnext": "node vnext/simulator/twoPlayer.js",
+    "bot:human": "node vnext/bot/humanVsBot.js",
+    "bot:versus": "node vnext/bot/botVsBot.js"
   },
   "repository": {
     "type": "git",

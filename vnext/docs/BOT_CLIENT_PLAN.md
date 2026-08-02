@@ -68,13 +68,13 @@ Action-Auswahl oder Protocol-Verhalten.
   explizite Server-Regel/ADR eingefuehrt.
 
 ## Umsetzungsschritte
-1. Shared Bot-Core als reiner Action-Generator unter `vnext/bot/`.
-2. Bot Protocol Client Adapter auf Basis des bestehenden vNext-Client-Vertrags.
-3. CLI-Harness fuer Human-vs-Bot mit Match-ID/Client-ID und optionaler
+1. [X] Shared Bot-Core als reiner Action-Generator unter `vnext/bot/`.
+2. [X] Bot Protocol Client Adapter auf Basis des bestehenden vNext-Client-Vertrags.
+3. [X] CLI-Harness fuer Human-vs-Bot mit Match-ID/Client-ID und optionaler
    Auto-Match-Erstellung.
-4. CLI-Harness fuer Bot-vs-Bot mit seed, mode, speed, maxActions und
+4. [X] CLI-Harness fuer Bot-vs-Bot mit seed, mode, speed, maxActions und
    Replay-Export.
-5. Regressionstests fuer deterministische Kandidatenauswahl, seq/pending,
+5. [X] Regressionstests fuer deterministische Kandidatenauswahl, seq/pending,
    Reject-Handling und zwei identische Bot-vs-Bot-Laeufe.
 6. Dashboard-/Replay-Auswertung fuer Drift, Laufzeit und Spielende-Hypothesen.
 
