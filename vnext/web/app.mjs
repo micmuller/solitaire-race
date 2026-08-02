@@ -2,7 +2,7 @@ import { ProtocolClient, createMatch } from './protocol-client.mjs';
 import { cueForIntentResult } from './effects.mjs';
 import { dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
 import { inviteUrl, matchUrl, readLaunchParams } from './lobby.mjs';
-import { WEB_CLIENT_VERSION } from './version.mjs';
+import { WEB_CLIENT_VERSION, labelsFromConfig, setVersionMenuOpen, toggleVersionMenu } from './version.mjs';
 
 const $ = (selector) => document.querySelector(selector);
 const SUIT = { C: '♣', D: '♦', H: '♥', S: '♠' };
@@ -26,8 +26,9 @@ async function loadConfig() {
     const response = await fetch(`${baseUrl}/vnext/config`);
     if (!response.ok) return;
     const config = await response.json();
-    if (typeof config.appVersion === 'string' && config.appVersion) serverVersion = config.appVersion;
-    if (typeof config.protocolVersion === 'string' && config.protocolVersion) serverProtocolVersion = config.protocolVersion;
+    const labels = labelsFromConfig(config);
+    serverVersion = labels.serverVersion;
+    serverProtocolVersion = labels.protocolVersion;
     if (typeof config.publicBaseUrl === 'string' && config.publicBaseUrl) {
       publicBaseUrl = config.publicBaseUrl.replace(/\/$/, '');
     }
@@ -443,10 +444,11 @@ $('#create-match').addEventListener('click', async () => {
 });
 
 $('#connect-match').addEventListener('click', () => connectToMatch().catch((error) => setMessage(error.message, 'error')));
-$('#version-badge').addEventListener('click', () => {
+$('#version-badge').addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
   const menu = $('#version-menu');
-  menu.hidden = !menu.hidden;
-  $('#version-badge').setAttribute('aria-expanded', String(!menu.hidden));
+  toggleVersionMenu(menu, $('#version-badge'));
 });
 $('#copy-invite').addEventListener('click', async () => {
   const input = $('#invite-link');
@@ -482,14 +484,12 @@ document.addEventListener('click', (event) => {
 }, true);
 document.addEventListener('click', (event) => {
   if (event.target.closest('#version-badge') || event.target.closest('#version-menu')) return;
-  $('#version-menu').hidden = true;
-  $('#version-badge').setAttribute('aria-expanded', 'false');
+  setVersionMenuOpen($('#version-menu'), $('#version-badge'), false);
 });
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && selection) setSelection(null);
   if (event.key === 'Escape') {
-    $('#version-menu').hidden = true;
-    $('#version-badge').setAttribute('aria-expanded', 'false');
+    setVersionMenuOpen($('#version-menu'), $('#version-badge'), false);
   }
 });
 

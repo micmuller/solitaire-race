@@ -42,6 +42,7 @@ button { cursor: pointer; }
   padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: #1b1e22;
   box-shadow: 0 8px 20px #0009;
 }
+.version-menu[hidden] { display: none; }
 .version-menu div { display: flex; grid-template-columns: none; justify-content: space-between; gap: 18px; color: var(--muted); font-size: 12px; }
 .version-menu strong { color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .telemetry { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; }

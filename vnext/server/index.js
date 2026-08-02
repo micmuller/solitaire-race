@@ -126,7 +126,8 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       sendJson(response, 200, {
         appVersion: APP_VERSION,
         publicBaseUrl: publicBaseUrl({ configured: publicUrl, request, port: listenPort }),
-        protocolVersion: PROTOCOL_VERSION
+        protocolVersion: PROTOCOL_VERSION,
+        serverVersion: APP_VERSION
       });
       return;
     }

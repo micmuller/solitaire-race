@@ -123,5 +123,33 @@ test('lobby urls encode host and invite identities', () => {
 });
 
 test('web client version is exposed for the header menu', () => {
-  assert.equal(version.WEB_CLIENT_VERSION, '1.1.0-alpha.1');
+  assert.equal(version.WEB_CLIENT_VERSION, '0.1.0-alpha.1');
+  assert.deepEqual(version.labelsFromConfig({
+    serverVersion: '1.1.0-alpha.1',
+    protocolVersion: '2.0.0'
+  }), {
+    serverVersion: '1.1.0-alpha.1',
+    protocolVersion: '2.0.0',
+    webClientVersion: '0.1.0-alpha.1'
+  });
+  assert.equal(version.labelsFromConfig({ appVersion: '1.1.0-alpha.1' }).serverVersion, '1.1.0-alpha.1');
+});
+
+test('version menu toggles open and closed from the badge state', () => {
+  const menu = { hidden: true };
+  const badge = {
+    value: null,
+    setAttribute(name, value) {
+      assert.equal(name, 'aria-expanded');
+      this.value = value;
+    }
+  };
+
+  version.toggleVersionMenu(menu, badge);
+  assert.equal(menu.hidden, false);
+  assert.equal(badge.value, 'true');
+
+  version.toggleVersionMenu(menu, badge);
+  assert.equal(menu.hidden, true);
+  assert.equal(badge.value, 'false');
 });

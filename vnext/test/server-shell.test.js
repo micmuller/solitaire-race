@@ -114,6 +114,7 @@ test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritativ
 
   const webConfig = await fetch(`${httpBase}/vnext/config`).then((response) => response.json());
   assert.equal(webConfig.appVersion, APP_VERSION);
+  assert.equal(webConfig.serverVersion, APP_VERSION);
   assert.equal(webConfig.protocolVersion, PROTOCOL_VERSION);
   assert.match(webConfig.publicBaseUrl, /^http:\/\/.+:\d+$/);
 
