@@ -2,6 +2,7 @@ import { ProtocolClient, createMatch } from './protocol-client.mjs';
 import { cueForIntentResult } from './effects.mjs';
 import { dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
 import { inviteUrl, matchUrl, readLaunchParams } from './lobby.mjs';
+import { generateRandomSeed } from './seed.mjs';
 import { WEB_CLIENT_VERSION, labelsFromConfig, setVersionMenuOpen, toggleVersionMenu } from './version.mjs';
 
 const $ = (selector) => document.querySelector(selector);
@@ -19,6 +20,7 @@ let serverVersion = '-';
 let serverProtocolVersion = '-';
 
 const configReady = loadConfig();
+setRandomSeed();
 setVersionLabels();
 
 async function loadConfig() {
@@ -64,6 +66,10 @@ function setInvite(matchId, visible = true) {
   const link = inviteUrl({ origin: publicBaseUrl, pathname: currentPath(), matchId });
   $('#invite-link').value = link;
   $('#invite-panel').hidden = !link || !visible;
+}
+
+function setRandomSeed() {
+  $('#seed').value = generateRandomSeed();
 }
 
 async function copyText(text, input) {
@@ -429,10 +435,13 @@ async function connectToMatch() {
   setMessage(`Match ${matchId.slice(0, 18)} aktiv`, 'ok');
 }
 
-$('#create-match').addEventListener('click', async () => {
+async function startHostMatch({ randomSeed = false } = {}) {
   try {
     await configReady;
-    const match = await createMatch(baseUrl, $('#seed').value.trim(), $('#mode').value);
+    if (randomSeed) setRandomSeed();
+    const seed = $('#seed').value.trim() || generateRandomSeed();
+    $('#seed').value = seed;
+    const match = await createMatch(baseUrl, seed, $('#mode').value);
     $('#match-id').value = match.matchId;
     $('#client-id').value = 'p1';
     setRoute(match.matchId, 'p1');
@@ -441,7 +450,20 @@ $('#create-match').addEventListener('click', async () => {
   } catch (error) {
     setMessage(error.message, 'error');
   }
+}
+
+$('#random-seed').addEventListener('click', () => setRandomSeed());
+$('#create-match').addEventListener('click', () => startHostMatch());
+$('#restart-match').addEventListener('click', () => $('#restart-dialog').showModal());
+$('#restart-same-seed').addEventListener('click', () => {
+  $('#restart-dialog').close();
+  startHostMatch();
 });
+$('#restart-new-seed').addEventListener('click', () => {
+  $('#restart-dialog').close();
+  startHostMatch({ randomSeed: true });
+});
+$('#restart-cancel').addEventListener('click', () => $('#restart-dialog').close());
 
 $('#connect-match').addEventListener('click', () => connectToMatch().catch((error) => setMessage(error.message, 'error')));
 $('#version-badge').addEventListener('click', (event) => {

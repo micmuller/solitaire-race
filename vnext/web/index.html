@@ -31,8 +31,10 @@
   <section id="session-panel" class="session-band">
     <div class="session-group">
       <label>Seed<input id="seed" value="WEB-VNEXT-001" autocomplete="off"></label>
+      <button id="random-seed" title="Random Seed generieren" aria-label="Random Seed generieren">Zufall</button>
       <label>Modus<select id="mode"><option value="split">Split</option><option value="shared">Shared</option></select></label>
       <button id="create-match" class="primary">Match starten</button>
+      <button id="restart-match">Restart</button>
     </div>
     <div id="invite-panel" class="session-group invite-group" hidden>
       <label>Invite-Link<input id="invite-link" readonly autocomplete="off"></label>
@@ -83,6 +85,18 @@
       <span id="pending" hidden>Action wird geprüft ...</span>
     </div>
   </footer>
+
+  <dialog id="restart-dialog" class="restart-dialog">
+    <form method="dialog">
+      <strong>Match neu starten?</strong>
+      <p>Soll der aktuelle Seed wiederverwendet werden?</p>
+      <div class="dialog-actions">
+        <button id="restart-same-seed" type="button" class="primary">Gleicher Seed</button>
+        <button id="restart-new-seed" type="button">Neuer Seed</button>
+        <button id="restart-cancel" type="button">Abbrechen</button>
+      </div>
+    </form>
+  </dialog>
 
   <script type="module" src="./app.mjs"></script>
 </body>

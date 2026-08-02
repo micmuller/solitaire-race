@@ -6,11 +6,13 @@ const test = require('node:test');
 let mapping;
 let effects;
 let lobby;
+let seed;
 let version;
 test.before(async () => {
   mapping = await import('../web/intent-mapping.mjs');
   effects = await import('../web/effects.mjs');
   lobby = await import('../web/lobby.mjs');
+  seed = await import('../web/seed.mjs');
   version = await import('../web/version.mjs');
 });
 
@@ -152,4 +154,9 @@ test('version menu toggles open and closed from the badge state', () => {
   version.toggleVersionMenu(menu, badge);
   assert.equal(menu.hidden, true);
   assert.equal(badge.value, 'false');
+});
+
+test('random seed generator creates stable readable seed format', () => {
+  assert.equal(seed.generateRandomSeed(1722500000000, () => 0.5), 'HN-LZB00Y68-ZIK0ZK');
+  assert.match(seed.generateRandomSeed(), /^HN-[0-9A-Z]+-[0-9A-Z]{6,}$/);
 });
