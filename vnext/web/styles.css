@@ -47,9 +47,11 @@ input, select, button {
   color: var(--text); padding: 7px 10px;
 }
 input { width: 190px; }
+input[readonly] { color: var(--muted); }
 button:hover { border-color: var(--gold); }
 button.primary { background: var(--gold); border-color: var(--gold); color: #17130c; font-weight: 700; }
 .session-divider { width: 1px; align-self: stretch; background: var(--line); }
+.invite-group input { width: min(440px, 42vw); }
 
 .game-shell { min-height: calc(100vh - 150px); background: var(--felt); }
 .player-area, .foundation-area { padding: 10px 18px 14px; }
@@ -125,6 +127,7 @@ button.primary { background: var(--gold); border-color: var(--gold); color: #171
   .session-group { display: grid; grid-template-columns: 1fr 1fr; }
   .session-group label:first-child { grid-column: 1 / -1; }
   .session-group input { width: 100%; }
+  .invite-group input { width: 100%; }
   .session-divider { display: none; }
   .lane { grid-template-columns: 1fr; }
   .stock-waste { justify-content: center; }

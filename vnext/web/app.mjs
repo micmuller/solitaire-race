@@ -1,6 +1,7 @@
 import { ProtocolClient, createMatch } from './protocol-client.mjs';
 import { cueForIntentResult } from './effects.mjs';
 import { dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
+import { inviteUrl, matchUrl, readLaunchParams } from './lobby.mjs';
 
 const $ = (selector) => document.querySelector(selector);
 const SUIT = { C: '♣', D: '♦', H: '♥', S: '♠' };
@@ -16,6 +17,21 @@ let audioContext = null;
 function setMessage(text, tone = '') {
   $('#message').textContent = text;
   $('#message').dataset.tone = tone;
+}
+
+function currentPath() {
+  return `${window.location.pathname.replace(/\/$/, '')}/`;
+}
+
+function setRoute(matchId, role) {
+  const url = matchUrl({ origin: window.location.origin, pathname: currentPath(), matchId, role });
+  if (url) window.history.replaceState({}, '', url);
+}
+
+function setInvite(matchId, visible = true) {
+  const link = inviteUrl({ origin: window.location.origin, pathname: currentPath(), matchId });
+  $('#invite-link').value = link;
+  $('#invite-panel').hidden = !link || !visible;
 }
 
 function captureCardRects() {
@@ -358,6 +374,8 @@ async function connectToMatch() {
   $('#game').hidden = false;
   $('#connection-dot').classList.add('online');
   $('#connection-label').textContent = `${clientId.toUpperCase()} verbunden`;
+  setRoute(matchId, clientId);
+  setInvite(matchId, clientId === 'p1');
   setMessage(`Match ${matchId.slice(0, 18)} aktiv`, 'ok');
 }
 
@@ -366,6 +384,8 @@ $('#create-match').addEventListener('click', async () => {
     const match = await createMatch(baseUrl, $('#seed').value.trim(), $('#mode').value);
     $('#match-id').value = match.matchId;
     $('#client-id').value = 'p1';
+    setRoute(match.matchId, 'p1');
+    setInvite(match.matchId, true);
     await connectToMatch();
   } catch (error) {
     setMessage(error.message, 'error');
@@ -373,6 +393,17 @@ $('#create-match').addEventListener('click', async () => {
 });
 
 $('#connect-match').addEventListener('click', () => connectToMatch().catch((error) => setMessage(error.message, 'error')));
+$('#copy-invite').addEventListener('click', async () => {
+  const link = $('#invite-link').value;
+  if (!link) return;
+  try {
+    await navigator.clipboard.writeText(link);
+    setMessage('Invite-Link kopiert.', 'ok');
+  } catch {
+    $('#invite-link').select();
+    setMessage('Invite-Link ist markiert.', 'warn');
+  }
+});
 $('#local-stock').addEventListener('click', () => {
   if (!client?.current) return;
   if (selection) {
@@ -395,3 +426,11 @@ document.addEventListener('click', (event) => {
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && selection) setSelection(null);
 });
+
+const launch = readLaunchParams(window.location.search);
+if (launch) {
+  $('#match-id').value = launch.matchId;
+  $('#client-id').value = launch.role;
+  setInvite(launch.matchId, launch.role === 'p1');
+  connectToMatch().catch((error) => setMessage(error.message, 'error'));
+}

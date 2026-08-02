@@ -5,9 +5,11 @@ const test = require('node:test');
 
 let mapping;
 let effects;
+let lobby;
 test.before(async () => {
   mapping = await import('../web/intent-mapping.mjs');
   effects = await import('../web/effects.mjs');
+  lobby = await import('../web/lobby.mjs');
 });
 
 const cards = [
@@ -99,4 +101,21 @@ test('authoritative responses map to non-optimistic effect cues', () => {
   assert.equal(effects.cueForIntentResult('tableauMove', { kind: 'reject', code: 'RULE_VIOLATION' }), 'invalid');
   assert.equal(effects.cueForIntentResult('draw', { kind: 'snapshot', reason: 'OUT_OF_SYNC' }), 'sync');
   assert.equal(effects.cueForIntentResult('draw', { kind: 'snapshot', reason: 'INITIAL_CONNECT' }), null);
+});
+
+test('lobby urls encode host and invite identities', () => {
+  assert.deepEqual(lobby.readLaunchParams('?matchId=m-123&role=p2'), { matchId: 'm-123', role: 'p2' });
+  assert.deepEqual(lobby.readLaunchParams('?match=m-123&role=P1'), { matchId: 'm-123', role: 'p1' });
+  assert.equal(lobby.readLaunchParams('?matchId=m-123&role=p3'), null);
+  assert.equal(lobby.matchUrl({
+    origin: 'https://example.test',
+    pathname: '/vnext/web/',
+    matchId: 'm-123',
+    role: 'p1'
+  }), 'https://example.test/vnext/web/?matchId=m-123&role=p1');
+  assert.equal(lobby.inviteUrl({
+    origin: 'https://example.test',
+    pathname: '/vnext/web/',
+    matchId: 'm-123'
+  }), 'https://example.test/vnext/web/?matchId=m-123&role=p2');
 });

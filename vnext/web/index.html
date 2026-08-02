@@ -24,10 +24,14 @@
     <div class="session-group">
       <label>Seed<input id="seed" value="WEB-VNEXT-001" autocomplete="off"></label>
       <label>Modus<select id="mode"><option value="split">Split</option><option value="shared">Shared</option></select></label>
-      <button id="create-match" class="primary">Match erstellen</button>
+      <button id="create-match" class="primary">Match starten</button>
+    </div>
+    <div id="invite-panel" class="session-group invite-group" hidden>
+      <label>Invite-Link<input id="invite-link" readonly autocomplete="off"></label>
+      <button id="copy-invite">Kopieren</button>
     </div>
     <div class="session-divider"></div>
-    <div class="session-group">
+    <div class="session-group direct-join">
       <label>Match-ID<input id="match-id" placeholder="m-..." autocomplete="off"></label>
       <label>Spieler<select id="client-id"><option value="p1">P1</option><option value="p2">P2</option></select></label>
       <button id="connect-match">Verbinden</button>

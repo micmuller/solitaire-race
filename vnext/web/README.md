@@ -5,7 +5,9 @@ It is a separate path from frozen `public/` and imports none of the v1 scripts.
 
 Current vertical slice:
 
-- create a split/shared match or join an existing match as `p1`/`p2`;
+- create a split/shared match as host `p1` and expose a shareable invite URL
+  that auto-joins as `p2`;
+- restore host/join identity from `?matchId=...&role=p1|p2` URL state;
 - connect through Protocol 2.0.0 and render the initial authoritative snapshot;
 - render both players, all tableaus and eight global foundations;
 - submit stock draw/recycle and top-tableau flip as Action Intents;
@@ -26,7 +28,6 @@ echo, bot or local deal code is included.
 
 Still pending:
 
-- lobby/invite flow and production identity assignment;
 - PWA packaging for the new entry point.
 
 ## Session Close 2026-08-01
@@ -53,4 +54,8 @@ Cards are animated with a render-before/render-after position comparison after
 server ack; reject and recovery snapshots play non-success cues and do not
 animate a successful move.
 
-Next follow-up: lobby/invite flow and production identity assignment.
+Lobby and invite flow use deterministic Web-slice identity: host creates and
+connects as `p1`, the invite link opens the same match as `p2`, and refresh
+preserves identity through URL state.
+
+Next follow-up: PWA packaging for the new entry point.
