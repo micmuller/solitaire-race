@@ -63,9 +63,10 @@ so invite links use the LAN-reachable server address instead of `127.0.0.1`
 when hosted locally; seed and mode display are synchronized from the
 authoritative snapshot.
 
-The Restart control is server-authoritative: host `p1` keeps the same match and
-invite link, while the server resets the session and broadcasts a `RESTART`
-snapshot so `p2` returns to the same fresh state. New-seed restarts use the same
-path with a newly generated seed.
+The Restart control is host-only and server-authoritative: host `p1` keeps the
+same match and invite link, while the server resets the session and broadcasts a
+`RESTART` snapshot so `p2` returns to the same fresh state. New-seed restarts
+use the same path with a newly generated seed. Joined `p2` clients cannot start
+a restart.
 
 Next follow-up: PWA packaging for the new entry point.

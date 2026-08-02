@@ -72,6 +72,16 @@ function setRandomSeed() {
   $('#seed').value = generateRandomSeed();
 }
 
+function canRestartCurrentMatch() {
+  return client?.clientId === 'p1';
+}
+
+function updateRestartControl() {
+  const canRestart = canRestartCurrentMatch();
+  $('#restart-match').disabled = !canRestart;
+  $('#restart-match').title = canRestart ? 'Match neu starten' : 'Nur P1 kann den Match neu starten';
+}
+
 async function copyText(text, input) {
   if (navigator.clipboard?.writeText && window.isSecureContext) {
     await navigator.clipboard.writeText(text);
@@ -430,6 +440,7 @@ async function connectToMatch() {
   $('#game').hidden = false;
   $('#connection-dot').classList.add('online');
   $('#connection-label').textContent = `${clientId.toUpperCase()} verbunden`;
+  updateRestartControl();
   setRoute(matchId, clientId);
   setInvite(matchId, clientId === 'p1');
   setMessage(`Match ${matchId.slice(0, 18)} aktiv`, 'ok');
@@ -453,8 +464,8 @@ async function startHostMatch({ randomSeed = false } = {}) {
 }
 
 async function restartHostMatch({ randomSeed = false } = {}) {
-  if (!client?.matchId || client.clientId !== 'p1') {
-    await startHostMatch({ randomSeed });
+  if (!canRestartCurrentMatch()) {
+    setMessage('Restart ist nur fuer P1 verfuegbar.', 'warn');
     return;
   }
   try {
@@ -477,7 +488,14 @@ async function restartHostMatch({ randomSeed = false } = {}) {
 
 $('#random-seed').addEventListener('click', () => setRandomSeed());
 $('#create-match').addEventListener('click', () => startHostMatch());
-$('#restart-match').addEventListener('click', () => $('#restart-dialog').showModal());
+$('#restart-match').addEventListener('click', () => {
+  if (!canRestartCurrentMatch()) {
+    updateRestartControl();
+    setMessage('Restart ist nur fuer P1 verfuegbar.', 'warn');
+    return;
+  }
+  $('#restart-dialog').showModal();
+});
 $('#restart-same-seed').addEventListener('click', () => {
   $('#restart-dialog').close();
   restartHostMatch();
@@ -545,3 +563,5 @@ if (launch) {
   setInvite(launch.matchId, launch.role === 'p1');
   connectToMatch().catch((error) => setMessage(error.message, 'error'));
 }
+
+updateRestartControl();
