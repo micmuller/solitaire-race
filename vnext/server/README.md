@@ -42,7 +42,8 @@ HTTP endpoints:
 - `POST /vnext/matches/:matchId/restart` with optional
   `{ "seed": "...", "mode": "split|shared" }`
 - `POST /vnext/matches/:matchId/bot` with optional
-  `{ "clientId": "p2", "speed": "slow|normal|fast", "maxActions": 1000 }`
+  `{ "clientId": "p2", "speed": "easy|medium|hard|slow|normal|fast", "maxActions": 1000 }`
+- `DELETE /vnext/matches/:matchId/bot?clientId=p2`
 
 WebSocket connections use
 `/vnext?matchId=<id>&clientId=p1|p2`. The server sends an initial snapshot and
@@ -52,13 +53,14 @@ Restart resets the existing match session to revision `0`, resets client
 sequences, and broadcasts an authoritative `RESTART` snapshot to connected
 peers.
 The bot endpoint starts a server-managed thin bot client on the requested free
-player id.
+player id. The delete endpoint stops the managed bot so Web actions such as
+starting, joining or restarting a match do not leave an old bot running.
 
 The terminal logs compact structured events such as `MATCH_CREATED`,
 `WS_CONNECTED`, `SNAPSHOT_SENT`, `ACTION_RECEIVED`, `ACTION_ACK`,
-`ACTION_REJECT`, `MATCH_RESTARTED`, `BOT_STARTED`, `REPLAY_EXPORTED` and
-`WS_DISCONNECTED`. State hashes are shortened for correlation; complete states
-and card arrays are not logged.
+`ACTION_REJECT`, `MATCH_RESTARTED`, `BOT_STARTED`, `BOT_STOPPED`,
+`REPLAY_EXPORTED` and `WS_DISCONNECTED`. State hashes are shortened for
+correlation; complete states and card arrays are not logged.
 
 Expected activity for `npm run smoke:vnext` includes `MATCH_CREATED`,
 `WS_CONNECTED`, `SNAPSHOT_SENT`, `ACTION_RECEIVED`, `ACTION_ACK` and

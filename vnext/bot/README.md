@@ -21,6 +21,9 @@ npm run bot:human -- --match-id m-... --client-id p2 --speed normal
 
 For Web testing, prefer the Web client's `Match mit Bot` button. It starts the
 server-managed bot as `p2` and avoids manual role conflicts.
+Human-vs-bot speed profiles are `easy`, `medium` and `hard` (`leicht`,
+`mittel`, `schwer` are accepted aliases). The Web client exposes these as
+`Easy`, `Mittel` and `Schwer`.
 
 Or create a standalone bot match:
 
@@ -36,8 +39,8 @@ Run two bot clients against a fresh match:
 npm run bot:versus -- --seed BOT-VS-BOT-001 --mode split --speed fast --max-actions 200
 ```
 
-Speeds are `slow`, `normal` and `fast`. Speed only changes scheduling delay;
-candidate ordering remains deterministic.
+Bot-vs-bot speeds are `slow`, `normal` and `fast`. Speed only changes
+scheduling delay; candidate ordering remains deterministic.
 Add `--json` to either CLI command for the raw machine-readable report.
 
 The JSON report includes match id, seed, mode, speed, final revision, final
@@ -57,3 +60,5 @@ Candidates are generated in priority bands:
 Ties are ordered deterministically from seed, bot id, revision and candidate
 index. Rejected candidates are remembered per state hash so the bot can try the
 next candidate without local rule authority.
+Recent accepted tableau moves are also remembered so the bot does not
+immediately reverse the same move and fall into a simple ping-pong loop.

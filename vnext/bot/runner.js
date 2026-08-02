@@ -6,9 +6,18 @@ const { canonicalize } = require('../core');
 const { candidateSignature, generateActionCandidates } = require('./actionGenerator');
 
 const SPEEDS = Object.freeze({
+  easy: { minMs: 2500, maxMs: 3500 },
+  medium: { minMs: 1200, maxMs: 1800 },
+  hard: { minMs: 500, maxMs: 800 },
   slow: { minMs: 900, maxMs: 1200 },
   normal: { minMs: 250, maxMs: 400 },
   fast: { minMs: 0, maxMs: 0 }
+});
+
+const SPEED_ALIASES = Object.freeze({
+  leicht: 'easy',
+  mittel: 'medium',
+  schwer: 'hard'
 });
 
 function sleep(ms) {
@@ -21,8 +30,13 @@ function actionLogHash(actionLog) {
   return crypto.createHash('sha256').update(canonicalize(normalized)).digest('hex');
 }
 
+function normalizeSpeed(speed) {
+  return SPEED_ALIASES[speed] || speed;
+}
+
 function speedDelay(speed, actionCount, clientId) {
-  const profile = SPEEDS[speed];
+  const normalized = normalizeSpeed(speed);
+  const profile = SPEEDS[normalized];
   if (!profile) throw new Error(`Unknown speed: ${speed}`);
   if (profile.maxMs === 0) return 0;
   const span = profile.maxMs - profile.minMs;
@@ -31,13 +45,15 @@ function speedDelay(speed, actionCount, clientId) {
 }
 
 class BotActor {
-  constructor({ client, maxRejectsPerState = 256 }) {
+  constructor({ client, maxRejectsPerState = 256, recentWindow = 12 }) {
     this.client = client;
     this.maxRejectsPerState = maxRejectsPerState;
+    this.recentWindow = recentWindow;
     this.rejects = 0;
     this.acks = 0;
     this.snapshots = 0;
     this.noCandidate = false;
+    this.recentAccepted = [];
     this.rejectedByState = new Map();
   }
 
@@ -50,7 +66,22 @@ class BotActor {
   nextCandidate() {
     const rejected = this.rejectedSet();
     const candidates = generateActionCandidates(this.client.current, this.client.clientId);
-    return candidates.find((candidate) => !rejected.has(candidateSignature(candidate))) || null;
+    return candidates.find((candidate) => {
+      const signature = candidateSignature(candidate);
+      return !rejected.has(signature) && !this.isRecentLoop(candidate, signature);
+    }) || null;
+  }
+
+  isRecentLoop(candidate, signature) {
+    if (candidate.kind !== 'tableauMove') return false;
+    if (this.recentAccepted.includes(signature)) return true;
+    return this.recentAccepted.includes(candidateSignature(inverseTableauMove(candidate)));
+  }
+
+  rememberAccepted(candidate) {
+    if (!candidate || candidate.kind !== 'tableauMove') return;
+    this.recentAccepted.unshift(candidateSignature(candidate));
+    this.recentAccepted = this.recentAccepted.slice(0, this.recentWindow);
   }
 
   async step() {
@@ -62,6 +93,7 @@ class BotActor {
     const response = await this.client.sendIntent(candidate.kind, candidate.payload);
     if (response.kind === 'ack') {
       this.acks += 1;
+      this.rememberAccepted(candidate);
       this.noCandidate = false;
     } else if (response.kind === 'reject') {
       this.rejects += 1;
@@ -119,17 +151,18 @@ async function runHumanVsBot({
   seed = 'BOT-HUMAN-001',
   mode = 'split',
   clientId = 'p2',
-  speed = 'normal',
+  speed = 'easy',
   maxActions = 200
 }) {
   const url = baseUrl.replace(/\/$/, '');
+  const normalizedSpeed = normalizeSpeed(speed);
   const match = matchId ? { matchId, seed, mode } : await createMatch(url, { seed, mode });
   const client = new ProtocolClient({ baseUrl: url, matchId: match.matchId, clientId });
   const bot = new BotActor({ client });
   try {
     await client.connect();
     for (let actionCount = 0; actionCount < maxActions && !bot.noCandidate; actionCount += 1) {
-      const delay = speedDelay(speed, actionCount, clientId);
+      const delay = speedDelay(normalizedSpeed, actionCount, clientId);
       if (delay > 0) await sleep(delay);
       await bot.step();
       await drainClients([client]);
@@ -159,6 +192,7 @@ async function runBotVsBot({
   maxActions = 200
 }) {
   const url = baseUrl.replace(/\/$/, '');
+  const normalizedSpeed = normalizeSpeed(speed);
   const match = await createMatch(url, { seed, mode });
   const p1 = new ProtocolClient({ baseUrl: url, matchId: match.matchId, clientId: 'p1' });
   const p2 = new ProtocolClient({ baseUrl: url, matchId: match.matchId, clientId: 'p2' });
@@ -173,7 +207,7 @@ async function runBotVsBot({
         break;
       }
       if (bot.noCandidate) continue;
-      const delay = speedDelay(speed, actionCount, bot.client.clientId);
+      const delay = speedDelay(normalizedSpeed, actionCount, bot.client.clientId);
       if (delay > 0) await sleep(delay);
       const result = await bot.step();
       await drainClients([p1, p2]);
@@ -207,7 +241,22 @@ module.exports = {
   BotActor,
   SPEEDS,
   actionLogHash,
+  normalizeSpeed,
   runBotVsBot,
   runHumanVsBot,
   speedDelay
 };
+
+function inverseTableauMove(candidate) {
+  if (candidate.kind !== 'tableauMove') return candidate;
+  const { source, target, count } = candidate.payload;
+  if (source.zone !== 'tableau' || target.zone !== 'tableau') return candidate;
+  return {
+    kind: 'tableauMove',
+    payload: {
+      source: { zone: 'tableau', owner: source.owner, index: target.index },
+      target: { zone: 'tableau', owner: target.owner, index: source.index },
+      count
+    }
+  };
+}

@@ -8,7 +8,7 @@ Current vertical slice:
 - create a split/shared match as host `p1` and expose a shareable invite URL
   that auto-joins as `p2`;
 - create a split/shared match as host `p1` with a server-managed bot connected
-  as `p2`;
+  as `p2`, using selectable Easy/Mittel/Schwer bot speed;
 - restore host/join identity from `?matchId=...&role=p1|p2` URL state;
 - connect through Protocol 2.0.0 and render the initial authoritative snapshot;
 - render both players, all tableaus and eight global foundations;
@@ -70,5 +70,9 @@ same match and invite link, while the server resets the session and broadcasts a
 `RESTART` snapshot so `p2` returns to the same fresh state. New-seed restarts
 use the same path with a newly generated seed. Joined `p2` clients cannot start
 a restart.
+
+Starting, joining or restarting another match stops the currently managed Web
+bot. The explicit `Bot stoppen` control stops it without changing the current
+match.
 
 Next follow-up: PWA packaging for the new entry point.

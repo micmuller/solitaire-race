@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { generateActionCandidates } = require('../bot/actionGenerator');
 const { formatBotReport } = require('../bot/format');
-const { actionLogHash, runBotVsBot, speedDelay } = require('../bot/runner');
+const { BotActor, actionLogHash, normalizeSpeed, runBotVsBot, speedDelay } = require('../bot/runner');
 const { initMatch } = require('../core');
 const { createVNextServer } = require('../server');
 
@@ -33,10 +33,54 @@ test('bot action generator produces deterministic thin-client intents', () => {
 });
 
 test('bot speed profiles are deterministic and strategy-neutral', () => {
+  assert.equal(normalizeSpeed('mittel'), 'medium');
+  assert.equal(normalizeSpeed('schwer'), 'hard');
   assert.equal(speedDelay('fast', 0, 'p1'), 0);
+  assert.ok(speedDelay('easy', 1, 'p1') >= 2500);
+  assert.ok(speedDelay('easy', 1, 'p1') <= 3500);
   assert.equal(speedDelay('normal', 7, 'p2'), speedDelay('normal', 7, 'p2'));
   assert.ok(speedDelay('slow', 1, 'p1') >= 900);
   assert.ok(speedDelay('slow', 1, 'p1') <= 1200);
+});
+
+test('bot actor avoids immediately reversing recent tableau moves', () => {
+  const current = {
+    rev: 4,
+    stateHash: 'abc',
+    state: {
+      seed: 'BOT-LOOP',
+      mode: 'split',
+      players: {
+        p1: {
+          stock: [{ cardId: 'stock', suit: 'S', rank: 2, faceDown: true }],
+          waste: [],
+          tableau: [
+            [{ cardId: 'king', suit: 'S', rank: 13, faceDown: false }],
+            [{ cardId: 'queen', suit: 'H', rank: 12, faceDown: false }],
+            [{ cardId: 'block-2', suit: 'C', rank: 2, faceDown: false }],
+            [{ cardId: 'block-3', suit: 'C', rank: 2, faceDown: false }],
+            [{ cardId: 'block-4', suit: 'C', rank: 2, faceDown: false }],
+            [{ cardId: 'block-5', suit: 'C', rank: 2, faceDown: false }],
+            [{ cardId: 'block-6', suit: 'C', rank: 2, faceDown: false }]
+          ]
+        },
+        p2: { stock: [], waste: [], tableau: [[], [], [], [], [], [], []] }
+      },
+      foundations: ['C', 'D', 'H', 'S', 'C', 'D', 'H', 'S'].map((suit) => ({ suit, cards: [] }))
+    }
+  };
+  const actor = new BotActor({ client: { current, clientId: 'p1', nextSeq: 0 } });
+  actor.rememberAccepted({
+    kind: 'tableauMove',
+    payload: {
+      source: { zone: 'tableau', owner: 'p1', index: 0 },
+      target: { zone: 'tableau', owner: 'p1', index: 1 },
+      count: 1
+    }
+  });
+
+  const candidate = actor.nextCandidate();
+  assert.equal(candidate.kind, 'draw');
 });
 
 test('bot action log hash ignores wall-clock startedAt only', () => {
@@ -102,6 +146,19 @@ test('server-managed bot can join a web-hosted match as p2', async (t) => {
     body: JSON.stringify({ clientId: 'p2', speed: 'fast', maxActions: 5 })
   });
   assert.equal(occupiedResponse.status, 409);
+
+  const stopResponse = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot?clientId=p2`, { method: 'DELETE' });
+  assert.equal(stopResponse.status, 200);
+
+  const missingStopResponse = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot?clientId=p2`, { method: 'DELETE' });
+  assert.equal(missingStopResponse.status, 404);
+
+  const invalidSpeedResponse = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clientId: 'p2', speed: 'turbo', maxActions: 5 })
+  });
+  assert.equal(invalidSpeedResponse.status, 400);
 });
 
 test('bot-vs-bot runs are deterministic for the same seed and mode', async (t) => {

@@ -9,7 +9,7 @@ const { URL } = require('node:url');
 const { WebSocket, WebSocketServer } = require('ws');
 const { APP_VERSION, MODES, PLAYER_IDS, PROTOCOL_VERSION } = require('../core');
 const { createManagedBot } = require('../bot/managedBot');
-const { SPEEDS } = require('../bot/runner');
+const { SPEEDS, normalizeSpeed } = require('../bot/runner');
 const { MatchSession } = require('./matchSession');
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -132,6 +132,15 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     return `http://127.0.0.1:${listenPort}`;
   }
 
+  function stopBot(matchId, clientId = 'p2') {
+    const key = botKey(matchId, clientId);
+    const bot = bots.get(key);
+    if (!bot) return null;
+    bot.stop();
+    bots.delete(key);
+    return bot.report;
+  }
+
   async function handleRequest(request, response) {
     const url = new URL(request.url, 'http://localhost');
     if (request.method === 'GET' && url.pathname.startsWith('/vnext/web')) {
@@ -196,7 +205,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       try {
         const body = await readJson(request);
         const clientId = typeof body.clientId === 'string' && body.clientId.length > 0 ? body.clientId : 'p2';
-        const speed = typeof body.speed === 'string' && body.speed.length > 0 ? body.speed : 'normal';
+        const speed = normalizeSpeed(typeof body.speed === 'string' && body.speed.length > 0 ? body.speed : 'easy');
         const maxActions = Number.isSafeInteger(body.maxActions) && body.maxActions > 0 ? body.maxActions : 1000;
         if (!PLAYER_IDS.includes(clientId)) {
           sendJson(response, 400, { error: 'clientId must be p1 or p2' });
@@ -231,6 +240,22 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       } catch (error) {
         if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
       }
+      return;
+    }
+    if (request.method === 'DELETE' && matchPath?.[2] === '/bot') {
+      const session = sessions.get(decodeURIComponent(matchPath[1]));
+      if (!session) {
+        sendJson(response, 404, { error: 'match not found' });
+        return;
+      }
+      const clientId = url.searchParams.get('clientId') || 'p2';
+      const report = stopBot(session.matchId, clientId);
+      if (!report) {
+        sendJson(response, 404, { error: 'bot not running' });
+        return;
+      }
+      log('BOT_STOPPED', { matchId: session.matchId, clientId, status: report.status, actionCount: report.actionCount });
+      sendJson(response, 200, { matchId: session.matchId, clientId, status: 'stopped' });
       return;
     }
     if (request.method === 'POST' && matchPath?.[2] === '/restart') {

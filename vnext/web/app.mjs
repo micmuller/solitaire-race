@@ -1,4 +1,4 @@
-import { ProtocolClient, createMatch, restartMatch, startBot } from './protocol-client.mjs';
+import { ProtocolClient, createMatch, restartMatch, startBot, stopBot } from './protocol-client.mjs';
 import { cueForIntentResult } from './effects.mjs';
 import { dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
 import { inviteUrl, matchUrl, readLaunchParams } from './lobby.mjs';
@@ -18,6 +18,7 @@ let audioContext = null;
 let publicBaseUrl = baseUrl;
 let serverVersion = '-';
 let serverProtocolVersion = '-';
+let activeBotMatchId = null;
 
 const configReady = loadConfig();
 setRandomSeed();
@@ -80,6 +81,25 @@ function updateRestartControl() {
   const canRestart = canRestartCurrentMatch();
   $('#restart-match').disabled = !canRestart;
   $('#restart-match').title = canRestart ? 'Match neu starten' : 'Nur P1 kann den Match neu starten';
+}
+
+function updateBotControls() {
+  $('#stop-bot-match').disabled = !activeBotMatchId;
+}
+
+async function stopActiveBot({ quiet = false } = {}) {
+  if (!activeBotMatchId) return false;
+  const matchId = activeBotMatchId;
+  activeBotMatchId = null;
+  updateBotControls();
+  try {
+    await stopBot(baseUrl, matchId, 'p2');
+    if (!quiet) setMessage('Bot gestoppt.', 'ok');
+    return true;
+  } catch (error) {
+    if (!quiet) setMessage(error.message, 'error');
+    return false;
+  }
 }
 
 async function copyText(text, input) {
@@ -421,6 +441,7 @@ document.addEventListener('pointercancel', (event) => {
 
 async function connectToMatch() {
   await configReady;
+  await stopActiveBot({ quiet: true });
   const matchId = $('#match-id').value.trim();
   const clientId = $('#client-id').value;
   if (!matchId) return setMessage('Match-ID fehlt.', 'error');
@@ -449,6 +470,7 @@ async function connectToMatch() {
 async function startHostMatch({ randomSeed = false, withBot = false } = {}) {
   try {
     await configReady;
+    await stopActiveBot({ quiet: true });
     if (randomSeed) setRandomSeed();
     const seed = $('#seed').value.trim() || generateRandomSeed();
     $('#seed').value = seed;
@@ -459,7 +481,9 @@ async function startHostMatch({ randomSeed = false, withBot = false } = {}) {
     setInvite(match.matchId, !withBot);
     await connectToMatch();
     if (withBot) {
-      await startBot(baseUrl, match.matchId, { clientId: 'p2', speed: 'normal', maxActions: 1000 });
+      await startBot(baseUrl, match.matchId, { clientId: 'p2', speed: $('#bot-speed').value, maxActions: 1000 });
+      activeBotMatchId = match.matchId;
+      updateBotControls();
       setInvite(match.matchId, false);
       setMessage(`Match ${match.matchId.slice(0, 18)} mit Bot aktiv`, 'ok');
     }
@@ -474,6 +498,7 @@ async function restartHostMatch({ randomSeed = false } = {}) {
     return;
   }
   try {
+    await stopActiveBot({ quiet: true });
     interactionLocked = true;
     $('#pending').hidden = false;
     if (randomSeed) setRandomSeed();
@@ -494,6 +519,7 @@ async function restartHostMatch({ randomSeed = false } = {}) {
 $('#random-seed').addEventListener('click', () => setRandomSeed());
 $('#create-match').addEventListener('click', () => startHostMatch());
 $('#create-bot-match').addEventListener('click', () => startHostMatch({ withBot: true }));
+$('#stop-bot-match').addEventListener('click', () => stopActiveBot());
 $('#restart-match').addEventListener('click', () => {
   if (!canRestartCurrentMatch()) {
     updateRestartControl();
@@ -571,3 +597,4 @@ if (launch) {
 }
 
 updateRestartControl();
+updateBotControls();

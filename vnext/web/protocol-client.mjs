@@ -138,3 +138,11 @@ export async function startBot(baseUrl, matchId, { clientId = 'p2', speed = 'nor
   if (!response.ok) throw new Error(`Bot-Start fehlgeschlagen (${response.status})`);
   return response.json();
 }
+
+export async function stopBot(baseUrl, matchId, clientId = 'p2') {
+  const response = await fetch(`${baseUrl}/vnext/matches/${encodeURIComponent(matchId)}/bot?clientId=${encodeURIComponent(clientId)}`, {
+    method: 'DELETE'
+  });
+  if (!response.ok && response.status !== 404) throw new Error(`Bot-Stop fehlgeschlagen (${response.status})`);
+  return response.ok;
+}
