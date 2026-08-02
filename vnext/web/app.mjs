@@ -9,6 +9,8 @@ const $ = (selector) => document.querySelector(selector);
 const SUIT = { C: '♣', D: '♦', H: '♥', S: '♠' };
 const RANK = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
 const ACTION_PLAYER_IDS = new Set(['p1', 'p2']);
+const ROLE_LABELS = { p1: 'P1', p2: 'P2', observer: 'Observer' };
+const MODE_LABELS = { split: 'Split', shared: 'Shared' };
 const baseUrl = window.location.origin;
 let client = null;
 let selection = null;
@@ -50,6 +52,24 @@ function setVersionLabels() {
   $('#web-version').textContent = WEB_CLIENT_VERSION;
 }
 
+function setAppMenuOpen(isOpen) {
+  $('#app-menu').hidden = !isOpen;
+  $('#app-menu-toggle').setAttribute('aria-expanded', String(isOpen));
+}
+
+function toggleAppMenu() {
+  setAppMenuOpen($('#app-menu').hidden);
+}
+
+function updateHeaderSummary() {
+  const seed = $('#seed').value.trim();
+  const mode = $('#mode').value;
+  const role = client?.clientId || $('#client-id').value;
+  $('#summary-seed').textContent = seed || '-';
+  $('#summary-mode').textContent = MODE_LABELS[mode] || mode || '-';
+  $('#summary-role').textContent = ROLE_LABELS[role] || role || '-';
+}
+
 function setMessage(text, tone = '') {
   $('#message').textContent = text;
   $('#message').dataset.tone = tone;
@@ -72,6 +92,7 @@ function setInvite(matchId, visible = true) {
 
 function setRandomSeed() {
   $('#seed').value = generateRandomSeed();
+  updateHeaderSummary();
 }
 
 function canRestartCurrentMatch() {
@@ -121,6 +142,7 @@ async function copyText(text, input) {
 function syncSetupFields(state) {
   if (state?.seed) $('#seed').value = state.seed;
   if (state?.mode) $('#mode').value = state.mode;
+  updateHeaderSummary();
 }
 
 function captureCardRects() {
@@ -469,6 +491,7 @@ async function connectToMatch() {
   $('#connection-dot').classList.add('online');
   $('#connection-label').textContent = `${clientId.toUpperCase()} verbunden`;
   updateRestartControl();
+  updateHeaderSummary();
   setRoute(matchId, clientId);
   setInvite(matchId, clientId === 'p1');
   setMessage(`Match ${matchId.slice(0, 18)} aktiv`, 'ok');
@@ -549,10 +572,18 @@ async function restartHostMatch({ randomSeed = false } = {}) {
 }
 
 $('#random-seed').addEventListener('click', () => setRandomSeed());
+$('#seed').addEventListener('input', () => updateHeaderSummary());
+$('#mode').addEventListener('change', () => updateHeaderSummary());
+$('#client-id').addEventListener('change', () => updateHeaderSummary());
 $('#create-match').addEventListener('click', () => startHostMatch());
 $('#create-bot-match').addEventListener('click', () => startHostMatch({ withBot: true }));
 $('#create-bot-versus-match').addEventListener('click', () => startBotVersusMatch());
 $('#stop-bot-match').addEventListener('click', () => stopActiveBot());
+$('#app-menu-toggle').addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  toggleAppMenu();
+});
 $('#restart-match').addEventListener('click', () => {
   if (!canRestartCurrentMatch()) {
     updateRestartControl();
@@ -614,10 +645,15 @@ document.addEventListener('click', (event) => {
   if (event.target.closest('#version-badge') || event.target.closest('#version-menu')) return;
   setVersionMenuOpen($('#version-menu'), $('#version-badge'), false);
 });
+document.addEventListener('click', (event) => {
+  if (event.target.closest('#app-menu-toggle') || event.target.closest('#app-menu')) return;
+  setAppMenuOpen(false);
+});
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && selection) setSelection(null);
   if (event.key === 'Escape') {
     setVersionMenuOpen($('#version-menu'), $('#version-badge'), false);
+    setAppMenuOpen(false);
   }
 });
 
@@ -631,3 +667,4 @@ if (launch) {
 
 updateRestartControl();
 updateBotControls();
+updateHeaderSummary();

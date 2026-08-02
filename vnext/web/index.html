@@ -20,35 +20,53 @@
         <div><span>Webclient</span><strong id="web-version">-</strong></div>
       </div>
     </div>
+    <div class="header-summary" aria-label="Matchstatus">
+      <span class="summary-chip"><span>Seed</span><strong id="summary-seed">-</strong></span>
+      <span class="summary-chip"><span>Modus</span><strong id="summary-mode">Split</strong></span>
+      <span class="summary-chip"><span>Rolle</span><strong id="summary-role">P1</strong></span>
+    </div>
     <div class="telemetry" aria-label="Verbindungsstatus">
       <span id="connection-dot" class="status-dot"></span>
       <span id="connection-label">Nicht verbunden</span>
       <span id="revision">rev -</span>
       <span id="state-hash" class="mono">hash -</span>
     </div>
+    <div class="header-actions">
+      <button id="create-match" class="primary">Start</button>
+      <button id="restart-match" class="icon-button" title="Match neu starten" aria-label="Match neu starten">↻</button>
+      <button id="app-menu-toggle" class="icon-button" type="button" aria-label="Menü" aria-expanded="false">☰</button>
+    </div>
   </header>
 
-  <section id="session-panel" class="session-band">
-    <div class="session-group">
-      <label>Seed<input id="seed" value="WEB-VNEXT-001" autocomplete="off"></label>
-      <button id="random-seed" title="Random Seed generieren" aria-label="Random Seed generieren">Zufall</button>
-      <label>Modus<select id="mode"><option value="split">Split</option><option value="shared">Shared</option></select></label>
-      <label>Bot<select id="bot-speed"><option value="easy">Easy</option><option value="medium">Mittel</option><option value="hard">Schwer</option></select></label>
-      <button id="create-match" class="primary">Match starten</button>
-      <button id="create-bot-match">Match mit Bot</button>
-      <button id="create-bot-versus-match">Bot vs Bot</button>
-      <button id="stop-bot-match">Bot stoppen</button>
-      <button id="restart-match">Restart</button>
+  <section id="app-menu" class="app-menu" hidden>
+    <div class="menu-section">
+      <h2>Match</h2>
+      <div class="menu-grid">
+        <label>Seed<input id="seed" value="WEB-VNEXT-001" autocomplete="off"></label>
+        <button id="random-seed" title="Random Seed generieren" aria-label="Random Seed generieren">Zufall</button>
+        <label>Modus<select id="mode"><option value="split">Split</option><option value="shared">Shared</option></select></label>
+        <button id="create-bot-match">Match mit Bot</button>
+        <button id="create-bot-versus-match">Bot vs Bot</button>
+      </div>
     </div>
-    <div id="invite-panel" class="session-group invite-group" hidden>
-      <label>Invite-Link<input id="invite-link" readonly autocomplete="off"></label>
-      <button id="copy-invite">Kopieren</button>
+    <div class="menu-section">
+      <h2>Bot</h2>
+      <div class="menu-grid">
+        <label>Geschwindigkeit<select id="bot-speed"><option value="easy">Easy</option><option value="medium">Mittel</option><option value="hard">Schwer</option></select></label>
+        <button id="stop-bot-match">Bot stoppen</button>
+      </div>
     </div>
-    <div class="session-divider"></div>
-    <div class="session-group direct-join">
-      <label>Match-ID<input id="match-id" placeholder="m-..." autocomplete="off"></label>
-      <label>Spieler<select id="client-id"><option value="p1">P1</option><option value="p2">P2</option><option value="observer">Observer</option></select></label>
-      <button id="connect-match">Verbinden</button>
+    <div class="menu-section">
+      <h2>Teilen</h2>
+      <div id="invite-panel" class="menu-grid invite-group" hidden>
+        <label>Invite-Link<input id="invite-link" readonly autocomplete="off"></label>
+        <button id="copy-invite">Kopieren</button>
+      </div>
+      <div class="menu-grid">
+        <label>Match-ID<input id="match-id" placeholder="m-..." autocomplete="off"></label>
+        <label>Spieler<select id="client-id"><option value="p1">P1</option><option value="p2">P2</option><option value="observer">Observer</option></select></label>
+        <button id="connect-match">Verbinden</button>
+      </div>
     </div>
   </section>
 
