@@ -13,6 +13,8 @@ Current vertical slice:
   through a second target click/tap;
 - drag the waste top card or a face-up tableau suffix onto the same
   tableau/foundation intent targets without local state mutation;
+- animate card position changes only after an authoritative ack render and
+  play synthesized audio cues for ack/reject/recovery results;
 - keep a rejected selection available for another target and allow explicit or
   Escape-key cancellation;
 - update only after authoritative ack/snapshot;
@@ -24,7 +26,6 @@ echo, bot or local deal code is included.
 
 Still pending:
 
-- animation and audio adaptation;
 - lobby/invite flow and production identity assignment;
 - PWA packaging for the new entry point.
 
@@ -47,5 +48,9 @@ pointer smokes passed with seed `DRAG-SMOKE-4`: draw to `rev 1`, drag waste
 top card to tableau pile 6, authoritative `tableauMove` ack to `rev 2`, no
 browser console errors.
 
-Next follow-up: adapt animation and audio to the authoritative ack/snapshot
-flow without reintroducing optimistic gameplay state.
+Animation and audio are adapted to the authoritative ack/reject/snapshot flow.
+Cards are animated with a render-before/render-after position comparison after
+server ack; reject and recovery snapshots play non-success cues and do not
+animate a successful move.
+
+Next follow-up: lobby/invite flow and production identity assignment.

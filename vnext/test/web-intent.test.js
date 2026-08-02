@@ -4,8 +4,10 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 let mapping;
+let effects;
 test.before(async () => {
   mapping = await import('../web/intent-mapping.mjs');
+  effects = await import('../web/effects.mjs');
 });
 
 const cards = [
@@ -86,4 +88,15 @@ test('drop target maps to the existing move intents', () => {
     }
   });
   assert.equal(mapping.dropIntent(selection, 'p1', { zone: 'stock', index: 0 }), null);
+});
+
+test('authoritative responses map to non-optimistic effect cues', () => {
+  assert.equal(effects.cueForIntentResult('draw', { kind: 'ack' }), 'draw');
+  assert.equal(effects.cueForIntentResult('recycle', { kind: 'ack' }), 'draw');
+  assert.equal(effects.cueForIntentResult('tableauMove', { kind: 'ack' }), 'move');
+  assert.equal(effects.cueForIntentResult('flip', { kind: 'ack' }), 'move');
+  assert.equal(effects.cueForIntentResult('foundationMove', { kind: 'ack' }), 'foundation');
+  assert.equal(effects.cueForIntentResult('tableauMove', { kind: 'reject', code: 'RULE_VIOLATION' }), 'invalid');
+  assert.equal(effects.cueForIntentResult('draw', { kind: 'snapshot', reason: 'OUT_OF_SYNC' }), 'sync');
+  assert.equal(effects.cueForIntentResult('draw', { kind: 'snapshot', reason: 'INITIAL_CONNECT' }), null);
 });

@@ -1,4 +1,5 @@
 import { ProtocolClient, createMatch } from './protocol-client.mjs';
+import { cueForIntentResult } from './effects.mjs';
 import { dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
 
 const $ = (selector) => document.querySelector(selector);
@@ -10,10 +11,19 @@ let selection = null;
 let interactionLocked = false;
 let drag = null;
 let suppressNextClick = false;
+let audioContext = null;
 
 function setMessage(text, tone = '') {
   $('#message').textContent = text;
   $('#message').dataset.tone = tone;
+}
+
+function captureCardRects() {
+  const rects = new Map();
+  document.querySelectorAll('.playing-card[data-card-id]').forEach((element) => {
+    rects.set(element.dataset.cardId, element.getBoundingClientRect());
+  });
+  return rects;
 }
 
 function cardElement(card, compact = false) {
@@ -76,7 +86,8 @@ function renderTableau(container, tableau, owner, compact = false) {
   });
 }
 
-function render(current) {
+function render(current, { animate = false } = {}) {
+  const previousRects = animate ? captureCardRects() : null;
   const { state, rev, stateHash } = current;
   const localId = client.clientId;
   const opponentId = localId === 'p1' ? 'p2' : 'p1';
@@ -120,6 +131,66 @@ function render(current) {
     foundations.append(slot);
   });
   $('#foundation-count').textContent = `${foundationCount} / 104`;
+  if (previousRects) animateAuthoritativeChanges(previousRects);
+}
+
+function animateAuthoritativeChanges(previousRects) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const animated = [];
+  document.querySelectorAll('.playing-card[data-card-id]').forEach((element) => {
+    const previous = previousRects.get(element.dataset.cardId);
+    const current = element.getBoundingClientRect();
+    if (!previous) {
+      element.classList.add('card-arrived');
+      animated.push(element);
+      return;
+    }
+    const dx = previous.left - current.left;
+    const dy = previous.top - current.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    if (typeof element.animate !== 'function') return;
+    const transform = getComputedStyle(element).transform;
+    const baseTransform = transform === 'none' ? '' : transform;
+    element.animate([
+      { transform: `${baseTransform} translate(${dx}px, ${dy}px)` },
+      { transform: baseTransform }
+    ], { duration: 180, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+    element.classList.add('card-arrived');
+    animated.push(element);
+  });
+  window.setTimeout(() => {
+    animated.forEach((element) => element.classList.remove('card-arrived'));
+  }, 260);
+}
+
+function playCue(cue) {
+  if (!cue || (!window.AudioContext && !window.webkitAudioContext)) return;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  audioContext ??= new AudioContextClass();
+  if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
+  const now = audioContext.currentTime;
+  const master = audioContext.createGain();
+  master.gain.setValueAtTime(0.0001, now);
+  master.gain.exponentialRampToValueAtTime(0.045, now + 0.01);
+  master.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+  master.connect(audioContext.destination);
+
+  const tones = {
+    draw: [330, 392],
+    move: [294, 370],
+    foundation: [523, 659, 784],
+    invalid: [180, 140],
+    sync: [220, 330]
+  }[cue] || [300];
+
+  tones.forEach((frequency, index) => {
+    const osc = audioContext.createOscillator();
+    osc.type = cue === 'invalid' ? 'sawtooth' : 'triangle';
+    osc.frequency.setValueAtTime(frequency, now + index * 0.035);
+    osc.connect(master);
+    osc.start(now + index * 0.035);
+    osc.stop(now + 0.16 + index * 0.035);
+  });
 }
 
 function setSelection(nextSelection, { rerender = true } = {}) {
@@ -163,6 +234,7 @@ async function sendIntent(kind, payload) {
   $('#pending').hidden = false;
   try {
     const response = await client.sendIntent(kind, payload);
+    playCue(cueForIntentResult(kind, response));
     if (response.kind === 'reject') setMessage(`Abgelehnt: ${response.code}. Andere Zielzone wählen.`, 'error');
     else if (response.kind === 'snapshot') {
       selection = null;
@@ -274,7 +346,7 @@ async function connectToMatch() {
   selection = null;
   client = new ProtocolClient({ baseUrl, matchId, clientId });
   client.subscribe((event) => {
-    if (event.type === 'state') render(event.current);
+    if (event.type === 'state') render(event.current, { animate: event.source === 'ack' });
     if (event.type === 'disconnected') {
       $('#connection-dot').classList.remove('online');
       $('#connection-label').textContent = 'Getrennt';
