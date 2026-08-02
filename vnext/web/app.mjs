@@ -50,6 +50,17 @@ function setInvite(matchId, visible = true) {
   $('#invite-panel').hidden = !link || !visible;
 }
 
+async function copyText(text, input) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+  input.focus();
+  input.select();
+  input.setSelectionRange(0, text.length);
+  return document.execCommand?.('copy') === true;
+}
+
 function syncSetupFields(state) {
   if (state?.seed) $('#seed').value = state.seed;
   if (state?.mode) $('#mode').value = state.mode;
@@ -418,13 +429,15 @@ $('#create-match').addEventListener('click', async () => {
 
 $('#connect-match').addEventListener('click', () => connectToMatch().catch((error) => setMessage(error.message, 'error')));
 $('#copy-invite').addEventListener('click', async () => {
-  const link = $('#invite-link').value;
+  const input = $('#invite-link');
+  const link = input.value;
   if (!link) return;
   try {
-    await navigator.clipboard.writeText(link);
-    setMessage('Invite-Link kopiert.', 'ok');
+    const copied = await copyText(link, input);
+    setMessage(copied ? 'Invite-Link kopiert.' : 'Invite-Link ist markiert.', copied ? 'ok' : 'warn');
   } catch {
-    $('#invite-link').select();
+    input.focus();
+    input.select();
     setMessage('Invite-Link ist markiert.', 'warn');
   }
 });
