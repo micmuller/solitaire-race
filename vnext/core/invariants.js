@@ -101,6 +101,24 @@ function checkInvariants(state) {
   if (!MODES.includes(state.mode)) {
     violations.push({ code: 'INVALID_MODE', path: '$.mode', message: 'Mode must be split or shared' });
   }
+  if (!['active', 'finished'].includes(state.status)) {
+    violations.push({ code: 'INVALID_MATCH_STATUS', path: '$.status', message: 'Status must be active or finished' });
+  }
+  if (state.winner !== null && !PLAYER_IDS.includes(state.winner)) {
+    violations.push({ code: 'INVALID_MATCH_WINNER', path: '$.winner', message: 'Winner must be p1, p2 or null' });
+  }
+  if (state.endedReason !== null && state.endedReason !== 'resign') {
+    violations.push({ code: 'INVALID_ENDED_REASON', path: '$.endedReason', message: 'Ended reason must be resign or null' });
+  }
+  if (state.endedBy !== null && !PLAYER_IDS.includes(state.endedBy)) {
+    violations.push({ code: 'INVALID_ENDED_BY', path: '$.endedBy', message: 'EndedBy must be p1, p2 or null' });
+  }
+  if (state.status === 'active' && (state.winner !== null || state.endedReason !== null || state.endedBy !== null)) {
+    violations.push({ code: 'INVALID_ACTIVE_MATCH_RESULT', path: '$', message: 'Active matches cannot have result fields' });
+  }
+  if (state.status === 'finished' && (!PLAYER_IDS.includes(state.winner) || state.endedReason === null || state.endedBy === null)) {
+    violations.push({ code: 'INVALID_FINISHED_MATCH_RESULT', path: '$', message: 'Finished matches require winner, endedReason and endedBy' });
+  }
 
   for (const playerId of PLAYER_IDS) {
     const player = state.players && state.players[playerId];

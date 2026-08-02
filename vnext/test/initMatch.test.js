@@ -21,6 +21,10 @@ for (const mode of ['split', 'shared']) {
 
     assert.deepEqual(first, second);
     assert.equal(first.rev, 0);
+    assert.equal(first.state.status, 'active');
+    assert.equal(first.state.winner, null);
+    assert.equal(first.state.endedReason, null);
+    assert.equal(first.state.endedBy, null);
     assert.equal(first.stateHash, stateHash(first.rev, first.state));
     assert.deepEqual(checkInvariants(first.state), { ok: true, violations: [] });
     assert.equal(allCards(first.state).length, 104);
@@ -41,11 +45,11 @@ for (const mode of ['split', 'shared']) {
 test('golden seed start hashes remain stable', () => {
   assert.equal(
     initMatch('SEED-0001', 'split').stateHash,
-    '60cea223ff8547e8faaa24c61f1c6e575bf2a74d02446254fab3cf0b6f66fd2b'
+    'c30b8a00c28558382b3b534f7fde24f2c485ff925bdb73ca570ea8a67fbe4038'
   );
   assert.equal(
     initMatch('SEED-0001', 'shared').stateHash,
-    'af2b02e16fa39f43181ca9c8c15e524e9e657b4a5d76691451ab25f3d4a0c7df'
+    '35085904d3b9595fe2c12ef5be2d52117554aefe41852ae203c539d8c0c68c08'
   );
 });
 

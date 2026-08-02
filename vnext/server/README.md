@@ -47,10 +47,12 @@ HTTP endpoints:
 
 WebSocket connections use
 `/vnext?matchId=<id>&clientId=p1|p2|observer`. The server sends an initial
-snapshot and accepts protocol-2.0.0 action envelopes from `p1` and `p2`.
+snapshot and accepts protocol-2.1.0 action envelopes from `p1` and `p2`.
 Observer sockets receive authoritative snapshots/acks but are read-only.
 Accepted actions are broadcast as authoritative acks containing the resulting
 state, revision and hash.
+`resign` is an accepted action that finishes the match and broadcasts the
+GameOver state to all connected peers.
 Restart resets the existing match session to revision `0`, resets client
 sequences, and broadcasts an authoritative `RESTART` snapshot to connected
 peers.

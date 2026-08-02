@@ -59,10 +59,10 @@ function controlledMatch(configure) {
 }
 
 test('version axes are exposed independently', () => {
-  assert.equal(APP_VERSION, '1.1.0-alpha.1');
-  assert.equal(PROTOCOL_VERSION, '2.0.0');
+  assert.equal(APP_VERSION, '1.1.0-alpha.2');
+  assert.equal(PROTOCOL_VERSION, '2.1.0');
   assert.equal(RULES_VERSION, '1.0.0');
-  assert.equal(SCHEMA_VERSION, '1.0.0');
+  assert.equal(SCHEMA_VERSION, '1.1.0');
 });
 
 test('draw is atomic, turns the stock top face-up and increments revision', () => {
@@ -239,6 +239,27 @@ test('illegal foundation rank rejects without moving the card', () => {
   assert.equal(result.result, 'reject');
   assert.equal(result.code, 'RULE_VIOLATION');
   assert.equal(result.state.players.p1.waste.at(-1).cardId, 'd0:C:02');
+});
+
+test('resign finishes the match and rejects later actions', () => {
+  const current = initMatch('SEED-RESIGN', 'split');
+  const result = applyAction(current, 'p2', action('resign', {}));
+  assert.equal(result.result, 'ack');
+  assert.equal(result.rev, 1);
+  assert.equal(result.state.status, 'finished');
+  assert.equal(result.state.endedReason, 'resign');
+  assert.equal(result.state.endedBy, 'p2');
+  assert.equal(result.state.winner, 'p1');
+  assert.equal(result.stateHash, stateHash(1, result.state));
+
+  const rejected = applyAction(result, 'p1', action('draw', {
+    source: zone('stock', 'p1'),
+    target: zone('waste', 'p1')
+  }));
+  assert.equal(rejected.result, 'reject');
+  assert.equal(rejected.code, 'MATCH_FINISHED');
+  assert.equal(rejected.rev, result.rev);
+  assert.equal(rejected.stateHash, result.stateHash);
 });
 
 test('invalid kinds and malformed actions have stable reject codes', () => {

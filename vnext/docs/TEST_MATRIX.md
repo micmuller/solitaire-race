@@ -37,7 +37,7 @@ Last-Updated: 2026-07-31
 - Header/configuration mismatch rejection before match initialization.
 - Protocol recovery coverage for duplicate sequence and Out-of-Sync snapshot.
 - Artifact regeneration equality against the checked-in JSON files.
-- Two Protocol-2.0.0 reference clients converge after both actors submit
+- Two Protocol-2.1.0 reference clients converge after both actors submit
   accepted actions in one shared match.
 - Client reject keeps state/sequence unchanged and allows corrected retry.
 - Client Out-of-Sync snapshot replaces state and allows same-sequence retry.

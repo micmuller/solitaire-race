@@ -1,9 +1,9 @@
 ---
 Document: PROTOCOL.md
-Version: 2.0.0
+Version: 2.1.0
 Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
-Last-Updated: 2026-07-31
+Last-Updated: 2026-08-02
 ---
 
 # Protocol
@@ -14,7 +14,7 @@ Last-Updated: 2026-07-31
 
 ## Protocol Versioning
 - SemVer: `MAJOR.MINOR.PATCH`.
-- Current vNext protocol version: `2.0.0`.
+- Current vNext protocol version: `2.1.0`.
 - Legacy v1 messages are incompatible and MUST NOT enter the vNext core.
 - Additive changes preferred (MINOR/PATCH).
 - Breaking changes require ADR approval and MAJOR bump.
@@ -83,6 +83,11 @@ Payloads are minimal and MUST be validated by server.
   - `target.index` is a client presentation hint; the server MUST resolve the
     legal global lane deterministically and return `resolvedFoundationIndex`
 
+- `resign`
+  - `payload`: empty object
+  - Server sets `state.status` to `finished`, `endedReason` to `resign`,
+    `endedBy` to the actor and `winner` to the opponent.
+
 ## ZoneRef Concept
 A ZoneRef identifies a logical zone and MUST be structured (no parsing):
 - `zone`: `stock` | `waste` | `tableau` | `foundation`
@@ -133,6 +138,7 @@ Applied order is defined by accepted `seq` per `clientId`. Server MUST NOT reord
 - `CARD_NOT_ACCESSIBLE`
 - `OWNERSHIP_VIOLATION`
 - `RULE_VIOLATION`
+- `MATCH_FINISHED`
 - `OUT_OF_TURN` (not used in Phase 1)
 - `DUPLICATE_SEQ` (idempotent duplicate; action ignored)
 - `INTERNAL_INVARIANT_BREACH` (server bug only)
@@ -142,6 +148,12 @@ Applied order is defined by accepted `seq` per `clientId`. Server MUST NOT reord
 - `stateHash`: string (SHA-256)
 - `state`: canonical state object
 
+State includes match lifecycle fields:
+- `status`: `active` | `finished`
+- `winner`: `p1` | `p2` | null
+- `endedReason`: `resign` | null
+- `endedBy`: `p1` | `p2` | null
+
 ## JSON-Schema Examples (Minimal)
 Example 1: Full client-to-server message
 ```json
@@ -150,7 +162,7 @@ Example 1: Full client-to-server message
   "clientId": "p1",
   "seq": 42,
   "baseRev": 310,
-  "protocolVersion": "2.0.0",
+  "protocolVersion": "2.1.0",
   "kind": "draw",
   "payload": {
     "source": {"zone": "stock", "owner": "p1"},

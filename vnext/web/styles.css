@@ -60,7 +60,7 @@ button { cursor: pointer; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 
 .app-menu {
-  position: sticky; top: 63px; z-index: 24; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(190px, .65fr) minmax(0, 1fr);
+  position: sticky; top: 63px; z-index: 24; display: grid; grid-template-columns: minmax(120px, .45fr) minmax(0, 1.35fr) minmax(190px, .65fr) minmax(0, 1fr);
   gap: 16px; padding: 14px 18px; background: var(--panel); border-bottom: 1px solid var(--line);
   box-shadow: 0 12px 24px #0007;
 }
@@ -76,7 +76,10 @@ input, select, button {
 input { width: 190px; }
 input[readonly] { color: var(--muted); }
 button:hover { border-color: var(--gold); }
+button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity: .5; }
 button.primary { background: var(--gold); border-color: var(--gold); color: #17130c; font-weight: 700; }
+button.danger { border-color: #73423f; background: #342122; color: #f0c0bc; }
+button.danger:hover { border-color: var(--danger); }
 .invite-group { margin-bottom: 8px; }
 .invite-group input { width: min(440px, 100%); }
 .restart-dialog {

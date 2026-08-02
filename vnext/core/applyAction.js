@@ -9,7 +9,8 @@ const ACTION_KINDS = Object.freeze([
   'recycle',
   'flip',
   'tableauMove',
-  'foundationMove'
+  'foundationMove',
+  'resign'
 ]);
 
 const RED_SUITS = new Set(['D', 'H']);
@@ -205,6 +206,16 @@ function applyFoundationMove(state, action) {
   return { resolvedFoundationIndex };
 }
 
+function applyResign(state, action) {
+  const { playerId } = action;
+  const winner = playerId === 'p1' ? 'p2' : 'p1';
+  state.status = 'finished';
+  state.winner = winner;
+  state.endedReason = 'resign';
+  state.endedBy = playerId;
+  return {};
+}
+
 function applyAction(current, actorId, action) {
   if (!current || typeof current !== 'object') {
     const error = new Error('Authoritative match value is required');
@@ -224,6 +235,7 @@ function applyAction(current, actorId, action) {
   if (!action.payload || typeof action.payload !== 'object' || Array.isArray(action.payload)) {
     return reject(current, 'MALFORMED_MESSAGE');
   }
+  if (current.state.status === 'finished') return reject(current, 'MATCH_FINISHED');
 
   const trustedAction = { ...action, playerId: actorId };
   const candidate = structuredClone(current.state);
@@ -234,6 +246,7 @@ function applyAction(current, actorId, action) {
     case 'flip': outcome = applyFlip(candidate, trustedAction); break;
     case 'tableauMove': outcome = applyTableauMove(candidate, trustedAction); break;
     case 'foundationMove': outcome = applyFoundationMove(candidate, trustedAction); break;
+    case 'resign': outcome = applyResign(candidate, trustedAction); break;
   }
 
   if (outcome.code) return reject(current, outcome.code);

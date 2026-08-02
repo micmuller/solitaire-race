@@ -76,6 +76,7 @@ function candidateSignature(candidate) {
 
 function generateActionCandidates(current, botId) {
   const { state, rev } = current;
+  if (state.status === 'finished') return [];
   const player = state.players[botId];
   if (!player) return [];
   const candidates = [];

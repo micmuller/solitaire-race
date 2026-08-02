@@ -12,7 +12,7 @@ Current vertical slice:
 - create and observe a Bot-vs-Bot match with both `p1` and `p2` controlled by
   server-managed bots at the selected speed;
 - restore host/join identity from `?matchId=...&role=p1|p2` URL state;
-- connect through Protocol 2.0.0 and render the initial authoritative snapshot;
+- connect through Protocol 2.1.0 and render the initial authoritative snapshot;
 - render both players, all tableaus and eight global foundations;
 - submit stock draw/recycle and top-tableau flip as Action Intents;
 - select waste or a face-up tableau suffix and submit tableau/foundation moves
@@ -26,7 +26,7 @@ Current vertical slice:
 - keep a rejected selection available for another target and allow explicit or
   Escape-key cancellation;
 - update only after authoritative ack/snapshot;
-- expose connection, revision, short hash, pending and reject status.
+- expose connection, revision, short hash, pending, reject and GameOver status.
 
 The visual structure, felt treatment, card layout and responsive board geometry
 are derived from the established v1 Web UI. No v1 state, rule, move, snapshot,
@@ -76,5 +76,9 @@ a restart.
 Starting, joining or restarting another match stops the currently managed Web
 bot or bots. The explicit `Bot stoppen` control stops managed bots without
 changing the current match.
+
+When the connected role is `p2`, host/setup actions are disabled to avoid
+accidentally starting a new `p1` match. `p2` can use `Aufgeben` to send a
+server-authoritative `resign`, which broadcasts a finished GameOver state.
 
 Next follow-up: PWA packaging for the new entry point.

@@ -154,6 +154,40 @@ test('restart snapshot resets both thin clients even when revision goes back to 
   assert.equal(p2.nextSeq, 1);
 });
 
+test('p2 resign broadcasts finished state and blocks later actions', async (t) => {
+  const baseUrl = await withServer(t);
+  const match = await createMatch(baseUrl, { seed: 'CLIENT-RESIGN', mode: 'split' });
+  const p1 = new ProtocolClient({ baseUrl, matchId: match.matchId, clientId: 'p1' });
+  const p2 = new ProtocolClient({ baseUrl, matchId: match.matchId, clientId: 'p2' });
+  t.after(() => { p1.close(); p2.close(); });
+  await Promise.all([p1.connect(), p2.connect()]);
+
+  const p1Finished = new Promise((resolve) => {
+    const unsubscribe = p1.subscribe((event) => {
+      if (event.type === 'state' && event.current.state.status === 'finished') {
+        unsubscribe();
+        resolve(event.current);
+      }
+    });
+  });
+  const resigned = await p2.sendIntent('resign', {});
+  assert.equal(resigned.kind, 'ack');
+  assert.equal(resigned.state.status, 'finished');
+  assert.equal(resigned.state.endedBy, 'p2');
+  assert.equal(resigned.state.winner, 'p1');
+
+  const p1Current = await p1Finished;
+  assert.equal(p1Current.state.status, 'finished');
+  assert.equal(p1Current.stateHash, resigned.stateHash);
+
+  const rejected = await p1.sendIntent('draw', {
+    source: zone('stock', 'p1'),
+    target: zone('waste', 'p1')
+  });
+  assert.equal(rejected.kind, 'reject');
+  assert.equal(rejected.code, 'MATCH_FINISHED');
+});
+
 test('client rejects malformed or mismatched authoritative responses', () => {
   assert.equal(validateAuthoritativeResponse(null, 'm-1'), 'response must be an object');
   assert.equal(validateAuthoritativeResponse({

@@ -6,7 +6,7 @@ const { WebSocket } = require('ws');
 const { generateActionCandidates } = require('../bot/actionGenerator');
 const { formatBotReport } = require('../bot/format');
 const { BotActor, actionLogHash, normalizeSpeed, runBotVsBot, speedDelay } = require('../bot/runner');
-const { initMatch } = require('../core');
+const { initMatch, PROTOCOL_VERSION } = require('../core');
 const { createVNextServer } = require('../server');
 
 const silentLogger = { log() {}, error() {} };
@@ -218,7 +218,7 @@ test('server-managed bot-vs-bot can be observed over websocket', async (t) => {
     clientId: 'observer',
     seq: 0,
     baseRev: observed.rev,
-    protocolVersion: '2.0.0',
+    protocolVersion: PROTOCOL_VERSION,
     kind: 'draw',
     payload: {}
   }));

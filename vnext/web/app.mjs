@@ -99,8 +99,20 @@ function canRestartCurrentMatch() {
   return client?.clientId === 'p1';
 }
 
+function isP2User() {
+  return (client?.clientId || $('#client-id').value) === 'p2';
+}
+
+function isMatchFinished() {
+  return client?.current?.state?.status === 'finished';
+}
+
 function canSendActions() {
-  return ACTION_PLAYER_IDS.has(client?.clientId);
+  return ACTION_PLAYER_IDS.has(client?.clientId) && !isMatchFinished();
+}
+
+function localDisplayId() {
+  return ACTION_PLAYER_IDS.has(client?.clientId) ? client.clientId : 'p1';
 }
 
 function updateRestartControl() {
@@ -110,7 +122,21 @@ function updateRestartControl() {
 }
 
 function updateBotControls() {
-  $('#stop-bot-match').disabled = !activeBotMatchId;
+  $('#stop-bot-match').disabled = !activeBotMatchId || isP2User();
+}
+
+function updateActionControls() {
+  const hostLocked = isP2User();
+  $('#create-match').disabled = hostLocked;
+  $('#create-bot-match').disabled = hostLocked;
+  $('#create-bot-versus-match').disabled = hostLocked;
+  $('#random-seed').disabled = hostLocked;
+  $('#seed').disabled = hostLocked;
+  $('#mode').disabled = hostLocked;
+  $('#bot-speed').disabled = hostLocked;
+  $('#resign-match').disabled = client?.clientId !== 'p2' || isMatchFinished();
+  updateRestartControl();
+  updateBotControls();
 }
 
 async function stopActiveBot({ quiet = false } = {}) {
@@ -143,6 +169,14 @@ function syncSetupFields(state) {
   if (state?.seed) $('#seed').value = state.seed;
   if (state?.mode) $('#mode').value = state.mode;
   updateHeaderSummary();
+}
+
+function gameOverMessage(state) {
+  if (state?.status !== 'finished') return null;
+  if (state.endedReason === 'resign') {
+    return `${ROLE_LABELS[state.endedBy] || state.endedBy} hat aufgegeben. Sieger: ${ROLE_LABELS[state.winner] || state.winner}.`;
+  }
+  return `Match beendet. Sieger: ${ROLE_LABELS[state.winner] || state.winner || '-'}.`;
 }
 
 function captureCardRects() {
@@ -216,11 +250,13 @@ function renderTableau(container, tableau, owner, compact = false) {
 function render(current, { animate = false } = {}) {
   const previousRects = animate ? captureCardRects() : null;
   const { state, rev, stateHash } = current;
-  const localId = canSendActions() ? client.clientId : 'p1';
+  if (state.status === 'finished') selection = null;
+  const localId = localDisplayId();
   const opponentId = localId === 'p1' ? 'p2' : 'p1';
   const local = state.players[localId];
   const opponent = state.players[opponentId];
   syncSetupFields(state);
+  updateActionControls();
   $('#revision').textContent = `rev ${rev}`;
   $('#state-hash').textContent = `hash ${stateHash.slice(0, 12)}`;
   $('#local-id').textContent = localId.toUpperCase();
@@ -251,9 +287,9 @@ function render(current, { animate = false } = {}) {
     slot.dataset.suit = SUIT[foundation.suit];
     slot.dataset.dropZone = 'foundation';
     slot.dataset.dropIndex = String(index);
-    if (selection) slot.classList.add('targetable');
+    if (selection && canSendActions()) slot.classList.add('targetable');
     slot.addEventListener('click', () => {
-      if (!selection || interactionLocked) return;
+      if (!selection || interactionLocked || !canSendActions()) return;
       moveToFoundation(index);
     });
     if (foundation.cards.length) slot.append(cardElement(foundation.cards.at(-1)));
@@ -261,6 +297,8 @@ function render(current, { animate = false } = {}) {
     foundations.append(slot);
   });
   $('#foundation-count').textContent = `${foundationCount} / 104`;
+  const ended = gameOverMessage(state);
+  if (ended) setMessage(ended, 'warn');
   if (previousRects) animateAuthoritativeChanges(previousRects);
 }
 
@@ -359,6 +397,10 @@ function moveToFoundation(index) {
 }
 
 async function sendIntent(kind, payload) {
+  if (!canSendActions()) {
+    setMessage(isMatchFinished() ? 'Match ist beendet.' : 'Diese Aktion ist fuer diese Rolle nicht verfuegbar.', 'warn');
+    return null;
+  }
   interactionLocked = true;
   clearDrag();
   $('#pending').hidden = false;
@@ -369,6 +411,9 @@ async function sendIntent(kind, payload) {
     else if (response.kind === 'snapshot') {
       selection = null;
       setMessage(`Synchronisiert: ${response.reason}`, 'warn');
+    } else if (kind === 'resign') {
+      selection = null;
+      setMessage('Du hast aufgegeben.', 'warn');
     } else {
       selection = null;
       setMessage(`${kind} akzeptiert`, 'ok');
@@ -490,8 +535,8 @@ async function connectToMatch() {
   $('#game').hidden = false;
   $('#connection-dot').classList.add('online');
   $('#connection-label').textContent = `${clientId.toUpperCase()} verbunden`;
-  updateRestartControl();
   updateHeaderSummary();
+  updateActionControls();
   setRoute(matchId, clientId);
   setInvite(matchId, clientId === 'p1');
   setMessage(`Match ${matchId.slice(0, 18)} aktiv`, 'ok');
@@ -499,6 +544,10 @@ async function connectToMatch() {
 
 async function startHostMatch({ randomSeed = false, withBot = false } = {}) {
   try {
+    if (isP2User()) {
+      setMessage('P2 kann keinen neuen Match starten.', 'warn');
+      return;
+    }
     await configReady;
     await stopActiveBot({ quiet: true });
     if (randomSeed) setRandomSeed();
@@ -524,6 +573,10 @@ async function startHostMatch({ randomSeed = false, withBot = false } = {}) {
 
 async function startBotVersusMatch({ randomSeed = false } = {}) {
   try {
+    if (isP2User()) {
+      setMessage('P2 kann keinen Bot-vs-Bot-Match starten.', 'warn');
+      return;
+    }
     await configReady;
     await stopActiveBot({ quiet: true });
     if (randomSeed) setRandomSeed();
@@ -571,14 +624,34 @@ async function restartHostMatch({ randomSeed = false } = {}) {
   }
 }
 
+function resignMatch() {
+  if (client?.clientId !== 'p2') {
+    setMessage('Aufgeben ist aktuell nur fuer P2 verfuegbar.', 'warn');
+    return;
+  }
+  if (isMatchFinished()) {
+    setMessage('Match ist bereits beendet.', 'warn');
+    return;
+  }
+  if (!window.confirm('Match aufgeben?')) return;
+  sendIntent('resign', {});
+}
+
 $('#random-seed').addEventListener('click', () => setRandomSeed());
 $('#seed').addEventListener('input', () => updateHeaderSummary());
-$('#mode').addEventListener('change', () => updateHeaderSummary());
-$('#client-id').addEventListener('change', () => updateHeaderSummary());
+$('#mode').addEventListener('change', () => {
+  updateHeaderSummary();
+  updateActionControls();
+});
+$('#client-id').addEventListener('change', () => {
+  updateHeaderSummary();
+  updateActionControls();
+});
 $('#create-match').addEventListener('click', () => startHostMatch());
 $('#create-bot-match').addEventListener('click', () => startHostMatch({ withBot: true }));
 $('#create-bot-versus-match').addEventListener('click', () => startBotVersusMatch());
 $('#stop-bot-match').addEventListener('click', () => stopActiveBot());
+$('#resign-match').addEventListener('click', () => resignMatch());
 $('#app-menu-toggle').addEventListener('click', (event) => {
   event.preventDefault();
   event.stopPropagation();
@@ -665,6 +738,6 @@ if (launch) {
   connectToMatch().catch((error) => setMessage(error.message, 'error'));
 }
 
-updateRestartControl();
 updateBotControls();
 updateHeaderSummary();
+updateActionControls();

@@ -1,4 +1,4 @@
-# Protocol 2.0.0 Reference Client
+# Protocol 2.1.0 Reference Client
 
 `ProtocolClient` is the executable reference adapter between UI intent and the
 authoritative vNext server. It contains no Solitaire rules and performs no
@@ -14,6 +14,8 @@ Responsibilities:
 - keep state and sequence unchanged on `reject`;
 - replace local state on `ack` or `snapshot`;
 - expose state/response/disconnect/protocol-error events to a UI adapter.
+- accept `resign` as a normal intent; the resulting ack carries the finished
+  GameOver state.
 
 This Node implementation is the behavioral reference for later Web and iOS
 adapters. Platform transports may differ, but the state machine must remain the

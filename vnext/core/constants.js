@@ -10,9 +10,9 @@ const CARDS_PER_PLAYER = 52;
 const TABLEAU_COUNT = 7;
 const TABLEAU_CARD_COUNT = 28;
 const STOCK_CARD_COUNT = 24;
-const APP_VERSION = '1.1.0-alpha.1';
-const PROTOCOL_VERSION = '2.0.0';
-const SCHEMA_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0-alpha.2';
+const PROTOCOL_VERSION = '2.1.0';
+const SCHEMA_VERSION = '1.1.0';
 const RULES_VERSION = '1.0.0';
 
 module.exports = {

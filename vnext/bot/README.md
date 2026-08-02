@@ -1,6 +1,6 @@
 # vNext Bot Client
 
-The vNext bot is a thin Protocol 2.0.0 client. It reads authoritative
+The vNext bot is a thin Protocol 2.1.0 client. It reads authoritative
 snapshots, generates candidate Intents, sends one pending Intent at a time, and
 accepts server rejects as normal feedback. It does not import or call Core move
 authority and never mutates match state locally.

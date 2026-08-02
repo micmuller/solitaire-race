@@ -42,3 +42,16 @@ test('assertInvariants exposes the airbag reject code', () => {
     (error) => error.code === 'INTERNAL_INVARIANT_BREACH' && error.violations.length > 0
   );
 });
+
+test('invariants validate active and finished match result fields', () => {
+  const active = clone(initMatch('SEED-STATUS', 'split').state);
+  active.winner = 'p1';
+  assert.ok(checkInvariants(active).violations.some((violation) => violation.code === 'INVALID_ACTIVE_MATCH_RESULT'));
+
+  const finished = clone(initMatch('SEED-STATUS', 'split').state);
+  finished.status = 'finished';
+  finished.winner = 'p1';
+  finished.endedReason = 'resign';
+  finished.endedBy = 'p2';
+  assert.deepEqual(checkInvariants(finished), { ok: true, violations: [] });
+});

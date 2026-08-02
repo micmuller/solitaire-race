@@ -18,7 +18,10 @@ Import from `vnext/core/index.js`.
 - `stateHash(rev, state)` hashes canonical `{rev,state}` with SHA-256.
 - `fnv1a32`, `createMulberry32` and `shuffle` implement deterministic RNG.
 
-`mode` is `split` or `shared`. Stack top is always the final array element.
+`mode` is `split` or `shared`. State includes match lifecycle fields
+`status`, `winner`, `endedReason` and `endedBy`; `resign` finishes the match
+and later gameplay actions reject with `MATCH_FINISHED`. Stack top is always
+the final array element.
 The normative representation is defined in
 `vnext/docs/adr/ADR-006-state-and-card-model.md`.
 
