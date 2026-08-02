@@ -167,10 +167,31 @@ test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritativ
   assert.equal(log.steps.length, 2);
   assert.equal(replay(log, defaultExpectedConfig('SMOKE-SEED', 'shared')).status, 'SUCCESS');
 
+  const p1RestartPromise = p1.next();
+  const p2RestartPromise = p2.next();
+  const restartResponse = await fetch(`${httpBase}/vnext/matches/${created.matchId}/restart`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed: 'SMOKE-SEED-RESTART', mode: 'split' })
+  });
+  assert.equal(restartResponse.status, 200);
+  const httpRestart = await restartResponse.json();
+  const [p1Restart, p2Restart] = await Promise.all([p1RestartPromise, p2RestartPromise]);
+  for (const message of [httpRestart, p1Restart, p2Restart]) {
+    assert.equal(message.kind, 'snapshot');
+    assert.equal(message.reason, 'RESTART');
+    assert.equal(message.rev, 0);
+    assert.equal(message.state.seed, 'SMOKE-SEED-RESTART');
+    assert.equal(message.state.mode, 'split');
+  }
+  assert.equal(p1Restart.stateHash, httpRestart.stateHash);
+  assert.equal(p2Restart.stateHash, httpRestart.stateHash);
+
   const runtimeLog = logLines.join('\n');
   for (const event of [
     'SERVER_STARTED',
     'MATCH_CREATED',
+    'MATCH_RESTARTED',
     'WS_CONNECTED',
     'SNAPSHOT_SENT',
     'ACTION_RECEIVED',

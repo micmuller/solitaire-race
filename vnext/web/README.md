@@ -17,6 +17,8 @@ Current vertical slice:
   tableau/foundation intent targets without local state mutation;
 - animate card position changes only after an authoritative ack render and
   play synthesized audio cues for ack/reject/recovery results;
+- generate readable random seeds and restart the active host match with either
+  the same seed or a new random seed;
 - keep a rejected selection available for another target and allow explicit or
   Escape-key cancellation;
 - update only after authoritative ack/snapshot;
@@ -60,5 +62,10 @@ preserves identity through URL state. The vNext shell exposes `/vnext/config`
 so invite links use the LAN-reachable server address instead of `127.0.0.1`
 when hosted locally; seed and mode display are synchronized from the
 authoritative snapshot.
+
+The Restart control is server-authoritative: host `p1` keeps the same match and
+invite link, while the server resets the session and broadcasts a `RESTART`
+snapshot so `p2` returns to the same fresh state. New-seed restarts use the same
+path with a newly generated seed.
 
 Next follow-up: PWA packaging for the new entry point.

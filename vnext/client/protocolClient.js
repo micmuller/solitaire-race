@@ -104,7 +104,9 @@ class ProtocolClient {
     if (validationError) throw new Error(`Invalid server response: ${validationError}`);
 
     if (response.kind === 'ack' || response.kind === 'snapshot') {
-      if (!this.current || response.rev >= this.current.rev) {
+      const isRestart = response.kind === 'snapshot' && response.reason === 'RESTART';
+      if (isRestart) this.nextSeq = 0;
+      if (!this.current || response.rev >= this.current.rev || isRestart) {
         this.current = { rev: response.rev, state: response.state, stateHash: response.stateHash };
         this.emit({ type: 'state', source: response.kind, current: this.current });
       }
@@ -172,4 +174,14 @@ async function createMatch(baseUrl, { seed, mode }, fetchImpl = fetch) {
   return response.json();
 }
 
-module.exports = { ProtocolClient, createMatch, validateAuthoritativeResponse, websocketUrl };
+async function restartMatch(baseUrl, matchId, { seed, mode }, fetchImpl = fetch) {
+  const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/vnext/matches/${encodeURIComponent(matchId)}/restart`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed, mode })
+  });
+  if (!response.ok) throw new Error(`Match restart failed: HTTP ${response.status}`);
+  return response.json();
+}
+
+module.exports = { ProtocolClient, createMatch, restartMatch, validateAuthoritativeResponse, websocketUrl };

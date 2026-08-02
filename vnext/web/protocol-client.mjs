@@ -63,7 +63,9 @@ export class ProtocolClient {
       throw new Error('Ungültige Serverantwort');
     }
     if (response.kind === 'ack' || response.kind === 'snapshot') {
-      if (!this.current || response.rev >= this.current.rev) {
+      const isRestart = response.kind === 'snapshot' && response.reason === 'RESTART';
+      if (isRestart) this.nextSeq = 0;
+      if (!this.current || response.rev >= this.current.rev || isRestart) {
         this.current = { rev: response.rev, stateHash: response.stateHash, state: response.state };
         this.emit({ type: 'state', source: response.kind, current: this.current });
       }
@@ -114,5 +116,15 @@ export async function createMatch(baseUrl, seed, mode) {
     body: JSON.stringify({ seed, mode })
   });
   if (!response.ok) throw new Error(`Matcherstellung fehlgeschlagen (${response.status})`);
+  return response.json();
+}
+
+export async function restartMatch(baseUrl, matchId, seed, mode) {
+  const response = await fetch(`${baseUrl}/vnext/matches/${encodeURIComponent(matchId)}/restart`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed, mode })
+  });
+  if (!response.ok) throw new Error(`Restart fehlgeschlagen (${response.status})`);
   return response.json();
 }

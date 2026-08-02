@@ -39,16 +39,22 @@ HTTP endpoints:
 - `POST /vnext/matches` with `{ "seed": "...", "mode": "split|shared" }`
 - `GET /vnext/matches/:matchId`
 - `GET /vnext/matches/:matchId/replay`
+- `POST /vnext/matches/:matchId/restart` with optional
+  `{ "seed": "...", "mode": "split|shared" }`
 
 WebSocket connections use
 `/vnext?matchId=<id>&clientId=p1|p2`. The server sends an initial snapshot and
 accepts protocol-2.0.0 action envelopes. Accepted actions are broadcast as
 authoritative acks containing the resulting state, revision and hash.
+Restart resets the existing match session to revision `0`, resets client
+sequences, and broadcasts an authoritative `RESTART` snapshot to connected
+peers.
 
 The terminal logs compact structured events such as `MATCH_CREATED`,
 `WS_CONNECTED`, `SNAPSHOT_SENT`, `ACTION_RECEIVED`, `ACTION_ACK`,
-`ACTION_REJECT`, `REPLAY_EXPORTED` and `WS_DISCONNECTED`. State hashes are
-shortened for correlation; complete states and card arrays are not logged.
+`ACTION_REJECT`, `MATCH_RESTARTED`, `REPLAY_EXPORTED` and `WS_DISCONNECTED`.
+State hashes are shortened for correlation; complete states and card arrays
+are not logged.
 
 Expected activity for `npm run smoke:vnext` includes `MATCH_CREATED`,
 `WS_CONNECTED`, `SNAPSHOT_SENT`, `ACTION_RECEIVED`, `ACTION_ACK` and

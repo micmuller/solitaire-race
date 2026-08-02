@@ -57,6 +57,14 @@ class MatchSession {
     return snapshot(this, 'INITIAL_CONNECT');
   }
 
+  restart({ seed = this.header.seed, mode = this.header.mode, startedAt = new Date().toISOString() } = {}) {
+    this.current = initMatch(seed, mode);
+    this.header = { seed, protocolVersion: PROTOCOL_VERSION, rulesVersion: RULES_VERSION, mode, startedAt };
+    this.lastAcceptedSeq = { p1: -1, p2: -1 };
+    this.steps = [];
+    return snapshot(this, 'RESTART');
+  }
+
   actionLog() {
     return { header: structuredClone(this.header), steps: structuredClone(this.steps) };
   }

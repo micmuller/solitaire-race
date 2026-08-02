@@ -1,4 +1,4 @@
-import { ProtocolClient, createMatch } from './protocol-client.mjs';
+import { ProtocolClient, createMatch, restartMatch } from './protocol-client.mjs';
 import { cueForIntentResult } from './effects.mjs';
 import { dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
 import { inviteUrl, matchUrl, readLaunchParams } from './lobby.mjs';
@@ -452,16 +452,39 @@ async function startHostMatch({ randomSeed = false } = {}) {
   }
 }
 
+async function restartHostMatch({ randomSeed = false } = {}) {
+  if (!client?.matchId || client.clientId !== 'p1') {
+    await startHostMatch({ randomSeed });
+    return;
+  }
+  try {
+    interactionLocked = true;
+    $('#pending').hidden = false;
+    if (randomSeed) setRandomSeed();
+    const seed = $('#seed').value.trim() || generateRandomSeed();
+    $('#seed').value = seed;
+    const response = await restartMatch(baseUrl, client.matchId, seed, $('#mode').value);
+    client.handle(response);
+    setInvite(client.matchId, true);
+    setMessage(`Match neu gestartet: ${response.reason}`, 'ok');
+  } catch (error) {
+    setMessage(error.message, 'error');
+  } finally {
+    interactionLocked = false;
+    $('#pending').hidden = true;
+  }
+}
+
 $('#random-seed').addEventListener('click', () => setRandomSeed());
 $('#create-match').addEventListener('click', () => startHostMatch());
 $('#restart-match').addEventListener('click', () => $('#restart-dialog').showModal());
 $('#restart-same-seed').addEventListener('click', () => {
   $('#restart-dialog').close();
-  startHostMatch();
+  restartHostMatch();
 });
 $('#restart-new-seed').addEventListener('click', () => {
   $('#restart-dialog').close();
-  startHostMatch({ randomSeed: true });
+  restartHostMatch({ randomSeed: true });
 });
 $('#restart-cancel').addEventListener('click', () => $('#restart-dialog').close());
 

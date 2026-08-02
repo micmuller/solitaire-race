@@ -111,9 +111,14 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
 
   function broadcast(matchId, payload) {
     const encoded = JSON.stringify(payload);
+    let sent = 0;
     for (const socket of peers.get(matchId)?.values() || []) {
-      if (socket.readyState === WebSocket.OPEN) socket.send(encoded);
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(encoded);
+        sent += 1;
+      }
     }
+    return sent;
   }
 
   async function handleRequest(request, response) {
@@ -170,7 +175,36 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       return;
     }
 
-    const matchPath = url.pathname.match(/^\/vnext\/matches\/([^/]+)(\/replay)?$/);
+    const matchPath = url.pathname.match(/^\/vnext\/matches\/([^/]+)(\/replay|\/restart)?$/);
+    if (request.method === 'POST' && matchPath?.[2] === '/restart') {
+      const session = sessions.get(decodeURIComponent(matchPath[1]));
+      if (!session) {
+        sendJson(response, 404, { error: 'match not found' });
+        return;
+      }
+      try {
+        const body = await readJson(request);
+        const seed = typeof body.seed === 'string' && body.seed.length > 0 ? body.seed : session.header.seed;
+        const mode = typeof body.mode === 'string' && body.mode.length > 0 ? body.mode : session.header.mode;
+        if (!MODES.includes(mode)) {
+          sendJson(response, 400, { error: 'mode (split|shared) is required' });
+          return;
+        }
+        const restartSnapshot = session.restart({ seed, mode });
+        const peersNotified = broadcast(session.matchId, restartSnapshot);
+        log('MATCH_RESTARTED', {
+          matchId: session.matchId,
+          mode,
+          peers: peersNotified,
+          rev: restartSnapshot.rev,
+          hash: shortHash(restartSnapshot.stateHash)
+        });
+        sendJson(response, 200, restartSnapshot);
+      } catch (error) {
+        if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
+      }
+      return;
+    }
     if (request.method === 'GET' && matchPath) {
       const session = sessions.get(decodeURIComponent(matchPath[1]));
       if (!session) {
