@@ -124,6 +124,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     }
     if (request.method === 'GET' && url.pathname === '/vnext/config') {
       sendJson(response, 200, {
+        appVersion: APP_VERSION,
         publicBaseUrl: publicBaseUrl({ configured: publicUrl, request, port: listenPort }),
         protocolVersion: PROTOCOL_VERSION
       });

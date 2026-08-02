@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const { WebSocket } = require('ws');
-const { PROTOCOL_VERSION } = require('../core');
+const { APP_VERSION, PROTOCOL_VERSION } = require('../core');
 const { defaultExpectedConfig, replay } = require('../replay');
 const { createVNextServer } = require('../server');
 const { MatchSession } = require('../server/matchSession');
@@ -113,6 +113,7 @@ test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritativ
   assert.equal(health.protocolVersion, PROTOCOL_VERSION);
 
   const webConfig = await fetch(`${httpBase}/vnext/config`).then((response) => response.json());
+  assert.equal(webConfig.appVersion, APP_VERSION);
   assert.equal(webConfig.protocolVersion, PROTOCOL_VERSION);
   assert.match(webConfig.publicBaseUrl, /^http:\/\/.+:\d+$/);
 

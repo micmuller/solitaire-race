@@ -6,10 +6,12 @@ const test = require('node:test');
 let mapping;
 let effects;
 let lobby;
+let version;
 test.before(async () => {
   mapping = await import('../web/intent-mapping.mjs');
   effects = await import('../web/effects.mjs');
   lobby = await import('../web/lobby.mjs');
+  version = await import('../web/version.mjs');
 });
 
 const cards = [
@@ -118,4 +120,8 @@ test('lobby urls encode host and invite identities', () => {
     pathname: '/vnext/web/',
     matchId: 'm-123'
   }), 'https://example.test/vnext/web/?matchId=m-123&role=p2');
+});
+
+test('web client version is exposed for the header menu', () => {
+  assert.equal(version.WEB_CLIENT_VERSION, '1.1.0-alpha.1');
 });

@@ -10,7 +10,15 @@
   <header class="app-bar">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">H</span>
-      <div><strong>Solitaire HighNoon</strong><small>vNext authoritative</small></div>
+      <div>
+        <div class="brand-title"><strong>Solitaire HighNoon</strong><button id="version-badge" class="version-badge" type="button" aria-expanded="false">vNext</button></div>
+        <small>authoritative</small>
+      </div>
+      <div id="version-menu" class="version-menu" hidden>
+        <div><span>Server</span><strong id="server-version">-</strong></div>
+        <div><span>Protocol</span><strong id="protocol-version">-</strong></div>
+        <div><span>Webclient</span><strong id="web-version">-</strong></div>
+      </div>
     </div>
     <div class="telemetry" aria-label="Verbindungsstatus">
       <span id="connection-dot" class="status-dot"></span>

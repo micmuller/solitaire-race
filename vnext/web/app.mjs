@@ -2,6 +2,7 @@ import { ProtocolClient, createMatch } from './protocol-client.mjs';
 import { cueForIntentResult } from './effects.mjs';
 import { dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
 import { inviteUrl, matchUrl, readLaunchParams } from './lobby.mjs';
+import { WEB_CLIENT_VERSION } from './version.mjs';
 
 const $ = (selector) => document.querySelector(selector);
 const SUIT = { C: '♣', D: '♦', H: '♥', S: '♠' };
@@ -14,20 +15,34 @@ let drag = null;
 let suppressNextClick = false;
 let audioContext = null;
 let publicBaseUrl = baseUrl;
+let serverVersion = '-';
+let serverProtocolVersion = '-';
 
 const configReady = loadConfig();
+setVersionLabels();
 
 async function loadConfig() {
   try {
     const response = await fetch(`${baseUrl}/vnext/config`);
     if (!response.ok) return;
     const config = await response.json();
+    if (typeof config.appVersion === 'string' && config.appVersion) serverVersion = config.appVersion;
+    if (typeof config.protocolVersion === 'string' && config.protocolVersion) serverProtocolVersion = config.protocolVersion;
     if (typeof config.publicBaseUrl === 'string' && config.publicBaseUrl) {
       publicBaseUrl = config.publicBaseUrl.replace(/\/$/, '');
     }
   } catch {
     publicBaseUrl = baseUrl;
+  } finally {
+    setVersionLabels();
   }
+}
+
+function setVersionLabels() {
+  $('#version-badge').textContent = WEB_CLIENT_VERSION;
+  $('#server-version').textContent = serverVersion;
+  $('#protocol-version').textContent = serverProtocolVersion;
+  $('#web-version').textContent = WEB_CLIENT_VERSION;
 }
 
 function setMessage(text, tone = '') {
@@ -428,6 +443,11 @@ $('#create-match').addEventListener('click', async () => {
 });
 
 $('#connect-match').addEventListener('click', () => connectToMatch().catch((error) => setMessage(error.message, 'error')));
+$('#version-badge').addEventListener('click', () => {
+  const menu = $('#version-menu');
+  menu.hidden = !menu.hidden;
+  $('#version-badge').setAttribute('aria-expanded', String(!menu.hidden));
+});
 $('#copy-invite').addEventListener('click', async () => {
   const input = $('#invite-link');
   const link = input.value;
@@ -460,8 +480,17 @@ document.addEventListener('click', (event) => {
   event.stopPropagation();
   suppressNextClick = false;
 }, true);
+document.addEventListener('click', (event) => {
+  if (event.target.closest('#version-badge') || event.target.closest('#version-menu')) return;
+  $('#version-menu').hidden = true;
+  $('#version-badge').setAttribute('aria-expanded', 'false');
+});
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && selection) setSelection(null);
+  if (event.key === 'Escape') {
+    $('#version-menu').hidden = true;
+    $('#version-badge').setAttribute('aria-expanded', 'false');
+  }
 });
 
 const launch = readLaunchParams(window.location.search);
