@@ -9,13 +9,14 @@ function option(name, fallback) {
 }
 
 const port = Number(option('--port', process.env.PORT || 3011));
-const host = option('--host', process.env.HOST || '127.0.0.1');
+const host = option('--host', process.env.HOST || '0.0.0.0');
+const publicUrl = option('--public-url', process.env.PUBLIC_URL || '');
 if (!Number.isInteger(port) || port < 0 || port > 65535) {
   console.error('Invalid --port value');
   process.exit(1);
 }
 
-const app = createVNextServer();
+const app = createVNextServer({ publicUrl });
 app.start({ port, host }).catch((error) => {
   console.error('[vNext] startup failed', error);
   process.exit(1);

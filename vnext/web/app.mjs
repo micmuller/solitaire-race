@@ -13,6 +13,22 @@ let interactionLocked = false;
 let drag = null;
 let suppressNextClick = false;
 let audioContext = null;
+let publicBaseUrl = baseUrl;
+
+const configReady = loadConfig();
+
+async function loadConfig() {
+  try {
+    const response = await fetch(`${baseUrl}/vnext/config`);
+    if (!response.ok) return;
+    const config = await response.json();
+    if (typeof config.publicBaseUrl === 'string' && config.publicBaseUrl) {
+      publicBaseUrl = config.publicBaseUrl.replace(/\/$/, '');
+    }
+  } catch {
+    publicBaseUrl = baseUrl;
+  }
+}
 
 function setMessage(text, tone = '') {
   $('#message').textContent = text;
@@ -24,14 +40,19 @@ function currentPath() {
 }
 
 function setRoute(matchId, role) {
-  const url = matchUrl({ origin: window.location.origin, pathname: currentPath(), matchId, role });
+  const url = matchUrl({ origin: baseUrl, pathname: currentPath(), matchId, role });
   if (url) window.history.replaceState({}, '', url);
 }
 
 function setInvite(matchId, visible = true) {
-  const link = inviteUrl({ origin: window.location.origin, pathname: currentPath(), matchId });
+  const link = inviteUrl({ origin: publicBaseUrl, pathname: currentPath(), matchId });
   $('#invite-link').value = link;
   $('#invite-panel').hidden = !link || !visible;
+}
+
+function syncSetupFields(state) {
+  if (state?.seed) $('#seed').value = state.seed;
+  if (state?.mode) $('#mode').value = state.mode;
 }
 
 function captureCardRects() {
@@ -109,6 +130,7 @@ function render(current, { animate = false } = {}) {
   const opponentId = localId === 'p1' ? 'p2' : 'p1';
   const local = state.players[localId];
   const opponent = state.players[opponentId];
+  syncSetupFields(state);
   $('#revision').textContent = `rev ${rev}`;
   $('#state-hash').textContent = `hash ${stateHash.slice(0, 12)}`;
   $('#local-id').textContent = localId.toUpperCase();
@@ -355,6 +377,7 @@ document.addEventListener('pointercancel', (event) => {
 });
 
 async function connectToMatch() {
+  await configReady;
   const matchId = $('#match-id').value.trim();
   const clientId = $('#client-id').value;
   if (!matchId) return setMessage('Match-ID fehlt.', 'error');
@@ -381,6 +404,7 @@ async function connectToMatch() {
 
 $('#create-match').addEventListener('click', async () => {
   try {
+    await configReady;
     const match = await createMatch(baseUrl, $('#seed').value.trim(), $('#mode').value);
     $('#match-id').value = match.matchId;
     $('#client-id').value = 'p1';

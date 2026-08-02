@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
+const os = require('node:os');
 const path = require('node:path');
 const { URL } = require('node:url');
 const { WebSocket, WebSocketServer } = require('ws');
@@ -17,6 +18,25 @@ const WEB_MIME = Object.freeze({
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8'
 });
+
+function localNetworkAddress() {
+  const candidates = [];
+  for (const [name, addresses] of Object.entries(os.networkInterfaces())) {
+    for (const address of addresses || []) {
+      if (address.family !== 'IPv4' || address.internal) continue;
+      candidates.push({ name, address: address.address });
+    }
+  }
+  const preferred = candidates.find((candidate) => /^(en|eth|wl)/.test(candidate.name));
+  return (preferred || candidates[0])?.address || '127.0.0.1';
+}
+
+function publicBaseUrl({ configured, request, port }) {
+  if (configured) return configured.replace(/\/$/, '');
+  const host = request?.headers?.host;
+  if (host && !/^127\.0\.0\.1(?::|$)|^localhost(?::|$)/i.test(host)) return `http://${host}`;
+  return `http://${localNetworkAddress()}:${port}`;
+}
 
 function sendJson(response, statusCode, value) {
   const body = JSON.stringify(value);
@@ -72,9 +92,10 @@ function serveWebAsset(urlPath, response) {
   return true;
 }
 
-function createVNextServer({ logger = console } = {}) {
+function createVNextServer({ logger = console, publicUrl } = {}) {
   const sessions = new Map();
   const peers = new Map();
+  let listenPort = 3011;
 
   function log(event, fields = {}) {
     const details = Object.entries(fields)
@@ -99,6 +120,13 @@ function createVNextServer({ logger = console } = {}) {
     const url = new URL(request.url, 'http://localhost');
     if (request.method === 'GET' && url.pathname.startsWith('/vnext/web')) {
       if (!serveWebAsset(url.pathname, response)) sendJson(response, 404, { error: 'web asset not found' });
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/vnext/config') {
+      sendJson(response, 200, {
+        publicBaseUrl: publicBaseUrl({ configured: publicUrl, request, port: listenPort }),
+        protocolVersion: PROTOCOL_VERSION
+      });
       return;
     }
     if (request.method === 'GET' && url.pathname === '/health') {
@@ -277,10 +305,13 @@ function createVNextServer({ logger = console } = {}) {
       server.listen(port, host, () => {
         server.off('error', reject);
         const address = server.address();
+        listenPort = address.port;
+        const resolvedPublicUrl = publicBaseUrl({ configured: publicUrl, port: address.port });
         log('SERVER_STARTED', {
           appVersion: APP_VERSION,
           protocolVersion: PROTOCOL_VERSION,
-          url: `http://${address.address}:${address.port}`
+          url: `http://${address.address}:${address.port}`,
+          publicUrl: resolvedPublicUrl
         });
         resolve(address);
       });

@@ -56,6 +56,9 @@ animate a successful move.
 
 Lobby and invite flow use deterministic Web-slice identity: host creates and
 connects as `p1`, the invite link opens the same match as `p2`, and refresh
-preserves identity through URL state.
+preserves identity through URL state. The vNext shell exposes `/vnext/config`
+so invite links use the LAN-reachable server address instead of `127.0.0.1`
+when hosted locally; seed and mode display are synchronized from the
+authoritative snapshot.
 
 Next follow-up: PWA packaging for the new entry point.
