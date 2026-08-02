@@ -11,6 +11,8 @@ Current vertical slice:
 - submit stock draw/recycle and top-tableau flip as Action Intents;
 - select waste or a face-up tableau suffix and submit tableau/foundation moves
   through a second target click/tap;
+- drag the waste top card or a face-up tableau suffix onto the same
+  tableau/foundation intent targets without local state mutation;
 - keep a rejected selection available for another target and allow explicit or
   Escape-key cancellation;
 - update only after authoritative ack/snapshot;
@@ -22,7 +24,6 @@ echo, bot or local deal code is included.
 
 Still pending:
 
-- drag gestures in addition to the complete click/tap intent flow;
 - animation and audio adaptation;
 - lobby/invite flow and production identity assignment;
 - PWA packaging for the new entry point.
@@ -40,16 +41,11 @@ was clean and synchronized with `origin/vNext-authoritative-engine`.
 
 ## Next Session
 
-Implement drag-and-drop as a second input path over the existing rule-neutral
-selection and intent mapping:
+Drag-and-drop is implemented as a second input path over the existing
+rule-neutral selection and intent mapping. Desktop pointer and mobile-width
+pointer smokes passed with seed `DRAG-SMOKE-4`: draw to `rev 1`, drag waste
+top card to tableau pile 6, authoritative `tableauMove` ack to `rev 2`, no
+browser console errors.
 
-1. Drag waste top cards and face-up tableau suffixes without mutating local
-   game state.
-2. Highlight tableau and foundation drop targets and map a drop to the same
-   `tableauMove` or `foundationMove` payload used by click/tap.
-3. Preserve the ADR-011 pending/ack/reject/snapshot behavior, including one
-   in-flight intent and retry after reject.
-4. Add mapping and interaction regression tests, then manually verify desktop
-   pointer and mobile touch behavior.
-
-Animation and audio remain a separate follow-up after drag input is stable.
+Next follow-up: adapt animation and audio to the authoritative ack/snapshot
+flow without reintroducing optimistic gameplay state.

@@ -10,6 +10,7 @@ export function wasteSelection(owner, cards) {
 
 export function tableauSelection(owner, index, cardIndex, cards) {
   if (!Array.isArray(cards) || !Number.isInteger(cardIndex) || cardIndex < 0 || cardIndex >= cards.length) return null;
+  if (cards[cardIndex]?.faceDown) return null;
   const selected = cards.slice(cardIndex);
   return {
     source: { zone: 'tableau', owner, index },
@@ -18,8 +19,15 @@ export function tableauSelection(owner, index, cardIndex, cards) {
   };
 }
 
+export function dragSelection(owner, source) {
+  if (!source || typeof source !== 'object') return null;
+  if (source.zone === 'waste') return wasteSelection(owner, source.cards);
+  if (source.zone === 'tableau') return tableauSelection(owner, source.index, source.cardIndex, source.cards);
+  return null;
+}
+
 export function tableauIntent(selection, owner, index) {
-  if (!selection) return null;
+  if (!selection || !Number.isInteger(index)) return null;
   return {
     kind: 'tableauMove',
     payload: {
@@ -31,7 +39,7 @@ export function tableauIntent(selection, owner, index) {
 }
 
 export function foundationIntent(selection, index) {
-  if (!selection) return null;
+  if (!selection || !Number.isInteger(index)) return null;
   return {
     kind: 'foundationMove',
     payload: {
@@ -39,4 +47,11 @@ export function foundationIntent(selection, index) {
       target: { zone: 'foundation', owner: 'global', index }
     }
   };
+}
+
+export function dropIntent(selection, owner, target) {
+  if (!target || typeof target !== 'object') return null;
+  if (target.zone === 'tableau') return tableauIntent(selection, owner, target.index);
+  if (target.zone === 'foundation') return foundationIntent(selection, target.index);
+  return null;
 }

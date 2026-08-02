@@ -1,5 +1,5 @@
 import { ProtocolClient, createMatch } from './protocol-client.mjs';
-import { foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
+import { dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
 
 const $ = (selector) => document.querySelector(selector);
 const SUIT = { C: '♣', D: '♦', H: '♥', S: '♠' };
@@ -8,6 +8,8 @@ const baseUrl = window.location.origin;
 let client = null;
 let selection = null;
 let interactionLocked = false;
+let drag = null;
+let suppressNextClick = false;
 
 function setMessage(text, tone = '') {
   $('#message').textContent = text;
@@ -28,7 +30,7 @@ function cardElement(card, compact = false) {
   return element;
 }
 
-function renderStack(container, cards, { compact = false, tableau = false, onCardClick } = {}) {
+function renderStack(container, cards, { compact = false, tableau = false, onCardClick, onCardPointerDown } = {}) {
   container.replaceChildren();
   cards.forEach((card, index) => {
     const element = cardElement(card, compact);
@@ -40,6 +42,10 @@ function renderStack(container, cards, { compact = false, tableau = false, onCar
         onCardClick(card, index);
       });
     }
+    if (onCardPointerDown) {
+      element.classList.add('draggable-card');
+      element.addEventListener('pointerdown', (event) => onCardPointerDown(event, card, index));
+    }
     container.append(element);
   });
 }
@@ -49,6 +55,8 @@ function renderTableau(container, tableau, owner, compact = false) {
   tableau.forEach((cards, index) => {
     const pile = document.createElement('div');
     pile.className = 'tableau-pile card-slot';
+    pile.dataset.dropZone = 'tableau';
+    pile.dataset.dropIndex = String(index);
     if (selection && owner === client.clientId) pile.classList.add('targetable');
     pile.addEventListener('click', () => {
       if (!selection || owner !== client.clientId || interactionLocked) return;
@@ -59,6 +67,9 @@ function renderTableau(container, tableau, owner, compact = false) {
       tableau: true,
       onCardClick: owner === client.clientId
         ? (card, cardIndex) => handleTableauCard(cards, index, card, cardIndex)
+        : null,
+      onCardPointerDown: owner === client.clientId
+        ? (event, card, cardIndex) => startDrag(event, { zone: 'tableau', index, cardIndex, cards }, card)
         : null
     });
     container.append(pile);
@@ -82,7 +93,8 @@ function render(current) {
   renderStack($('#local-waste'), local.waste.length ? [local.waste.at(-1)] : [], {
     onCardClick: () => {
       if (!interactionLocked) setSelection(wasteSelection(localId, local.waste));
-    }
+    },
+    onCardPointerDown: (event, card) => startDrag(event, { zone: 'waste', cards: local.waste }, card)
   });
   renderStack($('#opp-stock'), opponent.stock.length ? [opponent.stock.at(-1)] : [], { compact: true });
   renderStack($('#opp-waste'), opponent.waste.length ? [opponent.waste.at(-1)] : [], { compact: true });
@@ -96,6 +108,8 @@ function render(current) {
     const slot = document.createElement('div');
     slot.className = 'card-slot foundation-slot';
     slot.dataset.suit = SUIT[foundation.suit];
+    slot.dataset.dropZone = 'foundation';
+    slot.dataset.dropIndex = String(index);
     if (selection) slot.classList.add('targetable');
     slot.addEventListener('click', () => {
       if (!selection || interactionLocked) return;
@@ -108,12 +122,12 @@ function render(current) {
   $('#foundation-count').textContent = `${foundationCount} / 104`;
 }
 
-function setSelection(nextSelection) {
+function setSelection(nextSelection, { rerender = true } = {}) {
   selection = nextSelection;
   $('#selection-label').hidden = !selection;
   $('#cancel-selection').hidden = !selection;
   $('#selection-label').textContent = selection ? `${selection.count} Karte${selection.count === 1 ? '' : 'n'} ausgewählt` : '';
-  if (client?.current) render(client.current);
+  if (rerender && client?.current) render(client.current);
 }
 
 function handleTableauCard(cards, pileIndex, card, cardIndex) {
@@ -145,6 +159,7 @@ function moveToFoundation(index) {
 
 async function sendIntent(kind, payload) {
   interactionLocked = true;
+  clearDrag();
   $('#pending').hidden = false;
   try {
     const response = await client.sendIntent(kind, payload);
@@ -164,6 +179,92 @@ async function sendIntent(kind, payload) {
     if (client?.current) setSelection(selection);
   }
 }
+
+function startDrag(event, source, card) {
+  if (interactionLocked || event.button !== 0) return;
+  const nextSelection = dragSelection(client.clientId, source);
+  if (!nextSelection) return;
+  drag = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    x: event.clientX,
+    y: event.clientY,
+    selection: nextSelection,
+    source,
+    label: cardLabel(card),
+    active: false
+  };
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+}
+
+function cardLabel(card) {
+  const rank = RANK[card.rank] || String(card.rank);
+  return `${rank}${SUIT[card.suit]}`;
+}
+
+function activateDrag() {
+  drag.active = true;
+  suppressNextClick = true;
+  document.body.classList.add('dragging-card');
+  setSelection(drag.selection);
+  drag.ghost = document.createElement('div');
+  drag.ghost.className = 'drag-ghost';
+  drag.ghost.textContent = drag.selection.count === 1 ? drag.label : `${drag.label} +${drag.selection.count - 1}`;
+  document.body.append(drag.ghost);
+  moveGhost(drag.x, drag.y);
+}
+
+function moveGhost(x, y) {
+  if (!drag?.ghost) return;
+  drag.ghost.style.transform = `translate(${x + 10}px, ${y + 10}px)`;
+}
+
+function updateDropHover(x, y) {
+  document.querySelectorAll('.drop-hover').forEach((element) => element.classList.remove('drop-hover'));
+  const target = document.elementFromPoint(x, y)?.closest('[data-drop-zone]');
+  if (target && target.classList.contains('targetable')) target.classList.add('drop-hover');
+}
+
+function dropTargetAt(x, y) {
+  const element = document.elementFromPoint(x, y)?.closest('[data-drop-zone]');
+  if (!element || !element.classList.contains('targetable')) return null;
+  return { zone: element.dataset.dropZone, index: Number(element.dataset.dropIndex) };
+}
+
+function clearDrag() {
+  drag?.ghost?.remove();
+  drag = null;
+  document.body.classList.remove('dragging-card');
+  document.querySelectorAll('.drop-hover').forEach((element) => element.classList.remove('drop-hover'));
+}
+
+document.addEventListener('pointermove', (event) => {
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  drag.x = event.clientX;
+  drag.y = event.clientY;
+  const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+  if (!drag.active && distance >= 8) activateDrag();
+  if (drag.active) {
+    event.preventDefault();
+    moveGhost(event.clientX, event.clientY);
+    updateDropHover(event.clientX, event.clientY);
+  }
+});
+
+document.addEventListener('pointerup', (event) => {
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  const activeDrag = drag.active;
+  const intent = activeDrag ? dropIntent(drag.selection, client.clientId, dropTargetAt(event.clientX, event.clientY)) : null;
+  clearDrag();
+  if (intent) sendIntent(intent.kind, intent.payload);
+  else if (activeDrag) setSelection(selection);
+});
+
+document.addEventListener('pointercancel', (event) => {
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  clearDrag();
+});
 
 async function connectToMatch() {
   const matchId = $('#match-id').value.trim();
@@ -213,6 +314,12 @@ $('#local-stock').addEventListener('click', () => {
   sendIntent(kind, { source, target });
 });
 $('#cancel-selection').addEventListener('click', () => setSelection(null));
+document.addEventListener('click', (event) => {
+  if (!suppressNextClick) return;
+  event.preventDefault();
+  event.stopPropagation();
+  suppressNextClick = false;
+}, true);
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && selection) setSelection(null);
 });

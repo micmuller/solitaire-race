@@ -9,9 +9,9 @@ test.before(async () => {
 });
 
 const cards = [
-  { cardId: 'd0:S:9' },
-  { cardId: 'd0:H:8' },
-  { cardId: 'd0:C:7' }
+  { cardId: 'd0:S:9', faceDown: false },
+  { cardId: 'd0:H:8', faceDown: false },
+  { cardId: 'd0:C:7', faceDown: false }
 ];
 
 test('waste selection maps only the accessible top card', () => {
@@ -31,6 +31,24 @@ test('tableau selection maps the selected suffix without evaluating rules', () =
   });
 });
 
+test('drag source maps to the same waste and tableau selections', () => {
+  assert.deepEqual(mapping.dragSelection('p1', { zone: 'waste', cards }), {
+    source: { zone: 'waste', owner: 'p1' },
+    count: 1,
+    cardIds: ['d0:C:7']
+  });
+  assert.deepEqual(mapping.dragSelection('p1', { zone: 'tableau', index: 3, cardIndex: 1, cards }), {
+    source: { zone: 'tableau', owner: 'p1', index: 3 },
+    count: 2,
+    cardIds: ['d0:H:8', 'd0:C:7']
+  });
+});
+
+test('drag source rejects face-down tableau cards', () => {
+  const blocked = [{ cardId: 'd0:S:9', faceDown: true }, ...cards.slice(1)];
+  assert.equal(mapping.dragSelection('p1', { zone: 'tableau', index: 0, cardIndex: 0, cards: blocked }), null);
+});
+
 test('selected source maps to structured tableau and foundation intents', () => {
   const selection = mapping.tableauSelection('p1', 2, 1, cards);
   assert.deepEqual(mapping.tableauIntent(selection, 'p1', 5), {
@@ -48,4 +66,24 @@ test('selected source maps to structured tableau and foundation intents', () => 
       target: { zone: 'foundation', owner: 'global', index: 7 }
     }
   });
+});
+
+test('drop target maps to the existing move intents', () => {
+  const selection = mapping.tableauSelection('p1', 2, 1, cards);
+  assert.deepEqual(mapping.dropIntent(selection, 'p1', { zone: 'tableau', index: 6 }), {
+    kind: 'tableauMove',
+    payload: {
+      source: { zone: 'tableau', owner: 'p1', index: 2 },
+      target: { zone: 'tableau', owner: 'p1', index: 6 },
+      count: 2
+    }
+  });
+  assert.deepEqual(mapping.dropIntent(selection, 'p1', { zone: 'foundation', index: 4 }), {
+    kind: 'foundationMove',
+    payload: {
+      source: { zone: 'tableau', owner: 'p1', index: 2 },
+      target: { zone: 'foundation', owner: 'global', index: 4 }
+    }
+  });
+  assert.equal(mapping.dropIntent(selection, 'p1', { zone: 'stock', index: 0 }), null);
 });
