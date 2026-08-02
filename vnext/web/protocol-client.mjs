@@ -146,3 +146,11 @@ export async function stopBot(baseUrl, matchId, clientId = 'p2') {
   if (!response.ok && response.status !== 404) throw new Error(`Bot-Stop fehlgeschlagen (${response.status})`);
   return response.ok;
 }
+
+export async function stopBots(baseUrl, matchId) {
+  const results = await Promise.all([
+    stopBot(baseUrl, matchId, 'p1'),
+    stopBot(baseUrl, matchId, 'p2')
+  ]);
+  return results.some(Boolean);
+}

@@ -9,6 +9,8 @@ Current vertical slice:
   that auto-joins as `p2`;
 - create a split/shared match as host `p1` with a server-managed bot connected
   as `p2`, using selectable Easy/Mittel/Schwer bot speed;
+- create and observe a Bot-vs-Bot match with both `p1` and `p2` controlled by
+  server-managed bots at the selected speed;
 - restore host/join identity from `?matchId=...&role=p1|p2` URL state;
 - connect through Protocol 2.0.0 and render the initial authoritative snapshot;
 - render both players, all tableaus and eight global foundations;
@@ -72,7 +74,7 @@ use the same path with a newly generated seed. Joined `p2` clients cannot start
 a restart.
 
 Starting, joining or restarting another match stops the currently managed Web
-bot. The explicit `Bot stoppen` control stops it without changing the current
-match.
+bot or bots. The explicit `Bot stoppen` control stops managed bots without
+changing the current match.
 
 Next follow-up: PWA packaging for the new entry point.

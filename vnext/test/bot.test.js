@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { WebSocket } = require('ws');
 const { generateActionCandidates } = require('../bot/actionGenerator');
 const { formatBotReport } = require('../bot/format');
 const { BotActor, actionLogHash, normalizeSpeed, runBotVsBot, speedDelay } = require('../bot/runner');
@@ -18,6 +19,26 @@ async function withServer(t) {
     await app.close();
   });
   return `http://127.0.0.1:${address.port}`;
+}
+
+function connectRaw(url) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url);
+    const queued = [];
+    const waiters = [];
+    socket.on('message', (data) => {
+      const message = JSON.parse(data.toString('utf8'));
+      if (waiters.length > 0) waiters.shift()(message);
+      else queued.push(message);
+    });
+    socket.once('open', () => resolve({
+      socket,
+      next: () => queued.length > 0
+        ? Promise.resolve(queued.shift())
+        : new Promise((nextResolve) => waiters.push(nextResolve))
+    }));
+    socket.once('error', reject);
+  });
 }
 
 test('bot action generator produces deterministic thin-client intents', () => {
@@ -159,6 +180,56 @@ test('server-managed bot can join a web-hosted match as p2', async (t) => {
     body: JSON.stringify({ clientId: 'p2', speed: 'turbo', maxActions: 5 })
   });
   assert.equal(invalidSpeedResponse.status, 400);
+});
+
+test('server-managed bot-vs-bot can be observed over websocket', async (t) => {
+  const baseUrl = await withServer(t);
+  const wsBase = baseUrl.replace(/^http/, 'ws');
+  const createResponse = await fetch(`${baseUrl}/vnext/matches`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed: 'BOT-WEB-VERSUS', mode: 'split' })
+  });
+  const match = await createResponse.json();
+  const observer = await connectRaw(`${wsBase}/vnext?matchId=${encodeURIComponent(match.matchId)}&clientId=observer`);
+  t.after(() => observer.socket.close());
+  const initial = await observer.next();
+  assert.equal(initial.kind, 'snapshot');
+  assert.equal(initial.reason, 'INITIAL_CONNECT');
+
+  const p1Start = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clientId: 'p1', speed: 'fast', maxActions: 2 })
+  });
+  const p2Start = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clientId: 'p2', speed: 'fast', maxActions: 2 })
+  });
+  assert.equal(p1Start.status, 202);
+  assert.equal(p2Start.status, 202);
+  const observed = await observer.next();
+  assert.equal(observed.kind, 'ack');
+  assert.ok(observed.rev >= 1);
+
+  observer.socket.send(JSON.stringify({
+    matchId: match.matchId,
+    clientId: 'observer',
+    seq: 0,
+    baseRev: observed.rev,
+    protocolVersion: '2.0.0',
+    kind: 'draw',
+    payload: {}
+  }));
+  const rejected = await observer.next();
+  assert.equal(rejected.kind, 'reject');
+  assert.equal(rejected.code, 'OBSERVER_READ_ONLY');
+
+  const p1Stop = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot?clientId=p1`, { method: 'DELETE' });
+  const p2Stop = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot?clientId=p2`, { method: 'DELETE' });
+  assert.ok([200, 404].includes(p1Stop.status));
+  assert.ok([200, 404].includes(p2Stop.status));
 });
 
 test('bot-vs-bot runs are deterministic for the same seed and mode', async (t) => {

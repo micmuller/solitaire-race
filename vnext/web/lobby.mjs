@@ -1,4 +1,4 @@
-const VALID_ROLES = new Set(['p1', 'p2']);
+const VALID_ROLES = new Set(['p1', 'p2', 'observer']);
 
 export function normalizeRole(role) {
   const value = typeof role === 'string' ? role.toLowerCase() : '';

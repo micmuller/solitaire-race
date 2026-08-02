@@ -1,4 +1,4 @@
-import { ProtocolClient, createMatch, restartMatch, startBot, stopBot } from './protocol-client.mjs';
+import { ProtocolClient, createMatch, restartMatch, startBot, stopBots } from './protocol-client.mjs';
 import { cueForIntentResult } from './effects.mjs';
 import { dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
 import { inviteUrl, matchUrl, readLaunchParams } from './lobby.mjs';
@@ -8,6 +8,7 @@ import { WEB_CLIENT_VERSION, labelsFromConfig, setVersionMenuOpen, toggleVersion
 const $ = (selector) => document.querySelector(selector);
 const SUIT = { C: '♣', D: '♦', H: '♥', S: '♠' };
 const RANK = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
+const ACTION_PLAYER_IDS = new Set(['p1', 'p2']);
 const baseUrl = window.location.origin;
 let client = null;
 let selection = null;
@@ -77,6 +78,10 @@ function canRestartCurrentMatch() {
   return client?.clientId === 'p1';
 }
 
+function canSendActions() {
+  return ACTION_PLAYER_IDS.has(client?.clientId);
+}
+
 function updateRestartControl() {
   const canRestart = canRestartCurrentMatch();
   $('#restart-match').disabled = !canRestart;
@@ -93,7 +98,7 @@ async function stopActiveBot({ quiet = false } = {}) {
   activeBotMatchId = null;
   updateBotControls();
   try {
-    await stopBot(baseUrl, matchId, 'p2');
+    await stopBots(baseUrl, matchId);
     if (!quiet) setMessage('Bot gestoppt.', 'ok');
     return true;
   } catch (error) {
@@ -167,9 +172,9 @@ function renderTableau(container, tableau, owner, compact = false) {
     pile.className = 'tableau-pile card-slot';
     pile.dataset.dropZone = 'tableau';
     pile.dataset.dropIndex = String(index);
-    if (selection && owner === client.clientId) pile.classList.add('targetable');
+    if (selection && owner === client.clientId && canSendActions()) pile.classList.add('targetable');
     pile.addEventListener('click', () => {
-      if (!selection || owner !== client.clientId || interactionLocked) return;
+      if (!selection || owner !== client.clientId || interactionLocked || !canSendActions()) return;
       moveToTableau(index);
     });
     renderStack(pile, cards, {
@@ -189,7 +194,7 @@ function renderTableau(container, tableau, owner, compact = false) {
 function render(current, { animate = false } = {}) {
   const previousRects = animate ? captureCardRects() : null;
   const { state, rev, stateHash } = current;
-  const localId = client.clientId;
+  const localId = canSendActions() ? client.clientId : 'p1';
   const opponentId = localId === 'p1' ? 'p2' : 'p1';
   const local = state.players[localId];
   const opponent = state.players[opponentId];
@@ -204,9 +209,11 @@ function render(current, { animate = false } = {}) {
   else $('#local-stock').classList.add('empty');
   renderStack($('#local-waste'), local.waste.length ? [local.waste.at(-1)] : [], {
     onCardClick: () => {
-      if (!interactionLocked) setSelection(wasteSelection(localId, local.waste));
+      if (!interactionLocked && canSendActions()) setSelection(wasteSelection(localId, local.waste));
     },
-    onCardPointerDown: (event, card) => startDrag(event, { zone: 'waste', cards: local.waste }, card)
+    onCardPointerDown: canSendActions()
+      ? (event, card) => startDrag(event, { zone: 'waste', cards: local.waste }, card)
+      : null
   });
   renderStack($('#opp-stock'), opponent.stock.length ? [opponent.stock.at(-1)] : [], { compact: true });
   renderStack($('#opp-waste'), opponent.waste.length ? [opponent.waste.at(-1)] : [], { compact: true });
@@ -303,7 +310,7 @@ function setSelection(nextSelection, { rerender = true } = {}) {
 }
 
 function handleTableauCard(cards, pileIndex, card, cardIndex) {
-  if (interactionLocked) return;
+  if (interactionLocked || !canSendActions()) return;
   if (selection) {
     if (selection.source.zone === 'tableau' && selection.source.index === pileIndex) {
       setSelection(null);
@@ -354,7 +361,7 @@ async function sendIntent(kind, payload) {
 }
 
 function startDrag(event, source, card) {
-  if (interactionLocked || event.button !== 0) return;
+  if (interactionLocked || event.button !== 0 || !canSendActions()) return;
   const nextSelection = dragSelection(client.clientId, source);
   if (!nextSelection) return;
   drag = {
@@ -492,6 +499,31 @@ async function startHostMatch({ randomSeed = false, withBot = false } = {}) {
   }
 }
 
+async function startBotVersusMatch({ randomSeed = false } = {}) {
+  try {
+    await configReady;
+    await stopActiveBot({ quiet: true });
+    if (randomSeed) setRandomSeed();
+    const seed = $('#seed').value.trim() || generateRandomSeed();
+    $('#seed').value = seed;
+    const match = await createMatch(baseUrl, seed, $('#mode').value);
+    $('#match-id').value = match.matchId;
+    $('#client-id').value = 'observer';
+    setRoute(match.matchId, 'observer');
+    setInvite(match.matchId, false);
+    await connectToMatch();
+    await Promise.all([
+      startBot(baseUrl, match.matchId, { clientId: 'p1', speed: $('#bot-speed').value, maxActions: 1000 }),
+      startBot(baseUrl, match.matchId, { clientId: 'p2', speed: $('#bot-speed').value, maxActions: 1000 })
+    ]);
+    activeBotMatchId = match.matchId;
+    updateBotControls();
+    setMessage(`Bot-vs-Bot ${match.matchId.slice(0, 18)} aktiv`, 'ok');
+  } catch (error) {
+    setMessage(error.message, 'error');
+  }
+}
+
 async function restartHostMatch({ randomSeed = false } = {}) {
   if (!canRestartCurrentMatch()) {
     setMessage('Restart ist nur fuer P1 verfuegbar.', 'warn');
@@ -519,6 +551,7 @@ async function restartHostMatch({ randomSeed = false } = {}) {
 $('#random-seed').addEventListener('click', () => setRandomSeed());
 $('#create-match').addEventListener('click', () => startHostMatch());
 $('#create-bot-match').addEventListener('click', () => startHostMatch({ withBot: true }));
+$('#create-bot-versus-match').addEventListener('click', () => startBotVersusMatch());
 $('#stop-bot-match').addEventListener('click', () => stopActiveBot());
 $('#restart-match').addEventListener('click', () => {
   if (!canRestartCurrentMatch()) {
@@ -559,7 +592,7 @@ $('#copy-invite').addEventListener('click', async () => {
   }
 });
 $('#local-stock').addEventListener('click', () => {
-  if (!client?.current) return;
+  if (!client?.current || !canSendActions()) return;
   if (selection) {
     setSelection(null);
     return;

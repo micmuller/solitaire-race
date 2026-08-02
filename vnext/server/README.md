@@ -46,9 +46,11 @@ HTTP endpoints:
 - `DELETE /vnext/matches/:matchId/bot?clientId=p2`
 
 WebSocket connections use
-`/vnext?matchId=<id>&clientId=p1|p2`. The server sends an initial snapshot and
-accepts protocol-2.0.0 action envelopes. Accepted actions are broadcast as
-authoritative acks containing the resulting state, revision and hash.
+`/vnext?matchId=<id>&clientId=p1|p2|observer`. The server sends an initial
+snapshot and accepts protocol-2.0.0 action envelopes from `p1` and `p2`.
+Observer sockets receive authoritative snapshots/acks but are read-only.
+Accepted actions are broadcast as authoritative acks containing the resulting
+state, revision and hash.
 Restart resets the existing match session to revision `0`, resets client
 sequences, and broadcasts an authoritative `RESTART` snapshot to connected
 peers.

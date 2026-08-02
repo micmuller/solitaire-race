@@ -43,6 +43,9 @@ Bot-vs-bot speeds are `slow`, `normal` and `fast`. Speed only changes
 scheduling delay; candidate ordering remains deterministic.
 Add `--json` to either CLI command for the raw machine-readable report.
 
+The Web client can also start Bot-vs-Bot directly. It connects as a read-only
+observer while the server runs managed `p1` and `p2` bots.
+
 The JSON report includes match id, seed, mode, speed, final revision, final
 state hash, normalized action-log hash, action-log step count, stop reason and
 per-bot ack/reject/snapshot counts.

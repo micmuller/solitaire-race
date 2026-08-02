@@ -109,8 +109,15 @@ test('authoritative responses map to non-optimistic effect cues', () => {
 
 test('lobby urls encode host and invite identities', () => {
   assert.deepEqual(lobby.readLaunchParams('?matchId=m-123&role=p2'), { matchId: 'm-123', role: 'p2' });
+  assert.deepEqual(lobby.readLaunchParams('?matchId=m-123&role=observer'), { matchId: 'm-123', role: 'observer' });
   assert.deepEqual(lobby.readLaunchParams('?match=m-123&role=P1'), { matchId: 'm-123', role: 'p1' });
   assert.equal(lobby.readLaunchParams('?matchId=m-123&role=p3'), null);
+  assert.equal(lobby.matchUrl({
+    origin: 'https://example.test',
+    pathname: '/vnext/web/',
+    matchId: 'm-123',
+    role: 'observer'
+  }), 'https://example.test/vnext/web/?matchId=m-123&role=observer');
   assert.equal(lobby.matchUrl({
     origin: 'https://example.test',
     pathname: '/vnext/web/',

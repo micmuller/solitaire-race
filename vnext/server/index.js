@@ -13,6 +13,7 @@ const { SPEEDS, normalizeSpeed } = require('../bot/runner');
 const { MatchSession } = require('./matchSession');
 
 const MAX_BODY_BYTES = 64 * 1024;
+const OBSERVER_ID = 'observer';
 const WEB_ROOT = path.join(__dirname, '..', 'web');
 const WEB_MIME = Object.freeze({
   '.css': 'text/css; charset=utf-8',
@@ -128,6 +129,10 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     return `${matchId}:${clientId}`;
   }
 
+  function peerKey(clientId) {
+    return clientId === OBSERVER_ID ? `${OBSERVER_ID}:${crypto.randomUUID()}` : clientId;
+  }
+
   function localBaseUrl() {
     return `http://127.0.0.1:${listenPort}`;
   }
@@ -212,7 +217,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
           return;
         }
         if (!Object.prototype.hasOwnProperty.call(SPEEDS, speed)) {
-          sendJson(response, 400, { error: 'speed must be slow, normal or fast' });
+          sendJson(response, 400, { error: 'speed must be easy, medium, hard, slow, normal or fast' });
           return;
         }
         if (peers.get(session.matchId)?.has(clientId) || bots.has(botKey(session.matchId, clientId))) {
@@ -328,7 +333,8 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     const matchId = url.searchParams.get('matchId');
     const clientId = url.searchParams.get('clientId');
     const session = sessions.get(matchId);
-    if (!session || !PLAYER_IDS.includes(clientId) || peers.get(matchId)?.has(clientId)) {
+    const observer = clientId === OBSERVER_ID;
+    if (!session || (!observer && !PLAYER_IDS.includes(clientId)) || (!observer && peers.get(matchId)?.has(clientId))) {
       socket.write('HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
@@ -336,14 +342,15 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     wss.handleUpgrade(request, socket, head, (webSocket) => {
       webSocket.matchId = matchId;
       webSocket.clientId = clientId;
+      webSocket.peerKey = peerKey(clientId);
       wss.emit('connection', webSocket);
     });
   });
 
   wss.on('connection', (socket) => {
-    const { matchId, clientId } = socket;
+    const { matchId, clientId, peerKey: connectedPeerKey } = socket;
     if (!peers.has(matchId)) peers.set(matchId, new Map());
-    peers.get(matchId).set(clientId, socket);
+    peers.get(matchId).set(connectedPeerKey, socket);
     log('WS_CONNECTED', { matchId, clientId, peers: peers.get(matchId).size });
     socket.send(JSON.stringify(sessions.get(matchId).initialSnapshot()));
     log('SNAPSHOT_SENT', {
@@ -356,6 +363,19 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     });
 
     socket.on('message', (data, isBinary) => {
+      if (!PLAYER_IDS.includes(clientId)) {
+        const { rev, stateHash } = sessions.get(matchId).current;
+        socket.send(JSON.stringify({
+          kind: 'reject',
+          matchId,
+          clientId,
+          protocolVersion: PROTOCOL_VERSION,
+          code: 'OBSERVER_READ_ONLY',
+          rev,
+          stateHash
+        }));
+        return;
+      }
       if (isBinary) {
         socket.send(JSON.stringify({ kind: 'reject', code: 'MALFORMED_MESSAGE', matchId, clientId }));
         return;
@@ -411,7 +431,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
 
     socket.on('close', () => {
       const room = peers.get(matchId);
-      if (room?.get(clientId) === socket) room.delete(clientId);
+      if (room?.get(connectedPeerKey) === socket) room.delete(connectedPeerKey);
       if (room?.size === 0) peers.delete(matchId);
       log('WS_DISCONNECTED', { matchId, clientId, peers: room?.size || 0 });
     });
