@@ -58,6 +58,7 @@ Out of Scope:
 - `REPLAY.md`
 - `TEST_MATRIX.md`
 - `GAME_RULES_vNext.md`
+- `BOT_CLIENT_PLAN.md` (Phase-2-Plan, nicht Teil des eingefrorenen Phase-1-Contracts)
 - `adr/ADR-001-initial-deal.md`
 - `adr/ADR-002-recycle-order.md`
 - `adr/ADR-003-empty-tableau.md`
@@ -84,4 +85,4 @@ Out of Scope:
 - (leer – bewusst offen)
 
 ## Next Steps
-- (leer – vom Orchestrator gepflegt)
+- Phase 2: Bot-Client gemaess `BOT_CLIENT_PLAN.md`.

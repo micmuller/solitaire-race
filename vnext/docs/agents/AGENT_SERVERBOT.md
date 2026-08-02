@@ -20,3 +20,10 @@ Owner of bot and regression harness.
 - Bot client
 - Regression test seeds
 - Replay scenarios
+
+## Current Plan
+- Follow `vnext/docs/BOT_CLIENT_PLAN.md`.
+- Required modes:
+  - Human vs Bot.
+  - Bot vs Bot with `slow`, `normal` and `fast` speeds.
+- Bot is always a Protocol 2.0.0 client and never a gameplay authority.
