@@ -1,9 +1,9 @@
 ---
 Document: PROTOCOL.md
-Version: 2.1.0
+Version: 2.2.0
 Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
-Last-Updated: 2026-08-02
+Last-Updated: 2026-08-05
 ---
 
 # Protocol
@@ -14,7 +14,7 @@ Last-Updated: 2026-08-02
 
 ## Protocol Versioning
 - SemVer: `MAJOR.MINOR.PATCH`.
-- Current vNext protocol version: `2.1.0`.
+- Current vNext protocol version: `2.2.0`.
 - Legacy v1 messages are incompatible and MUST NOT enter the vNext core.
 - Additive changes preferred (MINOR/PATCH).
 - Breaking changes require ADR approval and MAJOR bump.
@@ -31,8 +31,10 @@ All client-to-server messages MUST use this envelope:
 - `clientTime`: string (optional; informational only)
 
 Norms:
-- Server evaluates every action relative to `baseRev`.
-- If `baseRev` does not equal the current server revision, the message is Out-of-Sync (see Sequencing).
+- Server records `baseRev` for observability and deterministic replay.
+- A stale `baseRev` does not by itself block an action. The server MUST
+  revalidate the intent against the latest authoritative state.
+- A `baseRev` greater than the current revision is Out-of-Sync.
 
 ## Server Responses
 Server MUST respond with exactly one of:
@@ -53,7 +55,7 @@ vNext shell response binding:
 Snapshot MUST be sent on:
 - initial connect or explicit `state_request`
 - sequence gap (`seq > expectedSeq`)
-- `baseRev` mismatch (client out of sync)
+- `baseRev > currentRev` (client claims a future state)
 - `INTERNAL_INVARIANT_BREACH` (airbag)
 
 In these cases, the server MUST NOT apply the triggering action.
@@ -108,14 +110,20 @@ Definitions:
 Rules (normative):
 - If `seq < expectedSeq`: DUPLICATE. Server MUST respond with `reject` and code `DUPLICATE_SEQ`. Server MUST NOT apply the action and MUST NOT send a snapshot.
 - If `seq > expectedSeq`: GAP / Out-of-Sync. Server MUST send `snapshot` and MUST NOT apply the action.
-- If `seq == expectedSeq` and `baseRev != currentRev`: Out-of-Sync. Server MUST send `snapshot` and MUST NOT apply the action.
-- If `seq == expectedSeq` and `baseRev == currentRev`: Server applies the action atomically and responds with `ack`.
+- If `seq == expectedSeq` and `baseRev > currentRev`: Out-of-Sync. Server MUST send `snapshot` and MUST NOT apply the action.
+- If `seq == expectedSeq` and `baseRev <= currentRev`: Server MUST revalidate
+  and atomically apply the intent against the latest authoritative state. A
+  still-legal action receives `ack`; a genuine rules/resource conflict receives
+  the normal Core `reject` without consuming the sequence.
 
 Only an accepted Core action advances `lastAcceptedSeq`. A rules/schema reject
 does not consume the sequence, allowing the client to correct and retry with the
 same `seq` against the unchanged revision.
 
-Applied order is defined by accepted `seq` per `clientId`. Server MUST NOT reorder accepted actions.
+Applied order is defined by server receipt order plus accepted `seq` per
+`clientId`. Server MUST NOT reorder accepted actions. This permits independent
+actions created from the same snapshot to succeed while keeping shared
+foundation updates collision-safe.
 
 ## Thin Client Binding
 
@@ -162,7 +170,7 @@ Example 1: Full client-to-server message
   "clientId": "p1",
   "seq": 42,
   "baseRev": 310,
-  "protocolVersion": "2.1.0",
+  "protocolVersion": "2.2.0",
   "kind": "draw",
   "payload": {
     "source": {"zone": "stock", "owner": "p1"},
@@ -200,6 +208,7 @@ Example 3: Server snapshot message (stub)
 ## Decisions
 - ADR-010 binds the first executable authoritative server shell.
 - ADR-011 binds the thin client state machine used by Web and iOS.
+- ADR-013 permits stale-intent revalidation for race concurrency.
 
 ## Open Questions
 - (leer – bewusst offen)

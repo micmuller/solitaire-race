@@ -93,6 +93,33 @@ test('out-of-sync envelope returns an unchanged replayable snapshot', () => {
   assert.equal(replay(session.actionLog(), defaultExpectedConfig('SYNC-SEED', 'shared')).status, 'SUCCESS');
 });
 
+test('independent simultaneous moves are rebased and both accepted', () => {
+  const session = new MatchSession({ matchId: 'm-race', seed: 'RACE-SEED', mode: 'shared' });
+
+  const first = session.process('p1', drawEnvelope('m-race', 'p1', 0, 0));
+  const second = session.process('p2', drawEnvelope('m-race', 'p2', 0, 0));
+
+  assert.equal(first.response.kind, 'ack');
+  assert.equal(first.response.rev, 1);
+  assert.equal(second.response.kind, 'ack');
+  assert.equal(second.response.rev, 2);
+  assert.equal(second.response.state.players.p1.waste.length, 1);
+  assert.equal(second.response.state.players.p2.waste.length, 1);
+  assert.equal(session.lastAcceptedSeq.p1, 0);
+  assert.equal(session.lastAcceptedSeq.p2, 0);
+  assert.equal(replay(session.actionLog(), defaultExpectedConfig('RACE-SEED', 'shared')).status, 'SUCCESS');
+});
+
+test('future base revision still returns an unchanged recovery snapshot', () => {
+  const session = new MatchSession({ matchId: 'm-future', seed: 'FUTURE-SEED', mode: 'shared' });
+  const outcome = session.process('p1', drawEnvelope('m-future', 'p1', 0, 1));
+
+  assert.equal(outcome.response.kind, 'snapshot');
+  assert.equal(outcome.response.reason, 'OUT_OF_SYNC');
+  assert.equal(outcome.response.rev, 0);
+  assert.equal(session.lastAcceptedSeq.p1, -1);
+});
+
 test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritative ack', async (t) => {
   const logLines = [];
   const app = createVNextServer({
@@ -156,15 +183,26 @@ test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritativ
   assert.equal(p1Ack.rev, 1);
   assert.deepEqual(p2Ack, p1Ack);
 
+  const p1RebasedAckPromise = p1.next();
+  const p2RebasedAckPromise = p2.next();
+  p2.socket.send(JSON.stringify(drawEnvelope(created.matchId, 'p2', 0, 0)));
+  const [p1RebasedAck, p2RebasedAck] = await Promise.all([p1RebasedAckPromise, p2RebasedAckPromise]);
+  assert.equal(p2RebasedAck.kind, 'ack');
+  assert.equal(p2RebasedAck.clientId, 'p2');
+  assert.equal(p2RebasedAck.rev, 2);
+  assert.equal(p2RebasedAck.state.players.p1.waste.length, 1);
+  assert.equal(p2RebasedAck.state.players.p2.waste.length, 1);
+  assert.deepEqual(p1RebasedAck, p2RebasedAck);
+
   const duplicatePromise = p1.next();
-  p1.socket.send(JSON.stringify(drawEnvelope(created.matchId, 'p1', 0, 1)));
+  p1.socket.send(JSON.stringify(drawEnvelope(created.matchId, 'p1', 0, 2)));
   const duplicate = await duplicatePromise;
   assert.equal(duplicate.kind, 'reject');
   assert.equal(duplicate.code, 'DUPLICATE_SEQ');
-  assert.equal(duplicate.rev, 1);
+  assert.equal(duplicate.rev, 2);
 
   const log = await fetch(`${httpBase}/vnext/matches/${created.matchId}/replay`).then((response) => response.json());
-  assert.equal(log.steps.length, 2);
+  assert.equal(log.steps.length, 3);
   assert.equal(replay(log, defaultExpectedConfig('SMOKE-SEED', 'shared')).status, 'SUCCESS');
 
   const p1RestartPromise = p1.next();

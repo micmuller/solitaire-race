@@ -20,8 +20,10 @@ identity will be mapped to an actor by the future server shell before an entry
 is written to the core ActionLog.
 
 Only accepted actions advance a client's sequence. Sequence gaps and base
-revision mismatches return an unchanged `OUT_OF_SYNC` snapshot. Duplicate
-sequences return `DUPLICATE_SEQ`. An AIRBAG snapshot always fails replay.
+revisions from the future return an unchanged `OUT_OF_SYNC` snapshot. Stale
+base revisions are replayed by revalidating the intent against the current
+state. Duplicate sequences return `DUPLICATE_SEQ`. An AIRBAG snapshot always
+fails replay.
 
 The 20 normative seeds are checked in with start hashes for both modes. Initial
 split and shared ActionLogs cover ack, reject, snapshot and continuation. Tests

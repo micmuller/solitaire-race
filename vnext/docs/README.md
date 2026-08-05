@@ -3,7 +3,7 @@ Document: README.md
 Version: vNext-0.1
 Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
-Last-Updated: 2026-07-31
+Last-Updated: 2026-08-05
 ---
 
 # vNext Docs
@@ -39,6 +39,8 @@ Release- und Branch-Regeln: `RELEASE_LINES.md`.
   präzisiert und konsistent eingefroren.
 - 2026-07-31: `vnext/docs` ist die normative vNext-Quelle;
   `highnoon-protocol` ist das Legacy-v1-Archiv.
+- 2026-08-05: ADR-013 erlaubt die serverseitige Revalidierung veralteter
+  Intents, damit unabhängige gleichzeitige Race-Moves nicht blockieren.
 
 ## Open Questions
 - (leer – bewusst offen)

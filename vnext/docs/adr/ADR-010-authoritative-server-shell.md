@@ -17,10 +17,12 @@ It reuses the proven infrastructure concepts, but imports neither `server.js`,
 unchanged; vNext starts through `npm run start:vnext`.
 
 The shell owns in-memory MatchSessions. A session binds a WebSocket connection
-to trusted actor `p1` or `p2`, validates the protocol-2.0.0 envelope, enforces
-`seq` and `baseRev`, calls the public greenfield Core and records a replayable
+to trusted actor `p1` or `p2`, validates the protocol envelope, enforces
+per-client `seq`, revalidates stale `baseRev` intents against current
+authoritative state, calls the public greenfield Core and records a replayable
 ActionLog. Accepted state is broadcast in an authoritative ack. Invalid actions
-are rejected only to the sender; sync failures return the current snapshot.
+are rejected only to the sender; sequence gaps and future-revision sync
+failures return the current snapshot.
 
 The initial integration intentionally excludes persistence, authentication,
 lobby/matchmaking, TLS and the legacy bot. Those capabilities are added only

@@ -12,7 +12,7 @@ Current vertical slice:
 - create and observe a Bot-vs-Bot match with both `p1` and `p2` controlled by
   server-managed bots at the selected speed;
 - restore host/join identity from `?matchId=...&role=p1|p2` URL state;
-- connect through Protocol 2.1.0 and render the initial authoritative snapshot;
+- connect through Protocol 2.2.0 and render the initial authoritative snapshot;
 - render both players, all tableaus and eight global foundations;
 - submit stock draw/recycle and top-tableau flip as Action Intents;
 - select waste or a face-up tableau suffix and submit tableau/foundation moves

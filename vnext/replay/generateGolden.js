@@ -38,7 +38,7 @@ function createActionLog(seed, mode) {
   const steps = scenarioDefinitions().map((definition, i) => {
     const expectedSeq = lastAcceptedSeq[definition.clientId] + 1;
     let result;
-    if (definition.seq > expectedSeq || definition.baseRev !== current.rev) {
+    if (definition.seq > expectedSeq || definition.baseRev > current.rev) {
       result = { result: 'snapshot', rev: current.rev, stateHash: current.stateHash };
     } else {
       result = applyAction(current, definition.clientId, definition.action);

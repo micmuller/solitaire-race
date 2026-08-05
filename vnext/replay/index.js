@@ -81,7 +81,7 @@ function protocolResult(current, step, lastAcceptedSeq) {
       stateHash: current.stateHash
     };
   }
-  if (step.seq > expectedSeq || step.baseRev !== current.rev) {
+  if (step.seq > expectedSeq || step.baseRev > current.rev) {
     return {
       result: 'snapshot',
       reason: 'OUT_OF_SYNC',

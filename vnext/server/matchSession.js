@@ -82,9 +82,13 @@ class MatchSession {
     let coreResult;
     if (envelope.seq < expectedSeq) {
       coreResult = { result: 'reject', code: 'DUPLICATE_SEQ', ...this.current };
-    } else if (envelope.seq > expectedSeq || envelope.baseRev !== this.current.rev) {
+    } else if (envelope.seq > expectedSeq || envelope.baseRev > this.current.rev) {
       coreResult = { result: 'snapshot', reason: 'OUT_OF_SYNC', ...this.current };
     } else {
+      // A stale baseRev is expected when both players act from the same
+      // broadcast snapshot. Revalidate the intent against the latest
+      // authoritative state instead of rejecting an otherwise independent
+      // move. applyAction remains the collision and invariant boundary.
       coreResult = applyAction(this.current, actorId, { kind: envelope.kind, payload: envelope.payload });
     }
 

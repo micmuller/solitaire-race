@@ -76,7 +76,7 @@ test('client keeps state and sequence on reject, then reuses the sequence', asyn
   assert.equal(client.current.rev, 1);
 });
 
-test('stale client consumes recovery snapshot and retries the same sequence', async (t) => {
+test('stale client action is rebased against the latest authoritative state', async (t) => {
   const baseUrl = await withServer(t);
   const match = await createMatch(baseUrl, { seed: 'CLIENT-RECOVERY', mode: 'shared' });
   const p1 = new ProtocolClient({ baseUrl, matchId: match.matchId, clientId: 'p1' });
@@ -88,21 +88,15 @@ test('stale client consumes recovery snapshot and retries the same sequence', as
   await waitForRev(p2, 1);
   p2.current = { ...p2.current, rev: 0 };
 
-  const snapshot = await p2.sendIntent('draw', {
-    source: zone('stock', 'p2'),
-    target: zone('waste', 'p2')
-  });
-  assert.equal(snapshot.kind, 'snapshot');
-  assert.equal(snapshot.reason, 'OUT_OF_SYNC');
-  assert.equal(p2.current.rev, 1);
-  assert.equal(p2.nextSeq, 0);
-
   const ack = await p2.sendIntent('draw', {
     source: zone('stock', 'p2'),
     target: zone('waste', 'p2')
   });
   assert.equal(ack.kind, 'ack');
   assert.equal(ack.seq, 0);
+  assert.equal(ack.rev, 2);
+  assert.equal(ack.state.players.p1.waste.length, 1);
+  assert.equal(ack.state.players.p2.waste.length, 1);
   assert.equal(p2.nextSeq, 1);
 });
 

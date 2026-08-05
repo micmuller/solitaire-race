@@ -35,12 +35,14 @@ Last-Updated: 2026-07-31
 - Per-step result, reject-code and state-hash equality.
 - First-divergence reporting for tampered hashes and malformed steps.
 - Header/configuration mismatch rejection before match initialization.
-- Protocol recovery coverage for duplicate sequence and Out-of-Sync snapshot.
+- Protocol recovery coverage for duplicate sequence, sequence gaps and future-revision snapshots.
 - Artifact regeneration equality against the checked-in JSON files.
-- Two Protocol-2.1.0 reference clients converge after both actors submit
+- Two Protocol-2.2.0 reference clients converge after both actors submit
   accepted actions in one shared match.
 - Client reject keeps state/sequence unchanged and allows corrected retry.
-- Client Out-of-Sync snapshot replaces state and allows same-sequence retry.
+- Stale same-revision race actions are rebased onto current authoritative state.
+- Independent simultaneous player actions are both accepted; genuine conflicts
+  are rejected by normal Core validation without consuming the sequence.
 
 ## Acceptance Criteria
 - Hash-Match für gleiche Seeds und Logs.
