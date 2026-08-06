@@ -3,7 +3,7 @@ Document: README.md
 Version: vNext-0.1
 Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
-Last-Updated: 2026-08-05
+Last-Updated: 2026-08-06
 ---
 
 # vNext Docs
@@ -41,6 +41,9 @@ Release- und Branch-Regeln: `RELEASE_LINES.md`.
   `highnoon-protocol` ist das Legacy-v1-Archiv.
 - 2026-08-05: ADR-013 erlaubt die serverseitige Revalidierung veralteter
   Intents, damit unabhängige gleichzeitige Race-Moves nicht blockieren.
+- 2026-08-06: ADR-014 führt autoritative Foundation-Punkte pro Spieler ein.
+- 2026-08-06: Persistenz über Server-Neustarts ist bewusst auf eine spätere
+  Phase verschoben; aktuelle MatchSessions bleiben prozesslokal.
 
 ## Open Questions
 - (leer – bewusst offen)
