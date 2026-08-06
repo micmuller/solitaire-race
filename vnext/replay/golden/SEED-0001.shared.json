@@ -1,7 +1,7 @@
 {
   "header": {
     "seed": "SEED-0001",
-    "protocolVersion": "2.2.0",
+    "protocolVersion": "2.3.0",
     "rulesVersion": "1.0.0",
     "mode": "shared"
   },
@@ -25,7 +25,7 @@
         }
       },
       "expectedResult": "ack",
-      "expectedStateHashAfter": "108ed4db55f322fdbf5c2ebb02ae79e14d1e73ae8973136bd5da967fe5a03bf6"
+      "expectedStateHashAfter": "ff0d094d5cc51f6ad2b8317aaf6852a7b677658067c8f59e258f22087fc085c6"
     },
     {
       "i": 1,
@@ -46,7 +46,7 @@
         }
       },
       "expectedResult": "ack",
-      "expectedStateHashAfter": "eec00fa506414a0aeaf263404e1258842784996a284d0a94b1367c329a389f22"
+      "expectedStateHashAfter": "1687c6168585ec9a4b1cdeed4b7520cb08565fd3c167952da2c2df0d1235c247"
     },
     {
       "i": 2,
@@ -67,7 +67,7 @@
         }
       },
       "expectedResult": "reject",
-      "expectedStateHashAfter": "eec00fa506414a0aeaf263404e1258842784996a284d0a94b1367c329a389f22",
+      "expectedStateHashAfter": "1687c6168585ec9a4b1cdeed4b7520cb08565fd3c167952da2c2df0d1235c247",
       "expectedRejectCode": "INVALID_TARGET"
     },
     {
@@ -89,7 +89,7 @@
         }
       },
       "expectedResult": "ack",
-      "expectedStateHashAfter": "1bba4576799c455d0fbac1b71b4bf99620b9f3917231a7441f141e14e1d44481"
+      "expectedStateHashAfter": "0aefa3d60c176ab60be2c114005c491ad88de3040c984b893357b4846c2ce3dd"
     },
     {
       "i": 4,
@@ -110,7 +110,7 @@
         }
       },
       "expectedResult": "snapshot",
-      "expectedStateHashAfter": "1bba4576799c455d0fbac1b71b4bf99620b9f3917231a7441f141e14e1d44481"
+      "expectedStateHashAfter": "0aefa3d60c176ab60be2c114005c491ad88de3040c984b893357b4846c2ce3dd"
     },
     {
       "i": 5,
@@ -131,7 +131,7 @@
         }
       },
       "expectedResult": "ack",
-      "expectedStateHashAfter": "486a3e79aef8fe31ab1dc74c6048e58e3f2d5b8a74bbccfd5c06b505b600c7aa"
+      "expectedStateHashAfter": "55c0c0060465e02f69dbb212316241c2d5e348b0e4d7119baef825c7eb32bed4"
     }
   ]
 }

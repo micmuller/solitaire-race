@@ -26,4 +26,4 @@ Owner of bot and regression harness.
 - Required modes:
   - Human vs Bot.
   - Bot vs Bot with `slow`, `normal` and `fast` speeds.
-- Bot is always a Protocol 2.2.0 client and never a gameplay authority.
+- Bot is always a Protocol 2.3.0 client and never a gameplay authority.

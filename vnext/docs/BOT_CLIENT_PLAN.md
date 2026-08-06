@@ -9,7 +9,7 @@ Last-Updated: 2026-08-02
 # Bot Client Plan
 
 ## Ziel
-Der vNext-Bot ist ein regelneutraler Protocol-2.2.0-Client und Drift-Harness.
+Der vNext-Bot ist ein regelneutraler Protocol-2.3.0-Client und Drift-Harness.
 Er erzwingt keine Regeln, mutiert keinen State lokal und akzeptiert Rejects als
 normale Serverantwort. Alle Spielentscheidungen werden als Intents an die
 autoritative Server-Shell gesendet.

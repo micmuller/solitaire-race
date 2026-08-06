@@ -103,8 +103,8 @@ button.danger:hover { border-color: var(--danger); }
 .card-slot { position: relative; width: var(--card-w); height: var(--card-h); border: 1px dashed #d9e6de55; border-radius: 6px; }
 .action-slot { display: block; padding: 0; background: transparent; }
 .action-slot:hover { border-color: var(--gold); }
-.tableau { display: grid; grid-template-columns: repeat(7, minmax(var(--card-w), 1fr)); gap: 8px; }
-.tableau-pile { min-height: calc(var(--card-h) + 150px); }
+.tableau { display: grid; grid-template-columns: repeat(7, var(--card-w)); justify-content: center; gap: 8px; }
+.tableau-pile { height: calc(var(--card-h) + var(--stack-span, 0px)); min-height: var(--card-h); }
 .foundations { display: grid; grid-template-columns: repeat(8, var(--card-w)); justify-content: center; gap: 9px; }
 .foundation-slot::before { content: attr(data-suit); position: absolute; inset: 0; display: grid; place-items: center; color: #ffffff2c; font-size: 36px; }
 
@@ -112,7 +112,7 @@ button.danger:hover { border-color: var(--danger); }
   position: absolute; inset: 0 auto auto 0; width: var(--card-w); height: var(--card-h);
   border-radius: 6px; border: 1px solid #d2d2cf; background: #faf9f4; color: #141618;
   box-shadow: 0 2px 5px #0005; overflow: hidden;
-  transform: translateY(calc(var(--stack-index, 0) * 24px));
+  transform: translateY(calc(var(--stack-index, 0) * var(--stack-step, 24px)));
 }
 .playing-card > strong { position: absolute; inset: 0; display: grid; place-items: center; font: 34px Georgia, serif; }
 .playing-card.red { color: #b4232b; }
@@ -128,7 +128,7 @@ button.danger:hover { border-color: var(--danger); }
 .interactive { cursor: pointer; }
 .interactive:hover { outline: 2px solid var(--gold); }
 .draggable-card { touch-action: none; }
-.playing-card.selected { outline: 3px solid var(--gold); outline-offset: 2px; transform: translateY(calc(var(--stack-index, 0) * 24px)) translateX(-2px); }
+.playing-card.selected { outline: 3px solid var(--gold); outline-offset: 2px; transform: translateY(calc(var(--stack-index, 0) * var(--stack-step, 24px))) translateX(-2px); }
 .playing-card.card-arrived { outline: 2px solid #f6d77d; outline-offset: 2px; }
 .card-slot.targetable { border-color: #e9c873; box-shadow: inset 0 0 0 1px #e9c87355; cursor: pointer; }
 .card-slot.targetable:hover { background: #f0cb6720; }
@@ -143,8 +143,24 @@ button.danger:hover { border-color: var(--danger); }
 }
 .compact { --card-w: 50px; --card-h: 70px; }
 .compact-tableau { --card-w: 50px; --card-h: 70px; }
-.compact-tableau .tableau-pile { min-height: calc(var(--card-h) + 92px); }
-.compact-card { transform: translateY(calc(var(--stack-index, 0) * 13px)); }
+.compact-card { transform: translateY(calc(var(--stack-index, 0) * var(--stack-step, 13px))); }
+
+@media (min-width: 851px) and (max-width: 1180px) and (orientation: landscape) {
+  :root { --card-w: 82px; --card-h: 116px; }
+  .player-area, .foundation-area { padding: 7px 14px 9px; }
+  .area-heading { margin-bottom: 5px; font-size: 13px; }
+  .lane { gap: 14px; }
+  .tableau { gap: 7px; }
+  .stock-waste { gap: 8px; }
+  .foundations { gap: 7px; }
+  .playing-card > strong { font-size: 42px; }
+  .corner { font-size: 17px; }
+  .corner small { font-size: 14px; }
+  .compact, .compact-tableau { --card-w: 58px; --card-h: 82px; }
+  .compact-tableau .corner { font-size: 13px; }
+  .compact-tableau .corner small { font-size: 11px; }
+  .compact-tableau .playing-card > strong { font-size: 30px; }
+}
 
 .status-bar {
   min-height: 42px; position: sticky; bottom: 0; display: flex; align-items: center;

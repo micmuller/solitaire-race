@@ -228,6 +228,9 @@ function renderTableau(container, tableau, owner, compact = false) {
     pile.className = 'tableau-pile card-slot';
     pile.dataset.dropZone = 'tableau';
     pile.dataset.dropIndex = String(index);
+    const stackStep = tableauStackStep(cards.length, compact);
+    pile.style.setProperty('--stack-step', `${stackStep}px`);
+    pile.style.setProperty('--stack-span', `${Math.max(0, cards.length - 1) * stackStep}px`);
     if (selection && owner === client.clientId && canSendActions()) pile.classList.add('targetable');
     pile.addEventListener('click', () => {
       if (!selection || owner !== client.clientId || interactionLocked || !canSendActions()) return;
@@ -247,6 +250,17 @@ function renderTableau(container, tableau, owner, compact = false) {
   });
 }
 
+function tableauStackStep(cardCount, compact) {
+  const landscape = window.innerWidth > window.innerHeight;
+  const normalStep = landscape ? (compact ? 11 : 21) : (compact ? 13 : 24);
+  if (cardCount <= 1) return normalStep;
+  const maximumSpan = landscape
+    ? window.innerHeight * (compact ? 0.12 : 0.22)
+    : window.innerHeight * (compact ? 0.16 : 0.28);
+  const minimumStep = compact ? 7 : 10;
+  return Math.max(minimumStep, Math.min(normalStep, maximumSpan / (cardCount - 1)));
+}
+
 function render(current, { animate = false } = {}) {
   const previousRects = animate ? captureCardRects() : null;
   const { state, rev, stateHash } = current;
@@ -261,6 +275,8 @@ function render(current, { animate = false } = {}) {
   $('#state-hash').textContent = `hash ${stateHash.slice(0, 12)}`;
   $('#local-id').textContent = localId.toUpperCase();
   $('#opponent-id').textContent = opponentId.toUpperCase();
+  $('#local-score').textContent = String(local.score);
+  $('#opponent-score').textContent = String(opponent.score);
   $('#local-stock').replaceChildren();
   $('#local-stock').classList.remove('empty');
   if (local.stock.length) $('#local-stock').append(cardElement(local.stock.at(-1)));
@@ -728,6 +744,15 @@ document.addEventListener('keydown', (event) => {
     setVersionMenuOpen($('#version-menu'), $('#version-badge'), false);
     setAppMenuOpen(false);
   }
+});
+
+let resizeFrame = null;
+window.addEventListener('resize', () => {
+  if (!client?.current || resizeFrame !== null) return;
+  resizeFrame = window.requestAnimationFrame(() => {
+    resizeFrame = null;
+    render(client.current);
+  });
 });
 
 const launch = readLaunchParams(window.location.search);

@@ -35,7 +35,7 @@ function controlledMatch(configure) {
   const state = structuredClone(original);
 
   for (const playerId of ['p1', 'p2']) {
-    state.players[playerId] = { stock: [], waste: [], tableau: Array.from({ length: 7 }, () => []) };
+    state.players[playerId] = { stock: [], waste: [], tableau: Array.from({ length: 7 }, () => []), score: 0 };
   }
   state.foundations = state.foundations.map((foundation) => ({ suit: foundation.suit, cards: [] }));
 
@@ -48,6 +48,7 @@ function controlledMatch(configure) {
   }
 
   configure(state, card);
+  state.players.p1.score = state.foundations.reduce((total, foundation) => total + foundation.cards.length, 0);
   state.players.p2.stock.push(
     ...[...catalog.values()]
       .filter((candidate) => !used.has(candidate.cardId))
@@ -59,10 +60,10 @@ function controlledMatch(configure) {
 }
 
 test('version axes are exposed independently', () => {
-  assert.equal(APP_VERSION, '1.1.0-alpha.3');
-  assert.equal(PROTOCOL_VERSION, '2.2.0');
+  assert.equal(APP_VERSION, '1.1.0-alpha.4');
+  assert.equal(PROTOCOL_VERSION, '2.3.0');
   assert.equal(RULES_VERSION, '1.0.0');
-  assert.equal(SCHEMA_VERSION, '1.1.0');
+  assert.equal(SCHEMA_VERSION, '1.2.0');
 });
 
 test('draw is atomic, turns the stock top face-up and increments revision', () => {
@@ -199,6 +200,8 @@ test('foundationMove ignores the client lane hint and resolves deterministically
   assert.equal(result.result, 'ack');
   assert.equal(result.resolvedFoundationIndex, 0);
   assert.equal(result.state.foundations[0].cards[0].cardId, 'd0:C:01');
+  assert.equal(result.state.players.p1.score, 1);
+  assert.equal(result.state.players.p2.score, 0);
 });
 
 test('foundationMove atomically reveals the newly exposed source card', () => {
@@ -226,6 +229,7 @@ test('foundationMove builds the resolved suit lane in ascending order', () => {
   assert.equal(result.result, 'ack');
   assert.equal(result.resolvedFoundationIndex, 0);
   assert.deepEqual(result.state.foundations[0].cards.map((card) => card.rank), [1, 2]);
+  assert.equal(result.state.players.p1.score, 2);
 });
 
 test('illegal foundation rank rejects without moving the card', () => {

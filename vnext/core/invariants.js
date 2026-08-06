@@ -128,6 +128,10 @@ function checkInvariants(state) {
       continue;
     }
 
+    if (!Number.isSafeInteger(player.score) || player.score < 0 || player.score > 52) {
+      violations.push({ code: 'INVALID_PLAYER_SCORE', path: `${path}.score`, message: 'Player score must be an integer from 0 to 52' });
+    }
+
     validateStack(player.stock, `${path}.stock`, violations, seen);
     if (Array.isArray(player.stock) && player.stock.some((card) => card && card.faceDown !== true)) {
       violations.push({ code: 'INVALID_STOCK_VISIBILITY', path: `${path}.stock`, message: 'Stock cards must be face-down' });
@@ -166,6 +170,17 @@ function checkInvariants(state) {
 
   if (seen.size !== CARD_COUNT) {
     violations.push({ code: 'CARD_CONSERVATION', path: '$', message: `Expected ${CARD_COUNT} unique cards, found ${seen.size}` });
+  }
+
+  const foundationCardCount = Array.isArray(state.foundations)
+    ? state.foundations.reduce((total, foundation) => total + (Array.isArray(foundation?.cards) ? foundation.cards.length : 0), 0)
+    : 0;
+  const totalScore = PLAYER_IDS.reduce((total, playerId) => {
+    const score = state.players?.[playerId]?.score;
+    return total + (Number.isSafeInteger(score) ? score : 0);
+  }, 0);
+  if (totalScore !== foundationCardCount) {
+    violations.push({ code: 'SCORE_MISMATCH', path: '$.players', message: 'Combined player score must equal foundation card count' });
   }
 
   return { ok: violations.length === 0, violations };

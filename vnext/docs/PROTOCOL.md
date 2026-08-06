@@ -1,6 +1,6 @@
 ---
 Document: PROTOCOL.md
-Version: 2.2.0
+Version: 2.3.0
 Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
 Last-Updated: 2026-08-05
@@ -14,7 +14,7 @@ Last-Updated: 2026-08-05
 
 ## Protocol Versioning
 - SemVer: `MAJOR.MINOR.PATCH`.
-- Current vNext protocol version: `2.2.0`.
+- Current vNext protocol version: `2.3.0`.
 - Legacy v1 messages are incompatible and MUST NOT enter the vNext core.
 - Additive changes preferred (MINOR/PATCH).
 - Breaking changes require ADR approval and MAJOR bump.
@@ -161,6 +161,9 @@ State includes match lifecycle fields:
 - `winner`: `p1` | `p2` | null
 - `endedReason`: `resign` | null
 - `endedBy`: `p1` | `p2` | null
+- `players.p1.score`, `players.p2.score`: integer `0..52`; increments only
+  when that actor's `foundationMove` is accepted
+- Combined player score MUST equal the total number of foundation cards.
 
 ## JSON-Schema Examples (Minimal)
 Example 1: Full client-to-server message
@@ -170,7 +173,7 @@ Example 1: Full client-to-server message
   "clientId": "p1",
   "seq": 42,
   "baseRev": 310,
-  "protocolVersion": "2.2.0",
+  "protocolVersion": "2.3.0",
   "kind": "draw",
   "payload": {
     "source": {"zone": "stock", "owner": "p1"},
@@ -209,6 +212,7 @@ Example 3: Server snapshot message (stub)
 - ADR-010 binds the first executable authoritative server shell.
 - ADR-011 binds the thin client state machine used by Web and iOS.
 - ADR-013 permits stale-intent revalidation for race concurrency.
+- ADR-014 defines authoritative per-player foundation scoring.
 
 ## Open Questions
 - (leer – bewusst offen)

@@ -202,6 +202,7 @@ function applyFoundationMove(state, action) {
 
   source.pop();
   state.foundations[resolvedFoundationIndex].cards.push({ ...card, faceDown: false });
+  player.score += 1;
   revealTableauTop(player, payload.source);
   return { resolvedFoundationIndex };
 }

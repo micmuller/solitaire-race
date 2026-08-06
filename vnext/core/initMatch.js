@@ -67,7 +67,10 @@ function initMatch(seed, mode) {
     winner: null,
     endedReason: null,
     endedBy: null,
-    players: Object.fromEntries(PLAYER_IDS.map((playerId) => [playerId, dealKlondike(distributed[playerId])])),
+    players: Object.fromEntries(PLAYER_IDS.map((playerId) => [playerId, {
+      ...dealKlondike(distributed[playerId]),
+      score: 0
+    }])),
     foundations: FOUNDATION_SUITS.map((suit) => ({ suit, cards: [] }))
   };
 

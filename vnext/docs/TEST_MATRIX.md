@@ -37,12 +37,14 @@ Last-Updated: 2026-07-31
 - Header/configuration mismatch rejection before match initialization.
 - Protocol recovery coverage for duplicate sequence, sequence gaps and future-revision snapshots.
 - Artifact regeneration equality against the checked-in JSON files.
-- Two Protocol-2.2.0 reference clients converge after both actors submit
+- Two Protocol-2.3.0 reference clients converge after both actors submit
   accepted actions in one shared match.
 - Client reject keeps state/sequence unchanged and allows corrected retry.
 - Stale same-revision race actions are rebased onto current authoritative state.
 - Independent simultaneous player actions are both accepted; genuine conflicts
   are rejected by normal Core validation without consuming the sequence.
+- Player scores equal the number of cards each actor moved to global
+  foundations; combined score equals total foundation cards.
 
 ## Acceptance Criteria
 - Hash-Match für gleiche Seeds und Logs.

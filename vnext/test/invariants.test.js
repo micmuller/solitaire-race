@@ -55,3 +55,11 @@ test('invariants validate active and finished match result fields', () => {
   finished.endedBy = 'p2';
   assert.deepEqual(checkInvariants(finished), { ok: true, violations: [] });
 });
+
+test('invariants reject player scores that drift from foundations', () => {
+  const state = structuredClone(initMatch('SCORE-DRIFT', 'shared').state);
+  state.players.p1.score = 1;
+  const report = checkInvariants(state);
+  assert.equal(report.ok, false);
+  assert.ok(report.violations.some((violation) => violation.code === 'SCORE_MISMATCH'));
+});
