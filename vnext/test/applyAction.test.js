@@ -62,8 +62,8 @@ function controlledMatch(configure) {
 }
 
 test('version axes are exposed independently', () => {
-  assert.equal(APP_VERSION, '1.1.0-alpha.6');
-  assert.equal(PROTOCOL_VERSION, '2.5.0');
+  assert.equal(APP_VERSION, '1.1.0-alpha.7');
+  assert.equal(PROTOCOL_VERSION, '2.5.1');
   assert.equal(RULES_VERSION, '1.0.0');
   assert.equal(SCHEMA_VERSION, '1.4.0');
 });
@@ -268,12 +268,13 @@ test('resign finishes the match and rejects later actions', () => {
   assert.equal(rejected.stateHash, result.stateHash);
 });
 
-test('final foundationMove completes the match with the score leader as winner', () => {
+test('final player foundationMove completes the Race match with the finisher as winner', () => {
   const current = controlledMatch((state, card) => {
     for (const [foundationIndex, foundation] of state.foundations.entries()) {
       const copy = foundationIndex % 2;
+      if (copy !== 0) continue;
       for (let rank = 1; rank <= 13; rank += 1) {
-        if (copy === 0 && foundation.suit === 'H' && rank === 13) continue;
+        if (foundation.suit === 'H' && rank === 13) continue;
         foundation.cards.push(card(`d${copy}:${foundation.suit}:${String(rank).padStart(2, '0')}`, false));
       }
     }
@@ -288,7 +289,7 @@ test('final foundationMove completes the match with the score leader as winner',
   assert.equal(result.state.winner, 'p1');
   assert.equal(result.state.endedReason, 'completed');
   assert.equal(result.state.endedBy, 'p1');
-  assert.equal(result.state.players.p1.score, 728);
+  assert.equal(result.state.players.p1.score, 364);
 
   const rejected = applyAction(result, 'p1', action('draw', {
     source: zone('stock', 'p1'),

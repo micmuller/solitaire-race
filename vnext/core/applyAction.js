@@ -187,16 +187,16 @@ function cardPointValue(card) {
   return card.rank;
 }
 
-function foundationCardCount(state) {
-  return state.foundations.reduce((total, foundation) => total + foundation.cards.length, 0);
+function playerRemainingCardCount(player) {
+  return player.stock.length
+    + player.waste.length
+    + player.tableau.reduce((total, stack) => total + stack.length, 0);
 }
 
 function finishCompletedMatch(state, playerId) {
-  if (foundationCardCount(state) < 104) return;
-  const p1Score = state.players.p1.score;
-  const p2Score = state.players.p2.score;
+  if (playerRemainingCardCount(state.players[playerId]) > 0) return;
   state.status = 'finished';
-  state.winner = p1Score > p2Score ? 'p1' : p2Score > p1Score ? 'p2' : playerId;
+  state.winner = playerId;
   state.endedReason = 'completed';
   state.endedBy = playerId;
 }

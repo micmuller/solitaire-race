@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = '2.5.0';
+export const PROTOCOL_VERSION = '2.5.1';
 
 export class ProtocolClient {
   constructor({ baseUrl, matchId, clientId }) {

@@ -179,7 +179,7 @@ function gameOverMessage(state) {
     return `${ROLE_LABELS[state.endedBy] || state.endedBy} hat aufgegeben. Sieger: ${ROLE_LABELS[state.winner] || state.winner}.`;
   }
   if (state.endedReason === 'completed') {
-    return `Alle Karten abgelegt. Sieger: ${ROLE_LABELS[state.winner] || state.winner}.`;
+    return `${ROLE_LABELS[state.winner] || state.winner} hat alle eigenen Karten abgelegt.`;
   }
   return `Match beendet. Sieger: ${ROLE_LABELS[state.winner] || state.winner || '-'}.`;
 }

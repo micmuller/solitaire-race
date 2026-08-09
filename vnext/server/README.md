@@ -47,7 +47,7 @@ HTTP endpoints:
 
 WebSocket connections use
 `/vnext?matchId=<id>&clientId=p1|p2|observer`. The server sends an initial
-snapshot and accepts protocol-2.5.0 action envelopes from `p1` and `p2`.
+snapshot and accepts protocol-2.5.1 action envelopes from `p1` and `p2`.
 Observer sockets receive authoritative snapshots/acks but are read-only.
 Accepted actions are broadcast as authoritative acks containing the resulting
 state, revision and hash.

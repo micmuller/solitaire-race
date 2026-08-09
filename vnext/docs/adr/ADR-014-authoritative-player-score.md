@@ -25,7 +25,8 @@ deck-copy IDs.
 This keeps the same score field but changes its wire semantics, bumping schema
 to `1.3.0`, protocol to `2.4.0`, server/app to `1.1.0-alpha.5`, and Web client
 to `0.1.0-alpha.5`. Alpha.6 keeps the same rank-point score semantics and adds
-completed-match lifecycle handling in Protocol `2.5.0` / Schema `1.4.0`.
+completed-match lifecycle handling in Protocol `2.5.0` / Schema `1.4.0`;
+Race completion semantics were corrected in Protocol `2.5.1`.
 
 ## Consequences
 

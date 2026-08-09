@@ -66,9 +66,14 @@ function foundationPointTotal(foundations) {
   }, 0);
 }
 
-function foundationCardTotal(foundations) {
-  if (!Array.isArray(foundations)) return 0;
-  return foundations.reduce((total, foundation) => total + (Array.isArray(foundation?.cards) ? foundation.cards.length : 0), 0);
+function playerZoneCardTotal(player) {
+  if (!player || typeof player !== 'object') return 0;
+  const tableauTotal = Array.isArray(player.tableau)
+    ? player.tableau.reduce((total, stack) => total + (Array.isArray(stack) ? stack.length : 0), 0)
+    : 0;
+  return (Array.isArray(player.stock) ? player.stock.length : 0)
+    + (Array.isArray(player.waste) ? player.waste.length : 0)
+    + tableauTotal;
 }
 
 function validateTableauStack(stack, path, violations, seen) {
@@ -133,8 +138,11 @@ function checkInvariants(state) {
   if (state.status === 'finished' && (!PLAYER_IDS.includes(state.winner) || state.endedReason === null || state.endedBy === null)) {
     violations.push({ code: 'INVALID_FINISHED_MATCH_RESULT', path: '$', message: 'Finished matches require winner, endedReason and endedBy' });
   }
-  if (state.endedReason === 'completed' && foundationCardTotal(state.foundations) !== CARD_COUNT) {
-    violations.push({ code: 'INVALID_COMPLETED_MATCH_RESULT', path: '$.endedReason', message: 'Completed matches require all cards on foundations' });
+  if (
+    state.endedReason === 'completed'
+    && (!PLAYER_IDS.includes(state.winner) || playerZoneCardTotal(state.players?.[state.winner]) !== 0)
+  ) {
+    violations.push({ code: 'INVALID_COMPLETED_MATCH_RESULT', path: '$.endedReason', message: 'Completed Race matches require the winner to have no remaining player-zone cards' });
   }
 
   for (const playerId of PLAYER_IDS) {
