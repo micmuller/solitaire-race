@@ -1,6 +1,6 @@
 ---
 Document: PROTOCOL.md
-Version: 2.3.0
+Version: 2.5.0
 Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
 Last-Updated: 2026-08-05
@@ -14,7 +14,7 @@ Last-Updated: 2026-08-05
 
 ## Protocol Versioning
 - SemVer: `MAJOR.MINOR.PATCH`.
-- Current vNext protocol version: `2.3.0`.
+- Current vNext protocol version: `2.5.0`.
 - Legacy v1 messages are incompatible and MUST NOT enter the vNext core.
 - Additive changes preferred (MINOR/PATCH).
 - Breaking changes require ADR approval and MAJOR bump.
@@ -89,6 +89,10 @@ Payloads are minimal and MUST be validated by server.
   - `payload`: empty object
   - Server sets `state.status` to `finished`, `endedReason` to `resign`,
     `endedBy` to the actor and `winner` to the opponent.
+  - A final accepted `foundationMove` that brings the global foundation card
+    count to 104 sets `state.status` to `finished`, `endedReason` to
+    `completed`, `endedBy` to the final actor and `winner` to the higher
+    score; ties are awarded to the final actor.
 
 ## ZoneRef Concept
 A ZoneRef identifies a logical zone and MUST be structured (no parsing):
@@ -159,11 +163,11 @@ foundation updates collision-safe.
 State includes match lifecycle fields:
 - `status`: `active` | `finished`
 - `winner`: `p1` | `p2` | null
-- `endedReason`: `resign` | null
+- `endedReason`: `resign` | `completed` | null
 - `endedBy`: `p1` | `p2` | null
-- `players.p1.score`, `players.p2.score`: integer `0..52`; increments only
-  when that actor's `foundationMove` is accepted
-- Combined player score MUST equal the total number of foundation cards.
+- `players.p1.score`, `players.p2.score`: integer `0..728`; increments by
+  the moved card's rank value when that actor's `foundationMove` is accepted
+- Combined player score MUST equal the total rank value of foundation cards.
 
 ## JSON-Schema Examples (Minimal)
 Example 1: Full client-to-server message
@@ -173,7 +177,7 @@ Example 1: Full client-to-server message
   "clientId": "p1",
   "seq": 42,
   "baseRev": 310,
-  "protocolVersion": "2.3.0",
+  "protocolVersion": "2.5.0",
   "kind": "draw",
   "payload": {
     "source": {"zone": "stock", "owner": "p1"},

@@ -126,6 +126,21 @@
     </form>
   </dialog>
 
+  <dialog id="game-over-dialog" class="game-over-dialog">
+    <form method="dialog">
+      <strong id="game-over-title">Spiel beendet</strong>
+      <p id="game-over-summary">Endstand</p>
+      <div class="final-score">
+        <span><span id="game-over-p1-label">P1</span><strong id="game-over-p1-score">0</strong></span>
+        <span><span id="game-over-p2-label">P2</span><strong id="game-over-p2-score">0</strong></span>
+      </div>
+      <div class="dialog-actions">
+        <button id="game-over-new" type="button" class="primary">Neues Spiel</button>
+        <button id="game-over-close" type="button">Schliessen</button>
+      </div>
+    </form>
+  </dialog>
+
   <script type="module" src="./app.mjs"></script>
 </body>
 </html>

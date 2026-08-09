@@ -49,6 +49,22 @@ export function foundationIntent(selection, index) {
   };
 }
 
+export function legalFoundationIndexForCard(foundations, card) {
+  if (!Array.isArray(foundations) || !card || card.faceDown) return null;
+  for (let index = 0; index < foundations.length; index += 1) {
+    const foundation = foundations[index];
+    if (!foundation || foundation.suit !== card.suit || !Array.isArray(foundation.cards)) continue;
+    const topRank = foundation.cards.length === 0 ? 0 : foundation.cards.at(-1).rank;
+    if (card.rank === topRank + 1) return index;
+  }
+  return null;
+}
+
+export function autoFoundationIntent(selection, foundations, card) {
+  const index = legalFoundationIndexForCard(foundations, card);
+  return index === null ? null : foundationIntent(selection, index);
+}
+
 export function dropIntent(selection, owner, target) {
   if (!target || typeof target !== 'object') return null;
   if (target.zone === 'tableau') return tableauIntent(selection, owner, target.index);

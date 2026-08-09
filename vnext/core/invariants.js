@@ -14,6 +14,7 @@ const { createCardCatalog } = require('./cards');
 
 const EXPECTED_CARDS = new Map(createCardCatalog().map((card) => [card.cardId, card]));
 const RED_SUITS = new Set(['D', 'H']);
+const MAX_FOUNDATION_SCORE = FOUNDATION_SUITS.length * ((13 * 14) / 2);
 
 function oppositeColor(first, second) {
   return RED_SUITS.has(first.suit) !== RED_SUITS.has(second.suit);
@@ -55,6 +56,19 @@ function validateStack(stack, path, violations, seen) {
     return;
   }
   stack.forEach((card, index) => validateCard(card, `${path}[${index}]`, violations, seen));
+}
+
+function foundationPointTotal(foundations) {
+  if (!Array.isArray(foundations)) return 0;
+  return foundations.reduce((total, foundation) => {
+    if (!Array.isArray(foundation?.cards)) return total;
+    return total + foundation.cards.reduce((sum, card) => sum + (Number.isInteger(card?.rank) ? card.rank : 0), 0);
+  }, 0);
+}
+
+function foundationCardTotal(foundations) {
+  if (!Array.isArray(foundations)) return 0;
+  return foundations.reduce((total, foundation) => total + (Array.isArray(foundation?.cards) ? foundation.cards.length : 0), 0);
 }
 
 function validateTableauStack(stack, path, violations, seen) {
@@ -107,8 +121,8 @@ function checkInvariants(state) {
   if (state.winner !== null && !PLAYER_IDS.includes(state.winner)) {
     violations.push({ code: 'INVALID_MATCH_WINNER', path: '$.winner', message: 'Winner must be p1, p2 or null' });
   }
-  if (state.endedReason !== null && state.endedReason !== 'resign') {
-    violations.push({ code: 'INVALID_ENDED_REASON', path: '$.endedReason', message: 'Ended reason must be resign or null' });
+  if (state.endedReason !== null && !['resign', 'completed'].includes(state.endedReason)) {
+    violations.push({ code: 'INVALID_ENDED_REASON', path: '$.endedReason', message: 'Ended reason must be resign, completed or null' });
   }
   if (state.endedBy !== null && !PLAYER_IDS.includes(state.endedBy)) {
     violations.push({ code: 'INVALID_ENDED_BY', path: '$.endedBy', message: 'EndedBy must be p1, p2 or null' });
@@ -119,6 +133,9 @@ function checkInvariants(state) {
   if (state.status === 'finished' && (!PLAYER_IDS.includes(state.winner) || state.endedReason === null || state.endedBy === null)) {
     violations.push({ code: 'INVALID_FINISHED_MATCH_RESULT', path: '$', message: 'Finished matches require winner, endedReason and endedBy' });
   }
+  if (state.endedReason === 'completed' && foundationCardTotal(state.foundations) !== CARD_COUNT) {
+    violations.push({ code: 'INVALID_COMPLETED_MATCH_RESULT', path: '$.endedReason', message: 'Completed matches require all cards on foundations' });
+  }
 
   for (const playerId of PLAYER_IDS) {
     const player = state.players && state.players[playerId];
@@ -128,8 +145,8 @@ function checkInvariants(state) {
       continue;
     }
 
-    if (!Number.isSafeInteger(player.score) || player.score < 0 || player.score > 52) {
-      violations.push({ code: 'INVALID_PLAYER_SCORE', path: `${path}.score`, message: 'Player score must be an integer from 0 to 52' });
+    if (!Number.isSafeInteger(player.score) || player.score < 0 || player.score > MAX_FOUNDATION_SCORE) {
+      violations.push({ code: 'INVALID_PLAYER_SCORE', path: `${path}.score`, message: `Player score must be an integer from 0 to ${MAX_FOUNDATION_SCORE}` });
     }
 
     validateStack(player.stock, `${path}.stock`, violations, seen);
@@ -172,15 +189,13 @@ function checkInvariants(state) {
     violations.push({ code: 'CARD_CONSERVATION', path: '$', message: `Expected ${CARD_COUNT} unique cards, found ${seen.size}` });
   }
 
-  const foundationCardCount = Array.isArray(state.foundations)
-    ? state.foundations.reduce((total, foundation) => total + (Array.isArray(foundation?.cards) ? foundation.cards.length : 0), 0)
-    : 0;
+  const foundationScore = foundationPointTotal(state.foundations);
   const totalScore = PLAYER_IDS.reduce((total, playerId) => {
     const score = state.players?.[playerId]?.score;
     return total + (Number.isSafeInteger(score) ? score : 0);
   }, 0);
-  if (totalScore !== foundationCardCount) {
-    violations.push({ code: 'SCORE_MISMATCH', path: '$.players', message: 'Combined player score must equal foundation card count' });
+  if (totalScore !== foundationScore) {
+    violations.push({ code: 'SCORE_MISMATCH', path: '$.players', message: 'Combined player score must equal foundation point total' });
   }
 
   return { ok: violations.length === 0, violations };

@@ -183,6 +183,24 @@ function resolveFoundationIndex(foundations, card) {
   return legal.length === 0 ? null : legal[0].index;
 }
 
+function cardPointValue(card) {
+  return card.rank;
+}
+
+function foundationCardCount(state) {
+  return state.foundations.reduce((total, foundation) => total + foundation.cards.length, 0);
+}
+
+function finishCompletedMatch(state, playerId) {
+  if (foundationCardCount(state) < 104) return;
+  const p1Score = state.players.p1.score;
+  const p2Score = state.players.p2.score;
+  state.status = 'finished';
+  state.winner = p1Score > p2Score ? 'p1' : p2Score > p1Score ? 'p2' : playerId;
+  state.endedReason = 'completed';
+  state.endedBy = playerId;
+}
+
 function applyFoundationMove(state, action) {
   const { playerId, payload } = action;
   if (ownershipViolation(payload.source, playerId) || ownershipViolation(payload.target, 'global')) return { code: 'OWNERSHIP_VIOLATION' };
@@ -202,8 +220,9 @@ function applyFoundationMove(state, action) {
 
   source.pop();
   state.foundations[resolvedFoundationIndex].cards.push({ ...card, faceDown: false });
-  player.score += 1;
+  player.score += cardPointValue(card);
   revealTableauTop(player, payload.source);
+  finishCompletedMatch(state, playerId);
   return { resolvedFoundationIndex };
 }
 

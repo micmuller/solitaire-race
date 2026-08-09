@@ -1,6 +1,6 @@
 import { ProtocolClient, createMatch, restartMatch, startBot, stopBots } from './protocol-client.mjs';
 import { cueForIntentResult } from './effects.mjs';
-import { dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
+import { autoFoundationIntent, dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
 import { inviteUrl, matchUrl, readLaunchParams } from './lobby.mjs';
 import { generateRandomSeed } from './seed.mjs';
 import { WEB_CLIENT_VERSION, labelsFromConfig, setVersionMenuOpen, toggleVersionMenu } from './version.mjs';
@@ -22,6 +22,8 @@ let publicBaseUrl = baseUrl;
 let serverVersion = '-';
 let serverProtocolVersion = '-';
 let activeBotMatchId = null;
+let currentMatchKind = 'human';
+let celebratedMatchKey = null;
 
 const configReady = loadConfig();
 setRandomSeed();
@@ -122,7 +124,7 @@ function updateRestartControl() {
 }
 
 function updateBotControls() {
-  $('#stop-bot-match').disabled = !activeBotMatchId || isP2User();
+  $('#stop-bot-match').disabled = (!activeBotMatchId && client?.clientId !== 'p1') || isP2User();
 }
 
 function updateActionControls() {
@@ -140,14 +142,14 @@ function updateActionControls() {
 }
 
 async function stopActiveBot({ quiet = false } = {}) {
-  if (!activeBotMatchId) return false;
-  const matchId = activeBotMatchId;
-  activeBotMatchId = null;
+  const matchId = activeBotMatchId || (client?.clientId === 'p1' ? client.matchId : null);
+  if (!matchId) return false;
+  if (activeBotMatchId === matchId) activeBotMatchId = null;
   updateBotControls();
   try {
-    await stopBots(baseUrl, matchId);
-    if (!quiet) setMessage('Bot gestoppt.', 'ok');
-    return true;
+    const stopped = await stopBots(baseUrl, matchId);
+    if (!quiet) setMessage(stopped ? 'Bot gestoppt.' : 'Kein Bot aktiv.', stopped ? 'ok' : 'warn');
+    return stopped;
   } catch (error) {
     if (!quiet) setMessage(error.message, 'error');
     return false;
@@ -176,7 +178,14 @@ function gameOverMessage(state) {
   if (state.endedReason === 'resign') {
     return `${ROLE_LABELS[state.endedBy] || state.endedBy} hat aufgegeben. Sieger: ${ROLE_LABELS[state.winner] || state.winner}.`;
   }
+  if (state.endedReason === 'completed') {
+    return `Alle Karten abgelegt. Sieger: ${ROLE_LABELS[state.winner] || state.winner}.`;
+  }
   return `Match beendet. Sieger: ${ROLE_LABELS[state.winner] || state.winner || '-'}.`;
+}
+
+function scoreLine(state) {
+  return `P1 ${state.players.p1.score} : ${state.players.p2.score} P2`;
 }
 
 function captureCardRects() {
@@ -201,16 +210,36 @@ function cardElement(card, compact = false) {
   return element;
 }
 
-function renderStack(container, cards, { compact = false, tableau = false, onCardClick, onCardPointerDown } = {}) {
+function renderStack(container, cards, { compact = false, tableau = false, onCardClick, onCardDoubleClick, onCardPointerDown } = {}) {
   container.replaceChildren();
   cards.forEach((card, index) => {
     const element = cardElement(card, compact);
     if (tableau) element.style.setProperty('--stack-index', index);
+    let clickTimer = null;
     if (onCardClick) {
       element.classList.add('interactive');
       element.addEventListener('click', (event) => {
         event.stopPropagation();
+        if (onCardDoubleClick) {
+          window.clearTimeout(clickTimer);
+          if (event.detail > 1) return;
+          clickTimer = window.setTimeout(() => {
+            clickTimer = null;
+            onCardClick(card, index);
+          }, 260);
+          return;
+        }
         onCardClick(card, index);
+      });
+    }
+    if (onCardDoubleClick) {
+      element.classList.add('interactive');
+      element.addEventListener('dblclick', (event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        window.clearTimeout(clickTimer);
+        clickTimer = null;
+        onCardDoubleClick(card, index);
       });
     }
     if (onCardPointerDown) {
@@ -241,6 +270,9 @@ function renderTableau(container, tableau, owner, compact = false) {
       tableau: true,
       onCardClick: owner === client.clientId
         ? (card, cardIndex) => handleTableauCard(cards, index, card, cardIndex)
+        : null,
+      onCardDoubleClick: owner === client.clientId
+        ? (card, cardIndex) => autoMoveTableauCardToFoundation(cards, index, card, cardIndex)
         : null,
       onCardPointerDown: owner === client.clientId
         ? (event, card, cardIndex) => startDrag(event, { zone: 'tableau', index, cardIndex, cards }, card)
@@ -285,6 +317,7 @@ function render(current, { animate = false } = {}) {
     onCardClick: () => {
       if (!interactionLocked && canSendActions()) setSelection(wasteSelection(localId, local.waste));
     },
+    onCardDoubleClick: (card) => autoMoveWasteToFoundation(localId, local.waste, card),
     onCardPointerDown: canSendActions()
       ? (event, card) => startDrag(event, { zone: 'waste', cards: local.waste }, card)
       : null
@@ -314,19 +347,68 @@ function render(current, { animate = false } = {}) {
   });
   $('#foundation-count').textContent = `${foundationCount} / 104`;
   const ended = gameOverMessage(state);
-  if (ended) setMessage(ended, 'warn');
+  if (ended) {
+    setMessage(`${ended} ${scoreLine(state)}`, 'warn');
+    showGameOverDialog(current);
+  }
   if (previousRects) animateAuthoritativeChanges(previousRects);
+}
+
+function showGameOverDialog(current) {
+  const { state, rev, stateHash } = current;
+  if (state.status !== 'finished' || state.endedReason !== 'completed') return;
+  const key = `${client?.matchId || state.seed}:${rev}:${stateHash}`;
+  if (celebratedMatchKey === key) return;
+  celebratedMatchKey = key;
+  launchCelebration();
+  $('#game-over-title').textContent = `${ROLE_LABELS[state.winner] || state.winner} gewinnt`;
+  $('#game-over-summary').textContent = `Alle Karten abgelegt. Endstand ${scoreLine(state)}. Neues Spiel?`;
+  $('#game-over-p1-score').textContent = String(state.players.p1.score);
+  $('#game-over-p2-score').textContent = String(state.players.p2.score);
+  const canStartNew = client?.clientId === 'p1' || client?.clientId === 'observer';
+  $('#game-over-new').disabled = !canStartNew;
+  $('#game-over-new').title = canStartNew ? 'Neues Spiel starten' : 'P1 startet den nächsten Match';
+  if (!$('#game-over-dialog').open) $('#game-over-dialog').showModal();
+}
+
+function launchCelebration() {
+  const layer = document.createElement('div');
+  layer.className = 'celebration-layer';
+  const colors = ['#f6d77d', '#72d5a0', '#e06b63', '#7fb4ff', '#f4f2ec'];
+  for (let index = 0; index < 42; index += 1) {
+    const piece = document.createElement('span');
+    piece.style.setProperty('--x', `${Math.random() * 100}vw`);
+    piece.style.setProperty('--dx', `${Math.random() * 80 - 40}px`);
+    piece.style.setProperty('--delay', `${Math.random() * 260}ms`);
+    piece.style.setProperty('--color', colors[index % colors.length]);
+    piece.style.setProperty('--rotate', `${Math.random() * 540 - 270}deg`);
+    layer.append(piece);
+  }
+  document.body.append(layer);
+  window.setTimeout(() => layer.remove(), 1800);
+}
+
+async function startNextGame() {
+  $('#game-over-dialog').close();
+  if (currentMatchKind === 'bot-versus') {
+    await startBotVersusMatch({ randomSeed: true });
+    return;
+  }
+  await startHostMatch({ randomSeed: true, withBot: currentMatchKind === 'human-bot' });
 }
 
 function animateAuthoritativeChanges(previousRects) {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const animated = [];
+  const glowingFoundations = new Set();
   document.querySelectorAll('.playing-card[data-card-id]').forEach((element) => {
     const previous = previousRects.get(element.dataset.cardId);
     const current = element.getBoundingClientRect();
+    const foundationSlot = element.closest('.foundation-slot');
     if (!previous) {
       element.classList.add('card-arrived');
       animated.push(element);
+      if (foundationSlot) glowingFoundations.add(foundationSlot);
       return;
     }
     const dx = previous.left - current.left;
@@ -341,10 +423,15 @@ function animateAuthoritativeChanges(previousRects) {
     ], { duration: 180, easing: 'cubic-bezier(.2, .8, .2, 1)' });
     element.classList.add('card-arrived');
     animated.push(element);
+    if (foundationSlot) glowingFoundations.add(foundationSlot);
   });
+  glowingFoundations.forEach((element) => element.classList.add('foundation-glow'));
   window.setTimeout(() => {
     animated.forEach((element) => element.classList.remove('card-arrived'));
   }, 260);
+  window.setTimeout(() => {
+    glowingFoundations.forEach((element) => element.classList.remove('foundation-glow'));
+  }, 720);
 }
 
 function playCue(cue) {
@@ -402,6 +489,24 @@ function handleTableauCard(cards, pileIndex, card, cardIndex) {
   setSelection(tableauSelection(client.clientId, pileIndex, cardIndex, cards));
 }
 
+function autoMoveWasteToFoundation(owner, cards, card) {
+  if (interactionLocked || !canSendActions()) return;
+  const nextSelection = wasteSelection(owner, cards);
+  autoMoveSelectionToFoundation(nextSelection, card);
+}
+
+function autoMoveTableauCardToFoundation(cards, pileIndex, card, cardIndex) {
+  if (interactionLocked || !canSendActions() || card.faceDown || cardIndex !== cards.length - 1) return;
+  const nextSelection = tableauSelection(client.clientId, pileIndex, cardIndex, cards);
+  autoMoveSelectionToFoundation(nextSelection, card);
+}
+
+function autoMoveSelectionToFoundation(nextSelection, card) {
+  const intent = autoFoundationIntent(nextSelection, client.current?.state?.foundations, card);
+  if (intent) sendIntent(intent.kind, intent.payload);
+  else setMessage('Keine passende Foundation fuer diese Karte.', 'warn');
+}
+
 function moveToTableau(index) {
   const intent = tableauIntent(selection, client.clientId, index);
   if (intent) sendIntent(intent.kind, intent.payload);
@@ -439,7 +544,7 @@ async function sendIntent(kind, payload) {
   } finally {
     interactionLocked = false;
     $('#pending').hidden = true;
-    if (client?.current) setSelection(selection);
+    if (client?.current) setSelection(selection, { rerender: false });
   }
 }
 
@@ -455,6 +560,7 @@ function startDrag(event, source, card) {
     y: event.clientY,
     selection: nextSelection,
     source,
+    card,
     label: cardLabel(card),
     active: false
   };
@@ -470,10 +576,20 @@ function activateDrag() {
   drag.active = true;
   suppressNextClick = true;
   document.body.classList.add('dragging-card');
-  setSelection(drag.selection);
+  setSelection(drag.selection, { rerender: false });
+  setDragTargetsActive(true);
   drag.ghost = document.createElement('div');
   drag.ghost.className = 'drag-ghost';
-  drag.ghost.textContent = drag.selection.count === 1 ? drag.label : `${drag.label} +${drag.selection.count - 1}`;
+  const ghostCard = cardElement(drag.card);
+  ghostCard.classList.remove('selected');
+  ghostCard.classList.add('drag-ghost-card');
+  drag.ghost.append(ghostCard);
+  if (drag.selection.count > 1) {
+    const count = document.createElement('span');
+    count.className = 'drag-ghost-count';
+    count.textContent = `+${drag.selection.count - 1}`;
+    drag.ghost.append(count);
+  }
   document.body.append(drag.ghost);
   moveGhost(drag.x, drag.y);
 }
@@ -500,6 +616,13 @@ function clearDrag() {
   drag = null;
   document.body.classList.remove('dragging-card');
   document.querySelectorAll('.drop-hover').forEach((element) => element.classList.remove('drop-hover'));
+  setDragTargetsActive(false);
+}
+
+function setDragTargetsActive(active) {
+  document.querySelectorAll('#local-tableau [data-drop-zone="tableau"], #foundations [data-drop-zone="foundation"]').forEach((element) => {
+    element.classList.toggle('targetable', active);
+  });
 }
 
 document.addEventListener('pointermove', (event) => {
@@ -537,6 +660,7 @@ async function connectToMatch() {
   if (!matchId) return setMessage('Match-ID fehlt.', 'error');
   client?.close();
   selection = null;
+  celebratedMatchKey = null;
   client = new ProtocolClient({ baseUrl, matchId, clientId });
   client.subscribe((event) => {
     if (event.type === 'state') render(event.current, { animate: event.source === 'ack' });
@@ -570,6 +694,7 @@ async function startHostMatch({ randomSeed = false, withBot = false } = {}) {
     const seed = $('#seed').value.trim() || generateRandomSeed();
     $('#seed').value = seed;
     const match = await createMatch(baseUrl, seed, $('#mode').value);
+    currentMatchKind = withBot ? 'human-bot' : 'human';
     $('#match-id').value = match.matchId;
     $('#client-id').value = 'p1';
     setRoute(match.matchId, 'p1');
@@ -599,6 +724,7 @@ async function startBotVersusMatch({ randomSeed = false } = {}) {
     const seed = $('#seed').value.trim() || generateRandomSeed();
     $('#seed').value = seed;
     const match = await createMatch(baseUrl, seed, $('#mode').value);
+    currentMatchKind = 'bot-versus';
     $('#match-id').value = match.matchId;
     $('#client-id').value = 'observer';
     setRoute(match.matchId, 'observer');
@@ -629,6 +755,7 @@ async function restartHostMatch({ randomSeed = false } = {}) {
     const seed = $('#seed').value.trim() || generateRandomSeed();
     $('#seed').value = seed;
     const response = await restartMatch(baseUrl, client.matchId, seed, $('#mode').value);
+    celebratedMatchKey = null;
     client.handle(response);
     setInvite(client.matchId, true);
     setMessage(`Match neu gestartet: ${response.reason}`, 'ok');
@@ -690,6 +817,8 @@ $('#restart-new-seed').addEventListener('click', () => {
   restartHostMatch({ randomSeed: true });
 });
 $('#restart-cancel').addEventListener('click', () => $('#restart-dialog').close());
+$('#game-over-new').addEventListener('click', () => startNextGame().catch((error) => setMessage(error.message, 'error')));
+$('#game-over-close').addEventListener('click', () => $('#game-over-dialog').close());
 
 $('#connect-match').addEventListener('click', () => connectToMatch().catch((error) => setMessage(error.message, 'error')));
 $('#version-badge').addEventListener('click', (event) => {

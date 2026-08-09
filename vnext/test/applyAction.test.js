@@ -48,7 +48,9 @@ function controlledMatch(configure) {
   }
 
   configure(state, card);
-  state.players.p1.score = state.foundations.reduce((total, foundation) => total + foundation.cards.length, 0);
+  state.players.p1.score = state.foundations.reduce((total, foundation) => {
+    return total + foundation.cards.reduce((sum, card) => sum + card.rank, 0);
+  }, 0);
   state.players.p2.stock.push(
     ...[...catalog.values()]
       .filter((candidate) => !used.has(candidate.cardId))
@@ -60,10 +62,10 @@ function controlledMatch(configure) {
 }
 
 test('version axes are exposed independently', () => {
-  assert.equal(APP_VERSION, '1.1.0-alpha.4');
-  assert.equal(PROTOCOL_VERSION, '2.3.0');
+  assert.equal(APP_VERSION, '1.1.0-alpha.6');
+  assert.equal(PROTOCOL_VERSION, '2.5.0');
   assert.equal(RULES_VERSION, '1.0.0');
-  assert.equal(SCHEMA_VERSION, '1.2.0');
+  assert.equal(SCHEMA_VERSION, '1.4.0');
 });
 
 test('draw is atomic, turns the stock top face-up and increments revision', () => {
@@ -229,7 +231,7 @@ test('foundationMove builds the resolved suit lane in ascending order', () => {
   assert.equal(result.result, 'ack');
   assert.equal(result.resolvedFoundationIndex, 0);
   assert.deepEqual(result.state.foundations[0].cards.map((card) => card.rank), [1, 2]);
-  assert.equal(result.state.players.p1.score, 2);
+  assert.equal(result.state.players.p1.score, 3);
 });
 
 test('illegal foundation rank rejects without moving the card', () => {
@@ -264,6 +266,36 @@ test('resign finishes the match and rejects later actions', () => {
   assert.equal(rejected.code, 'MATCH_FINISHED');
   assert.equal(rejected.rev, result.rev);
   assert.equal(rejected.stateHash, result.stateHash);
+});
+
+test('final foundationMove completes the match with the score leader as winner', () => {
+  const current = controlledMatch((state, card) => {
+    for (const [foundationIndex, foundation] of state.foundations.entries()) {
+      const copy = foundationIndex % 2;
+      for (let rank = 1; rank <= 13; rank += 1) {
+        if (copy === 0 && foundation.suit === 'H' && rank === 13) continue;
+        foundation.cards.push(card(`d${copy}:${foundation.suit}:${String(rank).padStart(2, '0')}`, false));
+      }
+    }
+    state.players.p1.waste.push(card('d0:H:13', false));
+  });
+  const result = applyAction(current, 'p1', action('foundationMove', {
+    source: zone('waste', 'p1'),
+    target: zone('foundation', 'global', 4)
+  }));
+  assert.equal(result.result, 'ack');
+  assert.equal(result.state.status, 'finished');
+  assert.equal(result.state.winner, 'p1');
+  assert.equal(result.state.endedReason, 'completed');
+  assert.equal(result.state.endedBy, 'p1');
+  assert.equal(result.state.players.p1.score, 728);
+
+  const rejected = applyAction(result, 'p1', action('draw', {
+    source: zone('stock', 'p1'),
+    target: zone('waste', 'p1')
+  }));
+  assert.equal(rejected.result, 'reject');
+  assert.equal(rejected.code, 'MATCH_FINISHED');
 });
 
 test('invalid kinds and malformed actions have stable reject codes', () => {

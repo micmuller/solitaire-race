@@ -54,6 +54,10 @@ test('invariants validate active and finished match result fields', () => {
   finished.endedReason = 'resign';
   finished.endedBy = 'p2';
   assert.deepEqual(checkInvariants(finished), { ok: true, violations: [] });
+
+  const incompleteCompleted = clone(finished);
+  incompleteCompleted.endedReason = 'completed';
+  assert.ok(checkInvariants(incompleteCompleted).violations.some((violation) => violation.code === 'INVALID_COMPLETED_MATCH_RESULT'));
 });
 
 test('invariants reject player scores that drift from foundations', () => {

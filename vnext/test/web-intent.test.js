@@ -76,6 +76,31 @@ test('selected source maps to structured tableau and foundation intents', () => 
   });
 });
 
+test('auto foundation intent chooses the currently legal suit lane', () => {
+  const selection = mapping.wasteSelection('p1', [
+    { cardId: 'd0:H:02', suit: 'H', rank: 2, faceDown: false }
+  ]);
+  const foundations = [
+    { suit: 'C', cards: [] },
+    { suit: 'C', cards: [] },
+    { suit: 'D', cards: [] },
+    { suit: 'D', cards: [] },
+    { suit: 'H', cards: [{ cardId: 'd0:H:01', suit: 'H', rank: 1, faceDown: false }] },
+    { suit: 'H', cards: [] },
+    { suit: 'S', cards: [] },
+    { suit: 'S', cards: [] }
+  ];
+  assert.equal(mapping.legalFoundationIndexForCard(foundations, { suit: 'H', rank: 2, faceDown: false }), 4);
+  assert.deepEqual(mapping.autoFoundationIntent(selection, foundations, { suit: 'H', rank: 2, faceDown: false }), {
+    kind: 'foundationMove',
+    payload: {
+      source: { zone: 'waste', owner: 'p1' },
+      target: { zone: 'foundation', owner: 'global', index: 4 }
+    }
+  });
+  assert.equal(mapping.autoFoundationIntent(selection, foundations, { suit: 'H', rank: 3, faceDown: false }), null);
+});
+
 test('drop target maps to the existing move intents', () => {
   const selection = mapping.tableauSelection('p1', 2, 1, cards);
   assert.deepEqual(mapping.dropIntent(selection, 'p1', { zone: 'tableau', index: 6 }), {
@@ -132,16 +157,16 @@ test('lobby urls encode host and invite identities', () => {
 });
 
 test('web client version is exposed for the header menu', () => {
-  assert.equal(version.WEB_CLIENT_VERSION, '0.1.0-alpha.4');
+  assert.equal(version.WEB_CLIENT_VERSION, '0.1.0-alpha.6');
   assert.deepEqual(version.labelsFromConfig({
-    serverVersion: '1.1.0-alpha.4',
-    protocolVersion: '2.3.0'
+    serverVersion: '1.1.0-alpha.6',
+    protocolVersion: '2.5.0'
   }), {
-    serverVersion: '1.1.0-alpha.4',
-    protocolVersion: '2.3.0',
-    webClientVersion: '0.1.0-alpha.4'
+    serverVersion: '1.1.0-alpha.6',
+    protocolVersion: '2.5.0',
+    webClientVersion: '0.1.0-alpha.6'
   });
-  assert.equal(version.labelsFromConfig({ appVersion: '1.1.0-alpha.4' }).serverVersion, '1.1.0-alpha.4');
+  assert.equal(version.labelsFromConfig({ appVersion: '1.1.0-alpha.6' }).serverVersion, '1.1.0-alpha.6');
 });
 
 test('version menu toggles open and closed from the badge state', () => {

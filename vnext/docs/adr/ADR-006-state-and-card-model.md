@@ -26,7 +26,7 @@ needs one platform-neutral model before `initMatch` can be implemented.
 - Card identity never contains or changes with zone ownership.
 - Stack top is always the last array element.
 - Foundation indices are fixed as `C,C,D,D,H,H,S,S`.
-- Current `schemaVersion` is `1.2.0`; `rulesVersion` remains `1.0.0`.
+- Current `schemaVersion` is `1.4.0`; `rulesVersion` remains `1.0.0`.
 - Canonical state contains `schemaVersion`, `rulesVersion`, `seed`, `mode`,
   `players` and `foundations`. Each player contains an authoritative `score`
   counting that actor's accepted foundation moves. Revision remains outside state and is included
