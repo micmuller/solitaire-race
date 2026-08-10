@@ -42,6 +42,7 @@ HTTP endpoints:
   `{ "sessionId": "...", "name": "...", "seed": "...", "mode": "split|shared" }`
 - `POST /vnext/lobby/games/:gameId/join` with `{ "sessionId": "..." }`
 - `POST /vnext/lobby/games/:gameId/leave` with `{ "sessionId": "..." }`
+- `POST /vnext/lobby/matches/:matchId/end` with `{ "sessionId": "..." }`
 - `POST /vnext/matches` with `{ "seed": "...", "mode": "split|shared" }`
 - `GET /vnext/matches/:matchId`
 - `GET /vnext/matches/:matchId/replay`
@@ -72,8 +73,12 @@ host/guest nicknames and the underlying technical `matchId`; `p1` and `p2`
 still connect to the same WebSocket protocol after the Lobby resolves the
 match. Player records already include reserved history fields for later
 persistence and leaderboards: `gamesPlayed`, `gamesWon`, `totalScore`,
-`bestScore` and `lastGameAt`. Alpha.13 does not persist or aggregate these
-fields yet.
+`bestScore` and `lastGameAt`. The current alpha line does not persist or
+aggregate these fields yet.
+
+Only the stored `p1` Lobby session can end a Lobby game. Ending marks the Lobby
+game `finished`, stops managed bots for that match and broadcasts a `lobbyEnd`
+message to connected Web clients so they can return to the Lobby overlay.
 
 The terminal logs compact structured events such as `MATCH_CREATED`,
 `WS_CONNECTED`, `SNAPSHOT_SENT`, `ACTION_RECEIVED`, `ACTION_ACK`,

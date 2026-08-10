@@ -252,6 +252,29 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       }
       return;
     }
+    const lobbyMatchPath = url.pathname.match(/^\/vnext\/lobby\/matches\/([^/]+)\/end$/);
+    if (request.method === 'POST' && lobbyMatchPath) {
+      const matchId = decodeURIComponent(lobbyMatchPath[1]);
+      try {
+        const body = await readJson(request);
+        const game = lobby.endGameByMatch({ matchId, sessionId: body.sessionId });
+        stopBot(matchId, 'p1');
+        stopBot(matchId, 'p2');
+        const ended = {
+          kind: 'lobbyEnd',
+          matchId,
+          protocolVersion: PROTOCOL_VERSION,
+          game,
+          reason: 'HOST_ENDED'
+        };
+        const peersNotified = broadcast(matchId, ended);
+        log('LOBBY_GAME_ENDED', { gameId: game.gameId, matchId, peers: peersNotified });
+        sendJson(response, 200, ended);
+      } catch (error) {
+        if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
+      }
+      return;
+    }
     if (request.method === 'POST' && url.pathname === '/vnext/matches') {
       try {
         const body = await readJson(request);

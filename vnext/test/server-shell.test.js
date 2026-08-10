@@ -169,6 +169,31 @@ test('LobbyStore maps nickname sessions to games and reserves player history fie
   assert.equal(finished.status, 'finished');
 });
 
+test('LobbyStore lets only p1 end a lobby game by match id', () => {
+  let nextId = 0;
+  const lobby = new LobbyStore({
+    idFactory: () => `id-${nextId += 1}`,
+    clock: () => '2026-08-10T12:30:00.000Z'
+  });
+  const host = lobby.createOrUpdatePlayer({ nickname: 'Host' });
+  const guest = lobby.createOrUpdatePlayer({ nickname: 'Guest' });
+  const game = lobby.createGame({
+    sessionId: host.sessionId,
+    matchId: 'm-end',
+    seed: 'END-SEED',
+    mode: 'split',
+    name: 'End Test'
+  });
+  lobby.joinGame({ gameId: game.gameId, sessionId: guest.sessionId });
+
+  assert.throws(
+    () => lobby.endGameByMatch({ matchId: 'm-end', sessionId: guest.sessionId }),
+    /only p1 can end/
+  );
+  const ended = lobby.endGameByMatch({ matchId: 'm-end', sessionId: host.sessionId });
+  assert.equal(ended.status, 'finished');
+});
+
 test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritative ack', async (t) => {
   const logLines = [];
   const app = createVNextServer({
@@ -345,4 +370,55 @@ test('vNext lobby API creates a host game and lets a nickname join as P2', async
   assert.equal(joined.matchId, created.matchId);
   assert.equal(joined.game.status, 'active');
   assert.equal(joined.game.players.p2.nickname, 'Guest iPad');
+});
+
+test('vNext lobby API allows only p1 to end a lobby game', async (t) => {
+  const app = createVNextServer({ logger: silentLogger });
+  const address = await app.start({ port: 0 });
+  const httpBase = `http://127.0.0.1:${address.port}`;
+  t.after(() => app.close());
+
+  const host = await fetch(`${httpBase}/vnext/lobby/sessions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ nickname: 'Host' })
+  }).then((response) => response.json());
+  const guest = await fetch(`${httpBase}/vnext/lobby/sessions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ nickname: 'Guest' })
+  }).then((response) => response.json());
+  const created = await fetch(`${httpBase}/vnext/lobby/games`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: host.player.sessionId,
+      name: 'End Lobby',
+      seed: 'END-HTTP-SEED',
+      mode: 'split'
+    })
+  }).then((response) => response.json());
+  await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/join`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: guest.player.sessionId })
+  });
+
+  const guestEnd = await fetch(`${httpBase}/vnext/lobby/matches/${encodeURIComponent(created.matchId)}/end`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: guest.player.sessionId })
+  });
+  assert.equal(guestEnd.status, 403);
+
+  const hostEnd = await fetch(`${httpBase}/vnext/lobby/matches/${encodeURIComponent(created.matchId)}/end`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: host.player.sessionId })
+  });
+  assert.equal(hostEnd.status, 200);
+  const ended = await hostEnd.json();
+  assert.equal(ended.kind, 'lobbyEnd');
+  assert.equal(ended.reason, 'HOST_ENDED');
+  assert.equal(ended.game.status, 'finished');
 });

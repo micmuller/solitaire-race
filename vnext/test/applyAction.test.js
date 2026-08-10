@@ -62,7 +62,7 @@ function controlledMatch(configure) {
 }
 
 test('version axes are exposed independently', () => {
-  assert.equal(APP_VERSION, '1.1.0-alpha.13');
+  assert.equal(APP_VERSION, '1.1.0-alpha.14');
   assert.equal(PROTOCOL_VERSION, '2.5.2');
   assert.equal(RULES_VERSION, '1.0.0');
   assert.equal(SCHEMA_VERSION, '1.4.0');

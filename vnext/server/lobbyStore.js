@@ -189,6 +189,23 @@ class LobbyStore {
     return publicGame(game);
   }
 
+  endGameByMatch({ matchId, sessionId }) {
+    const game = this.gameByMatchId(matchId);
+    if (!game) {
+      const error = new Error('lobby game not found');
+      error.statusCode = 404;
+      throw error;
+    }
+    if (game.players.p1?.sessionId !== sessionId) {
+      const error = new Error('only p1 can end the lobby game');
+      error.statusCode = 403;
+      throw error;
+    }
+    game.status = 'finished';
+    game.updatedAt = this.clock();
+    return publicGame(game);
+  }
+
   markMatchActive(matchId) {
     const game = this.gameByMatchId(matchId);
     if (!game || game.status === 'finished') return null;

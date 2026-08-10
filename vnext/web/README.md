@@ -18,6 +18,8 @@ Current vertical slice:
 - connect through Protocol 2.5.2 and render the initial authoritative snapshot;
 - keep Start, Restart and Aufgeben in the header while secondary controls live
   in a tabbed overlay menu for Lobby, Spiel, Neues Spiel, Bot, Teilen and Info;
+- allow `p1` to end the current Lobby game from the Spiel menu, notify connected
+  peers and return the Web client to the Lobby overlay;
 - render both players, all tableaus and eight global foundations;
 - show each player's authoritative foundation point score next to P1/P2;
 - show a completed-match celebration for about 10 seconds before opening the
@@ -63,6 +65,8 @@ The normal Web entry flow is now Lobby-first:
    from the Lobby API and connects as `p2`.
 4. The `Teilen` tab keeps the old Match-ID and invite URL tooling for debugging
    and fallback cases.
+5. `p1` can use `Spiel beenden` in the Spiel menu to mark the Lobby game
+   finished and return connected clients to the Lobby.
 
 The Lobby model already exposes stable `playerId`, `sessionId`, nickname and
 reserved history fields (`gamesPlayed`, `gamesWon`, `totalScore`, `bestScore`,

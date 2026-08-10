@@ -2,6 +2,7 @@ import {
   ProtocolClient,
   createLobbyGame,
   createLobbySession,
+  endLobbyMatch,
   createMatch,
   joinLobbyGame,
   listLobbyGames,
@@ -47,6 +48,7 @@ let debugSuppressedClicks = 0;
 let debugPendingStart = null;
 let lobbyPlayer = null;
 let lobbyGames = [];
+let activeLobbyGameId = null;
 const debugHistory = [];
 
 const configReady = loadConfig();
@@ -339,6 +341,7 @@ function updateActionControls() {
   $('#mode').disabled = hostLocked;
   $('#bot-speed').disabled = hostLocked;
   $('#resign-match').disabled = client?.clientId !== 'p2' || isMatchFinished();
+  $('#end-lobby-game').disabled = client?.clientId !== 'p1' || !lobbyPlayer || !activeLobbyGameId;
   updateRestartControl();
   updateBotControls();
 }
@@ -954,6 +957,9 @@ async function connectToMatch({ matchId: requestedMatchId, clientId: requestedCl
       pushDebugEvent('state', `${event.source} ${debugStateLabel()}`);
       render(event.current, { animate: event.source === 'ack' });
     }
+    if (event.type === 'lobbyEnd') {
+      returnToLobby('Spiel wurde von P1 beendet.');
+    }
     if (event.type === 'disconnected') {
       $('#connection-dot').classList.remove('online');
       $('#connection-label').textContent = 'Getrennt';
@@ -975,6 +981,53 @@ async function connectToMatch({ matchId: requestedMatchId, clientId: requestedCl
   setMessage(`Match ${matchId.slice(0, 18)} aktiv`, 'ok');
 }
 
+async function returnToLobby(message = 'Zur Lobby zurueckgekehrt.') {
+  await stopActiveBot({ quiet: true });
+  client?.close();
+  client = null;
+  activeLobbyGameId = null;
+  selection = null;
+  interactionLocked = false;
+  clearDrag();
+  clearGameOverFlow();
+  $('#pending').hidden = true;
+  $('#game').hidden = true;
+  $('#lobby-overlay').hidden = false;
+  $('#connection-dot').classList.remove('online');
+  $('#connection-label').textContent = 'Lobby';
+  $('#revision').textContent = 'rev -';
+  $('#state-hash').textContent = 'hash -';
+  $('#match-id').value = '';
+  $('#client-id').value = 'p1';
+  setInvite('', false);
+  updateHeaderSummary();
+  updateActionControls();
+  updateMenuInfo();
+  setMenuPanel('lobby');
+  setAppMenuOpen(false);
+  window.history.replaceState({}, '', currentPath());
+  await refreshLobbyGames({ quiet: true }).catch((error) => setMessage(error.message, 'error'));
+  setMessage(message, 'ok');
+}
+
+async function endCurrentLobbyGame() {
+  if (client?.clientId !== 'p1') {
+    setMessage('Nur P1 kann das Spiel beenden.', 'warn');
+    return;
+  }
+  if (!lobbyPlayer?.sessionId) {
+    setMessage('Spiel beenden ist nur fuer Lobby-Spiele verfuegbar.', 'warn');
+    return;
+  }
+  if (!window.confirm('Laufendes Spiel beenden und zur Lobby zurueckkehren?')) return;
+  try {
+    await endLobbyMatch(baseUrl, client.matchId, { sessionId: lobbyPlayer.sessionId });
+    await returnToLobby('Spiel beendet. Lobby ist wieder sichtbar.');
+  } catch (error) {
+    setMessage(error.message, 'error');
+  }
+}
+
 async function createLobbyHostGame() {
   try {
     const player = await ensureLobbySession();
@@ -990,6 +1043,7 @@ async function createLobbyHostGame() {
       mode: $('#mode').value
     });
     currentMatchKind = 'human';
+    activeLobbyGameId = created.game.gameId;
     $('#match-id').value = created.matchId;
     $('#client-id').value = 'p1';
     setInvite(created.matchId, false);
@@ -1014,6 +1068,7 @@ async function joinLobbyGameAndConnect(game) {
       joined = await joinLobbyGame(baseUrl, game.gameId, { sessionId: player.sessionId });
     }
     currentMatchKind = 'human';
+    activeLobbyGameId = joined.game.gameId;
     $('#match-id').value = joined.matchId;
     $('#client-id').value = joined.role;
     await connectToMatch({ matchId: joined.matchId, clientId: joined.role });
@@ -1039,6 +1094,7 @@ async function startHostMatch({ randomSeed = false, withBot = false } = {}) {
     $('#seed').value = seed;
     const match = await createMatch(baseUrl, seed, $('#mode').value);
     currentMatchKind = withBot ? 'human-bot' : 'human';
+    activeLobbyGameId = null;
     $('#match-id').value = match.matchId;
     $('#client-id').value = 'p1';
     setRoute(match.matchId, 'p1');
@@ -1069,6 +1125,7 @@ async function startBotVersusMatch({ randomSeed = false } = {}) {
     $('#seed').value = seed;
     const match = await createMatch(baseUrl, seed, $('#mode').value);
     currentMatchKind = 'bot-versus';
+    activeLobbyGameId = null;
     $('#match-id').value = match.matchId;
     $('#client-id').value = 'observer';
     setRoute(match.matchId, 'observer');
@@ -1173,6 +1230,7 @@ $('#create-bot-match').addEventListener('click', () => startHostMatch({ withBot:
 $('#create-bot-versus-match').addEventListener('click', () => startBotVersusMatch());
 $('#stop-bot-match').addEventListener('click', () => stopActiveBot());
 $('#resign-match').addEventListener('click', () => resignMatch());
+$('#end-lobby-game').addEventListener('click', () => endCurrentLobbyGame());
 $('#preview-final-sequence').addEventListener('click', () => previewFinalSequence());
 $('#debug-toggle').addEventListener('change', (event) => {
   debugEnabled = event.target.checked;

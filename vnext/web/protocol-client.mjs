@@ -62,6 +62,11 @@ export class ProtocolClient {
     if (!response || response.matchId !== this.matchId || response.protocolVersion !== PROTOCOL_VERSION) {
       throw new Error('Ungültige Serverantwort');
     }
+    if (response.kind === 'lobbyEnd') {
+      this.emit({ type: 'lobbyEnd', response });
+      this.emit({ type: 'response', response });
+      return;
+    }
     if (response.kind === 'ack' || response.kind === 'snapshot') {
       const isRestart = response.kind === 'snapshot' && response.reason === 'RESTART';
       if (isRestart) this.nextSeq = 0;
@@ -155,6 +160,16 @@ export async function joinLobbyGame(baseUrl, gameId, { sessionId }) {
     body: JSON.stringify({ sessionId })
   });
   if (!response.ok) throw new Error(`Lobby-Spiel konnte nicht betreten werden (${response.status})`);
+  return response.json();
+}
+
+export async function endLobbyMatch(baseUrl, matchId, { sessionId }) {
+  const response = await fetch(`${baseUrl}/vnext/lobby/matches/${encodeURIComponent(matchId)}/end`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId })
+  });
+  if (!response.ok) throw new Error(`Spiel konnte nicht beendet werden (${response.status})`);
   return response.json();
 }
 
