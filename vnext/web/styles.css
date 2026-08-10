@@ -174,7 +174,7 @@ button.danger:hover { border-color: var(--danger); }
 }
 .celebration-layer span {
   position: absolute; top: -24px; left: var(--x); width: 9px; height: 16px; border-radius: 2px;
-  background: var(--color); animation: confetti-fall 3200ms cubic-bezier(.2, .7, .2, 1) var(--delay) forwards;
+  background: var(--color); animation: confetti-fall 2600ms cubic-bezier(.2, .7, .2, 1) var(--delay) forwards;
 }
 .compact { --card-w: 50px; --card-h: 70px; }
 .compact-tableau { --card-w: 50px; --card-h: 70px; }

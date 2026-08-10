@@ -11,6 +11,8 @@ const RANK = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
 const ACTION_PLAYER_IDS = new Set(['p1', 'p2']);
 const ROLE_LABELS = { p1: 'P1', p2: 'P2', observer: 'Observer' };
 const MODE_LABELS = { split: 'Split', shared: 'Shared' };
+const GAME_OVER_DIALOG_DELAY_MS = 10000;
+const CELEBRATION_DURATION_MS = 10500;
 const baseUrl = window.location.origin;
 let client = null;
 let selection = null;
@@ -24,6 +26,7 @@ let serverProtocolVersion = '-';
 let activeBotMatchId = null;
 let currentMatchKind = 'human';
 let celebratedMatchKey = null;
+let gameOverDialogTimer = null;
 
 const configReady = loadConfig();
 setRandomSeed();
@@ -63,6 +66,18 @@ function toggleAppMenu() {
   setAppMenuOpen($('#app-menu').hidden);
 }
 
+function closeDialog(dialog) {
+  if (dialog?.open) dialog.close();
+}
+
+function clearGameOverFlow() {
+  if (gameOverDialogTimer) {
+    window.clearTimeout(gameOverDialogTimer);
+    gameOverDialogTimer = null;
+  }
+  closeDialog($('#game-over-dialog'));
+}
+
 function updateHeaderSummary() {
   const seed = $('#seed').value.trim();
   const mode = $('#mode').value;
@@ -98,7 +113,7 @@ function setRandomSeed() {
 }
 
 function canRestartCurrentMatch() {
-  return client?.clientId === 'p1';
+  return client?.clientId === 'p1' || (client?.clientId === 'observer' && currentMatchKind === 'bot-versus');
 }
 
 function isP2User() {
@@ -360,32 +375,38 @@ function showGameOverDialog(current, { preview = false } = {}) {
   const key = preview ? `preview:${Date.now()}` : `${client?.matchId || state.seed}:${rev}:${stateHash}`;
   if (celebratedMatchKey === key) return;
   celebratedMatchKey = key;
+  if (gameOverDialogTimer) window.clearTimeout(gameOverDialogTimer);
+  closeDialog($('#game-over-dialog'));
+  closeDialog($('#restart-dialog'));
   launchCelebration();
-  $('#game-over-title').textContent = `${ROLE_LABELS[state.winner] || state.winner} gewinnt`;
-  $('#game-over-summary').textContent = `${ROLE_LABELS[state.winner] || state.winner} hat alle eigenen Karten abgelegt. Endstand ${scoreLine(state)}. Neues Spiel?`;
-  $('#game-over-p1-score').textContent = String(state.players.p1.score);
-  $('#game-over-p2-score').textContent = String(state.players.p2.score);
-  const canStartNew = !preview && (client?.clientId === 'p1' || client?.clientId === 'observer');
-  $('#game-over-new').disabled = !canStartNew;
-  $('#game-over-new').title = canStartNew ? 'Neues Spiel starten' : preview ? 'Finalsequenz-Test startet keinen Match' : 'P1 startet den nächsten Match';
-  if (!$('#game-over-dialog').open) $('#game-over-dialog').showModal();
+  gameOverDialogTimer = window.setTimeout(() => {
+    gameOverDialogTimer = null;
+    $('#game-over-title').textContent = `${ROLE_LABELS[state.winner] || state.winner} gewinnt`;
+    $('#game-over-summary').textContent = `${ROLE_LABELS[state.winner] || state.winner} hat alle eigenen Karten abgelegt. Endstand ${scoreLine(state)}. Neues Spiel?`;
+    $('#game-over-p1-score').textContent = String(state.players.p1.score);
+    $('#game-over-p2-score').textContent = String(state.players.p2.score);
+    const canStartNew = !preview && canRestartCurrentMatch();
+    $('#game-over-new').disabled = !canStartNew;
+    $('#game-over-new').title = canStartNew ? 'Neues Spiel starten' : preview ? 'Finalsequenz-Test startet keinen Match' : 'P1 startet den nächsten Match';
+    if (!$('#game-over-dialog').open) $('#game-over-dialog').showModal();
+  }, GAME_OVER_DIALOG_DELAY_MS);
 }
 
 function launchCelebration() {
   const layer = document.createElement('div');
   layer.className = 'celebration-layer';
   const colors = ['#f6d77d', '#72d5a0', '#e06b63', '#7fb4ff', '#f4f2ec', '#ff9f7a'];
-  for (let index = 0; index < 96; index += 1) {
+  for (let index = 0; index < 260; index += 1) {
     const piece = document.createElement('span');
     piece.style.setProperty('--x', `${Math.random() * 100}vw`);
     piece.style.setProperty('--dx', `${Math.random() * 140 - 70}px`);
-    piece.style.setProperty('--delay', `${Math.random() * 700}ms`);
+    piece.style.setProperty('--delay', `${Math.random() * 7600}ms`);
     piece.style.setProperty('--color', colors[index % colors.length]);
     piece.style.setProperty('--rotate', `${Math.random() * 900 - 450}deg`);
     layer.append(piece);
   }
   document.body.append(layer);
-  window.setTimeout(() => layer.remove(), 3900);
+  window.setTimeout(() => layer.remove(), CELEBRATION_DURATION_MS);
 }
 
 function previewFinalSequence() {
@@ -418,12 +439,12 @@ function previewFinalSequence() {
 }
 
 async function startNextGame() {
-  $('#game-over-dialog').close();
-  if (currentMatchKind === 'bot-versus') {
-    await startBotVersusMatch({ randomSeed: true });
+  closeDialog($('#game-over-dialog'));
+  if (!canRestartCurrentMatch()) {
+    setMessage('Neues Spiel kann nur P1 starten.', 'warn');
     return;
   }
-  await startHostMatch({ randomSeed: true, withBot: currentMatchKind === 'human-bot' });
+  $('#restart-dialog').showModal();
 }
 
 function animateAuthoritativeChanges(previousRects) {
@@ -690,6 +711,7 @@ async function connectToMatch() {
   client?.close();
   selection = null;
   celebratedMatchKey = null;
+  clearGameOverFlow();
   client = new ProtocolClient({ baseUrl, matchId, clientId });
   client.subscribe((event) => {
     if (event.type === 'state') render(event.current, { animate: event.source === 'ack' });
@@ -780,13 +802,28 @@ async function restartHostMatch({ randomSeed = false } = {}) {
     await stopActiveBot({ quiet: true });
     interactionLocked = true;
     $('#pending').hidden = false;
+    clearGameOverFlow();
     if (randomSeed) setRandomSeed();
     const seed = $('#seed').value.trim() || generateRandomSeed();
     $('#seed').value = seed;
     const response = await restartMatch(baseUrl, client.matchId, seed, $('#mode').value);
     celebratedMatchKey = null;
     client.handle(response);
-    setInvite(client.matchId, true);
+    if (currentMatchKind === 'human-bot') {
+      await startBot(baseUrl, client.matchId, { clientId: 'p2', speed: $('#bot-speed').value, maxActions: 1000 });
+      activeBotMatchId = client.matchId;
+      setInvite(client.matchId, false);
+    } else if (currentMatchKind === 'bot-versus') {
+      await Promise.all([
+        startBot(baseUrl, client.matchId, { clientId: 'p1', speed: $('#bot-speed').value, maxActions: 1000 }),
+        startBot(baseUrl, client.matchId, { clientId: 'p2', speed: $('#bot-speed').value, maxActions: 1000 })
+      ]);
+      activeBotMatchId = client.matchId;
+      setInvite(client.matchId, false);
+    } else {
+      setInvite(client.matchId, true);
+    }
+    updateBotControls();
     setMessage(`Match neu gestartet: ${response.reason}`, 'ok');
   } catch (error) {
     setMessage(error.message, 'error');

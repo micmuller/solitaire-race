@@ -15,8 +15,8 @@ Current vertical slice:
 - connect through Protocol 2.5.2 and render the initial authoritative snapshot;
 - render both players, all tableaus and eight global foundations;
 - show each player's authoritative foundation point score next to P1/P2;
-- show a completed-match dialog with final score, celebration animation and a
-  new-game action after the first player places all own cards;
+- show a completed-match celebration for about 10 seconds before opening the
+  final-score dialog after the first player places all own cards;
 - replay the same final dialog and celebration sequence from the menu without
   mutating the authoritative match state;
 - enlarge cards and rank/suit corners on landscape tablets while dynamically
@@ -81,6 +81,11 @@ same match and invite link, while the server resets the session and broadcasts a
 `RESTART` snapshot so `p2` returns to the same fresh state. New-seed restarts
 use the same path with a newly generated seed. Joined `p2` clients cannot start
 a restart.
+
+The GameOver dialog uses the same restart dialog for `Neues Spiel`; it no
+longer creates a separate fresh p1-only match. Human-vs-bot and Bot-vs-Bot
+restarts stop the old managed bots and start the correct bot setup again after
+the authoritative `RESTART` snapshot.
 
 Starting, joining or restarting another match stops the currently managed Web
 bot or bots. The explicit `Bot stoppen` control stops managed bots without
