@@ -214,6 +214,19 @@ function clearGameOverFlow() {
     gameOverDialogTimer = null;
   }
   closeDialog($('#game-over-dialog'));
+  closeDialog($('#restart-dialog'));
+}
+
+function resetUiForRestart() {
+  selection = null;
+  interactionLocked = false;
+  celebratedMatchKey = null;
+  clearDrag();
+  clearGameOverFlow();
+  $('#pending').hidden = true;
+  $('#game').hidden = false;
+  $('#lobby-overlay').hidden = true;
+  setMessage('Neue Runde gestartet.', 'ok');
 }
 
 function updateHeaderSummary() {
@@ -970,6 +983,9 @@ async function connectToMatch({ matchId: requestedMatchId, clientId: requestedCl
   clearGameOverFlow();
   client = new ProtocolClient({ baseUrl, matchId, clientId });
   client.subscribe((event) => {
+    if (event.type === 'response' && event.response.kind === 'snapshot' && event.response.reason === 'RESTART') {
+      resetUiForRestart();
+    }
     if (event.type === 'state') {
       pushDebugEvent('state', `${event.source} ${debugStateLabel()}`);
       render(event.current, { animate: event.source === 'ack' });

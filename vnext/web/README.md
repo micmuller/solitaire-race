@@ -42,6 +42,9 @@ Current vertical slice:
   play synthesized audio cues for ack/reject/recovery results;
 - generate readable random seeds and restart the active host match with either
   the same seed or a new random seed;
+- close any open final-score/restart overlays on all clients when a
+  server-authoritative `RESTART` snapshot arrives, so `p2` immediately returns
+  to the playable board after `p1` starts the next round;
 - keep a rejected selection available for another target and allow explicit or
   Escape-key cancellation;
 - update only after authoritative ack/snapshot;

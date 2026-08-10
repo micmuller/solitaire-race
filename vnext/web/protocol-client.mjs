@@ -72,7 +72,9 @@ export class ProtocolClient {
       if (isRestart) this.nextSeq = 0;
       if (!this.current || response.rev >= this.current.rev || isRestart) {
         this.current = { rev: response.rev, stateHash: response.stateHash, state: response.state };
+        if (isRestart) this.emit({ type: 'response', response });
         this.emit({ type: 'state', source: response.kind, current: this.current });
+        if (isRestart) return;
       }
     }
     if (this.pending) {

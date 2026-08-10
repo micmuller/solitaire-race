@@ -6,12 +6,14 @@ const test = require('node:test');
 let mapping;
 let effects;
 let lobby;
+let protocolClient;
 let seed;
 let version;
 test.before(async () => {
   mapping = await import('../web/intent-mapping.mjs');
   effects = await import('../web/effects.mjs');
   lobby = await import('../web/lobby.mjs');
+  protocolClient = await import('../web/protocol-client.mjs');
   seed = await import('../web/seed.mjs');
   version = await import('../web/version.mjs');
 });
@@ -132,6 +134,32 @@ test('authoritative responses map to non-optimistic effect cues', () => {
   assert.equal(effects.cueForIntentResult('draw', { kind: 'snapshot', reason: 'INITIAL_CONNECT' }), null);
 });
 
+test('browser protocol client emits restart response before restart state', () => {
+  const client = new protocolClient.ProtocolClient({
+    baseUrl: 'http://example.test',
+    matchId: 'm-restart',
+    clientId: 'p2'
+  });
+  const events = [];
+  client.current = { rev: 2, stateHash: 'old-hash', state: { seed: 'OLD', status: 'finished' } };
+  client.subscribe((event) => {
+    if (event.type === 'response') events.push(`${event.type}:${event.response.reason || event.response.kind}`);
+    if (event.type === 'state') events.push(`${event.type}:${event.current.state.seed}`);
+  });
+  client.handle({
+    kind: 'snapshot',
+    matchId: 'm-restart',
+    protocolVersion: protocolClient.PROTOCOL_VERSION,
+    reason: 'RESTART',
+    rev: 0,
+    stateHash: 'new-hash',
+    state: { seed: 'NEW', mode: 'split', status: 'active' }
+  });
+  assert.deepEqual(events, ['response:RESTART', 'state:NEW']);
+  assert.equal(client.nextSeq, 0);
+  assert.equal(client.current.rev, 0);
+});
+
 test('lobby urls encode host and invite identities', () => {
   assert.deepEqual(lobby.readLaunchParams('?matchId=m-123&role=p2'), { matchId: 'm-123', role: 'p2' });
   assert.deepEqual(lobby.readLaunchParams('?matchId=m-123&role=observer'), { matchId: 'm-123', role: 'observer' });
@@ -157,16 +185,16 @@ test('lobby urls encode host and invite identities', () => {
 });
 
 test('web client version is exposed for the header menu', () => {
-  assert.equal(version.WEB_CLIENT_VERSION, '0.1.0-alpha.15');
+  assert.equal(version.WEB_CLIENT_VERSION, '0.1.0-alpha.16');
   assert.deepEqual(version.labelsFromConfig({
-    serverVersion: '1.1.0-alpha.15',
+    serverVersion: '1.1.0-alpha.16',
     protocolVersion: '2.5.2'
   }), {
-    serverVersion: '1.1.0-alpha.15',
+    serverVersion: '1.1.0-alpha.16',
     protocolVersion: '2.5.2',
-    webClientVersion: '0.1.0-alpha.15'
+    webClientVersion: '0.1.0-alpha.16'
   });
-  assert.equal(version.labelsFromConfig({ appVersion: '1.1.0-alpha.15' }).serverVersion, '1.1.0-alpha.15');
+  assert.equal(version.labelsFromConfig({ appVersion: '1.1.0-alpha.16' }).serverVersion, '1.1.0-alpha.16');
 });
 
 test('version menu toggles open and closed from the badge state', () => {
