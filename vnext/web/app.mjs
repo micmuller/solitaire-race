@@ -30,6 +30,10 @@ let activeBotMatchId = null;
 let currentMatchKind = 'human';
 let celebratedMatchKey = null;
 let gameOverDialogTimer = null;
+let debugEnabled = false;
+let debugSuppressedClicks = 0;
+let debugPendingStart = null;
+const debugHistory = [];
 
 const configReady = loadConfig();
 setRandomSeed();
@@ -93,6 +97,55 @@ function updateHeaderSummary() {
 function setMessage(text, tone = '') {
   $('#message').textContent = text;
   $('#message').dataset.tone = tone;
+}
+
+function shortJson(value) {
+  if (value === null || value === undefined) return '-';
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  return text.length > 96 ? `${text.slice(0, 93)}...` : text;
+}
+
+function debugStateLabel() {
+  if (!client?.current) return '-';
+  return `role=${client.clientId} rev=${client.current.rev} seq=${client.nextSeq} hash=${client.current.stateHash.slice(0, 8)} pending=${client.pending ? 'yes' : 'no'}`;
+}
+
+function setDebugField(id, text) {
+  const element = $(id);
+  if (element) element.textContent = text;
+}
+
+function renderDebugOverlay() {
+  $('#debug-overlay').hidden = !debugEnabled;
+  $('#debug-toggle').checked = debugEnabled;
+  if (!debugEnabled) return;
+  setDebugField('#debug-state', debugStateLabel());
+  setDebugField('#debug-suppressed', String(debugSuppressedClicks));
+}
+
+function pushDebugEvent(label, detail = '') {
+  const time = new Date().toLocaleTimeString('de-CH', { hour12: false });
+  const line = detail ? `${time} ${label}: ${detail}` : `${time} ${label}`;
+  debugHistory.unshift(line);
+  debugHistory.splice(18);
+  if (!debugEnabled) return;
+  const list = $('#debug-events');
+  list.replaceChildren(...debugHistory.map((entry) => {
+    const item = document.createElement('li');
+    item.textContent = entry;
+    return item;
+  }));
+}
+
+function updateDebug(type, value) {
+  if (type === 'suppressed') debugSuppressedClicks += 1;
+  if (type === 'input') setDebugField('#debug-input', value);
+  if (type === 'intent') setDebugField('#debug-intent', value);
+  if (type === 'pending') setDebugField('#debug-pending', value);
+  if (type === 'response') setDebugField('#debug-response', value);
+  if (type === 'state') setDebugField('#debug-state', value || debugStateLabel());
+  if (type === 'suppressed') setDebugField('#debug-suppressed', String(debugSuppressedClicks));
+  renderDebugOverlay();
 }
 
 function currentPath() {
@@ -245,6 +298,8 @@ function renderStack(container, cards, { compact = false, tableau = false, onCar
       element.classList.add('interactive');
       element.addEventListener('click', (event) => {
         event.stopPropagation();
+        updateDebug('input', `click ${event.pointerType || 'mouse'} detail=${event.detail} ${card.cardId}`);
+        pushDebugEvent('click', `${card.cardId} detail=${event.detail}`);
         if (onCardDoubleClick) {
           window.clearTimeout(clickTimer);
           if (event.detail > 1) return;
@@ -264,6 +319,8 @@ function renderStack(container, cards, { compact = false, tableau = false, onCar
         event.preventDefault();
         window.clearTimeout(clickTimer);
         clickTimer = null;
+        updateDebug('input', `dblclick ${card.cardId}`);
+        pushDebugEvent('dblclick', card.cardId);
         onCardDoubleClick(card, index);
       });
       element.addEventListener('pointerup', (event) => {
@@ -275,10 +332,14 @@ function renderStack(container, cards, { compact = false, tableau = false, onCar
           previousTap = null;
           window.clearTimeout(clickTimer);
           clickTimer = null;
+          updateDebug('input', `doubletap ${event.pointerType} ${card.cardId}`);
+          pushDebugEvent('doubletap', `${event.pointerType} ${card.cardId}`);
           onCardDoubleClick(card, index);
           return;
         }
         previousTap = { timeStamp: event.timeStamp, x: event.clientX, y: event.clientY };
+        updateDebug('input', `tap ${event.pointerType} ${card.cardId}`);
+        pushDebugEvent('tap', `${event.pointerType} ${card.cardId}`);
       });
     }
     if (onCardPointerDown) {
@@ -344,6 +405,7 @@ function render(current, { animate = false } = {}) {
   updateActionControls();
   $('#revision').textContent = `rev ${rev}`;
   $('#state-hash').textContent = `hash ${stateHash.slice(0, 12)}`;
+  updateDebug('state', debugStateLabel());
   $('#local-id').textContent = localId.toUpperCase();
   $('#opponent-id').textContent = opponentId.toUpperCase();
   $('#local-score').textContent = String(local.score);
@@ -594,13 +656,23 @@ function moveToFoundation(index) {
 async function sendIntent(kind, payload) {
   if (!canSendActions()) {
     setMessage(isMatchFinished() ? 'Match ist beendet.' : 'Diese Aktion ist fuer diese Rolle nicht verfuegbar.', 'warn');
+    updateDebug('intent', `blocked ${kind}`);
+    pushDebugEvent('intent blocked', kind);
     return null;
   }
   interactionLocked = true;
   clearDrag();
   $('#pending').hidden = false;
+  debugPendingStart = performance.now();
+  updateDebug('intent', `${kind} ${shortJson(payload)}`);
+  updateDebug('pending', `sent seq=${client.nextSeq} rev=${client.current?.rev ?? '-'}`);
+  pushDebugEvent('intent', `${kind} seq=${client.nextSeq} rev=${client.current?.rev ?? '-'}`);
   try {
     const response = await client.sendIntent(kind, payload);
+    const elapsed = debugPendingStart === null ? '-' : `${Math.round(performance.now() - debugPendingStart)}ms`;
+    updateDebug('pending', elapsed);
+    updateDebug('response', `${response.kind}${response.code ? `:${response.code}` : ''}${response.reason ? `:${response.reason}` : ''} rev=${response.rev}`);
+    pushDebugEvent('response', `${response.kind}${response.code ? ` ${response.code}` : ''} ${elapsed}`);
     playCue(cueForIntentResult(kind, response));
     if (response.kind === 'reject') setMessage(`Abgelehnt: ${response.code}. Andere Zielzone wählen.`, 'error');
     else if (response.kind === 'snapshot') {
@@ -614,11 +686,17 @@ async function sendIntent(kind, payload) {
       setMessage(`${kind} akzeptiert`, 'ok');
     }
   } catch (error) {
+    const elapsed = debugPendingStart === null ? '-' : `${Math.round(performance.now() - debugPendingStart)}ms`;
+    updateDebug('pending', elapsed);
+    updateDebug('response', `error ${error.message}`);
+    pushDebugEvent('error', `${error.message} ${elapsed}`);
     setMessage(error.message, 'error');
   } finally {
+    debugPendingStart = null;
     interactionLocked = false;
     $('#pending').hidden = true;
     if (client?.current) setSelection(selection, { rerender: false });
+    updateDebug('state', debugStateLabel());
   }
 }
 
@@ -714,6 +792,8 @@ document.addEventListener('pointermove', (event) => {
 
 document.addEventListener('pointerup', (event) => {
   if (!drag || event.pointerId !== drag.pointerId) return;
+  updateDebug('input', `pointerup drag active=${drag.active} ${event.pointerType}`);
+  pushDebugEvent('pointerup', `drag active=${drag.active}`);
   const activeDrag = drag.active;
   const intent = activeDrag ? dropIntent(drag.selection, client.clientId, dropTargetAt(event.clientX, event.clientY)) : null;
   clearDrag();
@@ -738,7 +818,10 @@ async function connectToMatch() {
   clearGameOverFlow();
   client = new ProtocolClient({ baseUrl, matchId, clientId });
   client.subscribe((event) => {
-    if (event.type === 'state') render(event.current, { animate: event.source === 'ack' });
+    if (event.type === 'state') {
+      pushDebugEvent('state', `${event.source} ${debugStateLabel()}`);
+      render(event.current, { animate: event.source === 'ack' });
+    }
     if (event.type === 'disconnected') {
       $('#connection-dot').classList.remove('online');
       $('#connection-label').textContent = 'Getrennt';
@@ -886,6 +969,21 @@ $('#create-bot-versus-match').addEventListener('click', () => startBotVersusMatc
 $('#stop-bot-match').addEventListener('click', () => stopActiveBot());
 $('#resign-match').addEventListener('click', () => resignMatch());
 $('#preview-final-sequence').addEventListener('click', () => previewFinalSequence());
+$('#debug-toggle').addEventListener('change', (event) => {
+  debugEnabled = event.target.checked;
+  renderDebugOverlay();
+  pushDebugEvent('debug', debugEnabled ? 'enabled' : 'disabled');
+});
+$('#debug-clear').addEventListener('click', () => {
+  debugHistory.length = 0;
+  debugSuppressedClicks = 0;
+  updateDebug('input', '-');
+  updateDebug('intent', '-');
+  updateDebug('pending', '-');
+  updateDebug('response', '-');
+  $('#debug-events').replaceChildren();
+  renderDebugOverlay();
+});
 $('#app-menu-toggle').addEventListener('click', (event) => {
   event.preventDefault();
   event.stopPropagation();
@@ -949,6 +1047,8 @@ document.addEventListener('click', (event) => {
   event.preventDefault();
   event.stopPropagation();
   suppressNextClick = false;
+  updateDebug('suppressed');
+  pushDebugEvent('click suppressed', event.target?.className || event.target?.id || event.target?.tagName || '-');
 }, true);
 document.addEventListener('click', (event) => {
   if (event.target.closest('#version-badge') || event.target.closest('#version-menu')) return;

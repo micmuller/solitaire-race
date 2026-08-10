@@ -74,12 +74,17 @@ input, select, button {
   color: var(--text); padding: 7px 10px;
 }
 input { width: 190px; }
+input[type="checkbox"] { width: auto; min-height: auto; }
 input[readonly] { color: var(--muted); }
 button:hover { border-color: var(--gold); }
 button:disabled, input:disabled, select:disabled { cursor: not-allowed; opacity: .5; }
 button.primary { background: var(--gold); border-color: var(--gold); color: #17130c; font-weight: 700; }
 button.danger { border-color: #73423f; background: #342122; color: #f0c0bc; }
 button.danger:hover { border-color: var(--danger); }
+.toggle-row {
+  min-height: 36px; display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  border: 1px solid #484f58; border-radius: 5px; background: #24282d; color: var(--text);
+}
 .invite-group { margin-bottom: 8px; }
 .invite-group input { width: min(440px, 100%); }
 .restart-dialog, .game-over-dialog {
@@ -210,6 +215,21 @@ button.danger:hover { border-color: var(--danger); }
 #message[data-tone="ok"] { color: #72d5a0; }
 #message[data-tone="warn"] { color: var(--gold); }
 #message[data-tone="error"] { color: var(--danger); }
+.debug-overlay {
+  position: fixed; right: 14px; bottom: 54px; z-index: 55; width: min(430px, calc(100vw - 28px));
+  max-height: min(440px, calc(100vh - 120px)); overflow: auto; padding: 10px;
+  border: 1px solid #4b545d; border-radius: 7px; background: #17191dee; color: var(--text);
+  box-shadow: 0 12px 30px #000c; backdrop-filter: blur(8px);
+}
+.debug-overlay[hidden] { display: none; }
+.debug-overlay-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.debug-overlay-header strong { color: var(--gold); font-size: 12px; text-transform: uppercase; }
+.debug-overlay-header button { min-height: 28px; padding: 4px 8px; font-size: 11px; }
+.debug-grid { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 5px 9px; font-size: 11px; }
+.debug-grid span { color: var(--muted); }
+.debug-grid strong { min-width: 0; overflow: hidden; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.debug-overlay ol { margin: 9px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.debug-overlay li { padding-top: 4px; border-top: 1px solid #ffffff14; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; overflow-wrap: anywhere; }
 
 @media (max-width: 850px) {
   :root { --card-w: 54px; --card-h: 76px; }

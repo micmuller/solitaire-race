@@ -38,6 +38,8 @@ Current vertical slice:
 - expose connection, revision, short hash, pending, reject and GameOver status.
 - recover from `DUPLICATE_SEQ` rejects by adopting the server-provided
   `expectedSeq` before the next action.
+- expose an optional Debug overlay from the menu with recent input events,
+  intent dispatch, pending duration, server response and sequence/state data.
 
 The visual structure, felt treatment, card layout and responsive board geometry
 are derived from the established v1 Web UI. No v1 state, rule, move, snapshot,

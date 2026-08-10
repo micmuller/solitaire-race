@@ -44,6 +44,7 @@
       <div class="menu-grid">
         <button id="resign-match" class="danger">Aufgeben</button>
         <button id="preview-final-sequence">Finale testen</button>
+        <label class="toggle-row"><input id="debug-toggle" type="checkbox"> Debug</label>
       </div>
     </div>
     <div class="menu-section">
@@ -114,6 +115,22 @@
       <span id="pending" hidden>Action wird geprüft ...</span>
     </div>
   </footer>
+
+  <aside id="debug-overlay" class="debug-overlay" hidden aria-live="polite">
+    <div class="debug-overlay-header">
+      <strong>Debug</strong>
+      <button id="debug-clear" type="button">Leeren</button>
+    </div>
+    <div class="debug-grid">
+      <span>Input</span><strong id="debug-input">-</strong>
+      <span>Intent</span><strong id="debug-intent">-</strong>
+      <span>Pending</span><strong id="debug-pending">-</strong>
+      <span>Response</span><strong id="debug-response">-</strong>
+      <span>State</span><strong id="debug-state">-</strong>
+      <span>Suppressed</span><strong id="debug-suppressed">0</strong>
+    </div>
+    <ol id="debug-events"></ol>
+  </aside>
 
   <dialog id="restart-dialog" class="restart-dialog">
     <form method="dialog">
