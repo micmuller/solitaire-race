@@ -13,6 +13,8 @@ Current vertical slice:
   server-managed bots at the selected speed;
 - restore host/join identity from `?matchId=...&role=p1|p2` URL state;
 - connect through Protocol 2.5.2 and render the initial authoritative snapshot;
+- keep Start, Restart and Aufgeben in the header while secondary controls live
+  in a tabbed overlay menu for Spiel, Neues Spiel, Bot, Teilen and Info;
 - render both players, all tableaus and eight global foundations;
 - show each player's authoritative foundation point score next to P1/P2;
 - show a completed-match celebration for about 10 seconds before opening the

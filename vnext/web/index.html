@@ -33,47 +33,80 @@
     </div>
     <div class="header-actions">
       <button id="create-match" class="primary">Start</button>
+      <button id="resign-match" class="danger">Aufgeben</button>
       <button id="restart-match" class="icon-button" title="Match neu starten" aria-label="Match neu starten">↻</button>
       <button id="app-menu-toggle" class="icon-button" type="button" aria-label="Menü" aria-expanded="false">☰</button>
     </div>
   </header>
 
-  <section id="app-menu" class="app-menu" hidden>
-    <div class="menu-section">
-      <h2>Spiel</h2>
-      <div class="menu-grid">
-        <button id="resign-match" class="danger">Aufgeben</button>
-        <button id="preview-final-sequence">Finale testen</button>
-        <label class="toggle-row"><input id="debug-toggle" type="checkbox"> Debug</label>
+  <section id="app-menu" class="app-menu" hidden aria-label="Menü">
+    <div class="app-menu-panel">
+      <div class="app-menu-header">
+        <strong>Menü</strong>
+        <button id="app-menu-close" class="icon-button" type="button" aria-label="Menü schliessen">×</button>
       </div>
-    </div>
-    <div class="menu-section">
-      <h2>Match</h2>
-      <div class="menu-grid">
-        <label>Seed<input id="seed" value="WEB-VNEXT-001" autocomplete="off"></label>
-        <button id="random-seed" title="Random Seed generieren" aria-label="Random Seed generieren">Zufall</button>
-        <label>Modus<select id="mode"><option value="split">Split</option><option value="shared">Shared</option></select></label>
-        <button id="create-bot-match">Match mit Bot</button>
-        <button id="create-bot-versus-match">Bot vs Bot</button>
+      <nav class="menu-tabs" aria-label="Menübereiche">
+        <button class="menu-tab active" type="button" data-menu-tab="game">Spiel</button>
+        <button class="menu-tab" type="button" data-menu-tab="match">Neues Spiel</button>
+        <button class="menu-tab" type="button" data-menu-tab="bot">Bot</button>
+        <button class="menu-tab" type="button" data-menu-tab="share">Teilen</button>
+        <button class="menu-tab" type="button" data-menu-tab="info">Info</button>
+      </nav>
+      <div class="menu-panel active" data-menu-panel="game">
+        <div class="menu-section">
+          <h2>Spiel</h2>
+          <div class="menu-grid">
+            <button id="preview-final-sequence">Finale testen</button>
+            <label class="toggle-row"><input id="debug-toggle" type="checkbox"> Debug</label>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="menu-section">
-      <h2>Bot</h2>
-      <div class="menu-grid">
-        <label>Geschwindigkeit<select id="bot-speed"><option value="easy">Easy</option><option value="medium">Mittel</option><option value="hard">Schwer</option></select></label>
-        <button id="stop-bot-match">Bot stoppen</button>
+      <div class="menu-panel" data-menu-panel="match">
+        <div class="menu-section">
+          <h2>Neues Spiel</h2>
+          <div class="menu-grid">
+            <label>Seed<input id="seed" value="WEB-VNEXT-001" autocomplete="off"></label>
+            <button id="random-seed" title="Random Seed generieren" aria-label="Random Seed generieren">Zufall</button>
+            <label>Modus<select id="mode"><option value="split">Split</option><option value="shared">Shared</option></select></label>
+            <button id="create-bot-match">Match mit Bot</button>
+            <button id="create-bot-versus-match">Bot vs Bot</button>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="menu-section">
-      <h2>Teilen</h2>
-      <div id="invite-panel" class="menu-grid invite-group" hidden>
-        <label>Invite-Link<input id="invite-link" readonly autocomplete="off"></label>
-        <button id="copy-invite">Kopieren</button>
+      <div class="menu-panel" data-menu-panel="bot">
+        <div class="menu-section">
+          <h2>Bot</h2>
+          <div class="menu-grid">
+            <label>Geschwindigkeit<select id="bot-speed"><option value="easy">Easy</option><option value="medium">Mittel</option><option value="hard">Schwer</option></select></label>
+            <button id="stop-bot-match">Bot stoppen</button>
+          </div>
+        </div>
       </div>
-      <div class="menu-grid">
-        <label>Match-ID<input id="match-id" placeholder="m-..." autocomplete="off"></label>
-        <label>Spieler<select id="client-id"><option value="p1">P1</option><option value="p2">P2</option><option value="observer">Observer</option></select></label>
-        <button id="connect-match">Verbinden</button>
+      <div class="menu-panel" data-menu-panel="share">
+        <div class="menu-section">
+          <h2>Teilen</h2>
+          <div id="invite-panel" class="menu-grid invite-group" hidden>
+            <label>Invite-Link<input id="invite-link" readonly autocomplete="off"></label>
+            <button id="copy-invite">Kopieren</button>
+          </div>
+          <div class="menu-grid">
+            <label>Match-ID<input id="match-id" placeholder="m-..." autocomplete="off"></label>
+            <label>Spieler<select id="client-id"><option value="p1">P1</option><option value="p2">P2</option><option value="observer">Observer</option></select></label>
+            <button id="connect-match">Verbinden</button>
+          </div>
+        </div>
+      </div>
+      <div class="menu-panel" data-menu-panel="info">
+        <div class="menu-section">
+          <h2>Status</h2>
+          <div class="info-grid">
+            <span>Server</span><strong id="menu-server-version">-</strong>
+            <span>Protocol</span><strong id="menu-protocol-version">-</strong>
+            <span>Webclient</span><strong id="menu-web-version">-</strong>
+            <span>Revision</span><strong id="menu-revision">-</strong>
+            <span>Hash</span><strong id="menu-state-hash">-</strong>
+          </div>
+        </div>
       </div>
     </div>
   </section>

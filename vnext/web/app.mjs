@@ -62,11 +62,15 @@ function setVersionLabels() {
   $('#server-version').textContent = serverVersion;
   $('#protocol-version').textContent = serverProtocolVersion;
   $('#web-version').textContent = WEB_CLIENT_VERSION;
+  $('#menu-server-version').textContent = serverVersion;
+  $('#menu-protocol-version').textContent = serverProtocolVersion;
+  $('#menu-web-version').textContent = WEB_CLIENT_VERSION;
 }
 
 function setAppMenuOpen(isOpen) {
   $('#app-menu').hidden = !isOpen;
   $('#app-menu-toggle').setAttribute('aria-expanded', String(isOpen));
+  if (isOpen) updateMenuInfo();
 }
 
 function toggleAppMenu() {
@@ -75,6 +79,20 @@ function toggleAppMenu() {
 
 function closeDialog(dialog) {
   if (dialog?.open) dialog.close();
+}
+
+function setMenuPanel(panelName) {
+  document.querySelectorAll('.menu-tab').forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.menuTab === panelName);
+  });
+  document.querySelectorAll('.menu-panel').forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.menuPanel === panelName);
+  });
+}
+
+function updateMenuInfo() {
+  $('#menu-revision').textContent = client?.current ? `rev ${client.current.rev}` : '-';
+  $('#menu-state-hash').textContent = client?.current?.stateHash?.slice(0, 12) || '-';
 }
 
 function clearGameOverFlow() {
@@ -405,6 +423,7 @@ function render(current, { animate = false } = {}) {
   updateActionControls();
   $('#revision').textContent = `rev ${rev}`;
   $('#state-hash').textContent = `hash ${stateHash.slice(0, 12)}`;
+  updateMenuInfo();
   updateDebug('state', debugStateLabel());
   $('#local-id').textContent = localId.toUpperCase();
   $('#opponent-id').textContent = opponentId.toUpperCase();
@@ -983,6 +1002,13 @@ $('#debug-clear').addEventListener('click', () => {
   updateDebug('response', '-');
   $('#debug-events').replaceChildren();
   renderDebugOverlay();
+});
+document.querySelectorAll('.menu-tab').forEach((tab) => {
+  tab.addEventListener('click', () => setMenuPanel(tab.dataset.menuTab));
+});
+$('#app-menu-close').addEventListener('click', () => setAppMenuOpen(false));
+$('#app-menu').addEventListener('click', (event) => {
+  if (event.target === $('#app-menu')) setAppMenuOpen(false);
 });
 $('#app-menu-toggle').addEventListener('click', (event) => {
   event.preventDefault();
