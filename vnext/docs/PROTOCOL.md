@@ -1,6 +1,6 @@
 ---
 Document: PROTOCOL.md
-Version: 2.5.1
+Version: 2.5.2
 Status: FROZEN
 Phase: Phase 1 – Contract & Determinism First
 Last-Updated: 2026-08-05
@@ -14,7 +14,7 @@ Last-Updated: 2026-08-05
 
 ## Protocol Versioning
 - SemVer: `MAJOR.MINOR.PATCH`.
-- Current vNext protocol version: `2.5.1`.
+- Current vNext protocol version: `2.5.2`.
 - Legacy v1 messages are incompatible and MUST NOT enter the vNext core.
 - Additive changes preferred (MINOR/PATCH).
 - Breaking changes require ADR approval and MAJOR bump.
@@ -154,6 +154,8 @@ foundation updates collision-safe.
 - `MATCH_FINISHED`
 - `OUT_OF_TURN` (not used in Phase 1)
 - `DUPLICATE_SEQ` (idempotent duplicate; action ignored)
+  - Includes `expectedSeq` so thin clients can recover their next sequence
+    number before sending the next action.
 - `INTERNAL_INVARIANT_BREACH` (server bug only)
 
 ## Snapshot Format
@@ -178,7 +180,7 @@ Example 1: Full client-to-server message
   "clientId": "p1",
   "seq": 42,
   "baseRev": 310,
-  "protocolVersion": "2.5.1",
+  "protocolVersion": "2.5.2",
   "kind": "draw",
   "payload": {
     "source": {"zone": "stock", "owner": "p1"},

@@ -12,11 +12,13 @@ Current vertical slice:
 - create and observe a Bot-vs-Bot match with both `p1` and `p2` controlled by
   server-managed bots at the selected speed;
 - restore host/join identity from `?matchId=...&role=p1|p2` URL state;
-- connect through Protocol 2.5.1 and render the initial authoritative snapshot;
+- connect through Protocol 2.5.2 and render the initial authoritative snapshot;
 - render both players, all tableaus and eight global foundations;
 - show each player's authoritative foundation point score next to P1/P2;
 - show a completed-match dialog with final score, celebration animation and a
   new-game action after the first player places all own cards;
+- replay the same final dialog and celebration sequence from the menu without
+  mutating the authoritative match state;
 - enlarge cards and rank/suit corners on landscape tablets while dynamically
   tightening tall tableau stacks so they remain visible;
 - submit stock draw/recycle and top-tableau flip as Action Intents;
@@ -32,6 +34,8 @@ Current vertical slice:
   Escape-key cancellation;
 - update only after authoritative ack/snapshot;
 - expose connection, revision, short hash, pending, reject and GameOver status.
+- recover from `DUPLICATE_SEQ` rejects by adopting the server-provided
+  `expectedSeq` before the next action.
 
 The visual structure, felt treatment, card layout and responsive board geometry
 are derived from the established v1 Web UI. No v1 state, rule, move, snapshot,

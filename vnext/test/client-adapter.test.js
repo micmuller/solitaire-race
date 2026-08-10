@@ -76,6 +76,38 @@ test('client keeps state and sequence on reject, then reuses the sequence', asyn
   assert.equal(client.current.rev, 1);
 });
 
+test('client recovers next sequence after duplicate sequence reject', async (t) => {
+  const baseUrl = await withServer(t);
+  const match = await createMatch(baseUrl, { seed: 'CLIENT-DUPLICATE-SEQ', mode: 'split' });
+  const client = new ProtocolClient({ baseUrl, matchId: match.matchId, clientId: 'p1' });
+  t.after(() => client.close());
+  await client.connect();
+
+  await client.sendIntent('draw', {
+    source: zone('stock', 'p1'),
+    target: zone('waste', 'p1')
+  });
+  assert.equal(client.nextSeq, 1);
+
+  client.nextSeq = 0;
+  const duplicate = await client.sendIntent('draw', {
+    source: zone('stock', 'p1'),
+    target: zone('waste', 'p1')
+  });
+  assert.equal(duplicate.kind, 'reject');
+  assert.equal(duplicate.code, 'DUPLICATE_SEQ');
+  assert.equal(duplicate.expectedSeq, 1);
+  assert.equal(client.nextSeq, 1);
+
+  const accepted = await client.sendIntent('draw', {
+    source: zone('stock', 'p1'),
+    target: zone('waste', 'p1')
+  });
+  assert.equal(accepted.kind, 'ack');
+  assert.equal(accepted.seq, 1);
+  assert.equal(client.nextSeq, 2);
+});
+
 test('stale client action is rebased against the latest authoritative state', async (t) => {
   const baseUrl = await withServer(t);
   const match = await createMatch(baseUrl, { seed: 'CLIENT-RECOVERY', mode: 'shared' });

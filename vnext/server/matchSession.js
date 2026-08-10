@@ -18,7 +18,7 @@ function snapshot(session, reason) {
   };
 }
 
-function reject(session, clientId, code) {
+function reject(session, clientId, code, metadata = {}) {
   return {
     kind: 'reject',
     matchId: session.matchId,
@@ -26,7 +26,8 @@ function reject(session, clientId, code) {
     protocolVersion: PROTOCOL_VERSION,
     code,
     rev: session.current.rev,
-    stateHash: session.current.stateHash
+    stateHash: session.current.stateHash,
+    ...metadata
   };
 }
 
@@ -81,7 +82,7 @@ class MatchSession {
     const expectedSeq = this.lastAcceptedSeq[actorId] + 1;
     let coreResult;
     if (envelope.seq < expectedSeq) {
-      coreResult = { result: 'reject', code: 'DUPLICATE_SEQ', ...this.current };
+      coreResult = { result: 'reject', code: 'DUPLICATE_SEQ', expectedSeq, ...this.current };
     } else if (envelope.seq > expectedSeq || envelope.baseRev > this.current.rev) {
       coreResult = { result: 'snapshot', reason: 'OUT_OF_SYNC', ...this.current };
     } else {
@@ -123,7 +124,10 @@ class MatchSession {
     if (coreResult.result === 'snapshot') {
       return { response: snapshot(this, coreResult.reason), broadcast: coreResult.reason === 'AIRBAG' };
     }
-    return { response: reject(this, actorId, coreResult.code), broadcast: false };
+    return {
+      response: reject(this, actorId, coreResult.code, coreResult.expectedSeq === undefined ? {} : { expectedSeq: coreResult.expectedSeq }),
+      broadcast: false
+    };
   }
 }
 

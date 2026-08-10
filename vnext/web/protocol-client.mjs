@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = '2.5.1';
+export const PROTOCOL_VERSION = '2.5.2';
 
 export class ProtocolClient {
   constructor({ baseUrl, matchId, clientId }) {
@@ -78,6 +78,9 @@ export class ProtocolClient {
         const pending = this.pending;
         this.pending = null;
         if (ownAck) this.nextSeq += 1;
+        if (ownReject && response.code === 'DUPLICATE_SEQ' && Number.isSafeInteger(response.expectedSeq)) {
+          this.nextSeq = response.expectedSeq;
+        }
         pending.resolve(response);
       }
     }

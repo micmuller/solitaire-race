@@ -173,8 +173,8 @@ button.danger:hover { border-color: var(--danger); }
   position: fixed; inset: 0; z-index: 60; pointer-events: none; overflow: hidden;
 }
 .celebration-layer span {
-  position: absolute; top: -18px; left: var(--x); width: 8px; height: 14px; border-radius: 2px;
-  background: var(--color); animation: confetti-fall 1500ms cubic-bezier(.2, .7, .2, 1) var(--delay) forwards;
+  position: absolute; top: -24px; left: var(--x); width: 9px; height: 16px; border-radius: 2px;
+  background: var(--color); animation: confetti-fall 3200ms cubic-bezier(.2, .7, .2, 1) var(--delay) forwards;
 }
 .compact { --card-w: 50px; --card-h: 70px; }
 .compact-tableau { --card-w: 50px; --card-h: 70px; }

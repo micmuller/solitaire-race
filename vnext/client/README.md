@@ -1,4 +1,4 @@
-# Protocol 2.5.1 Reference Client
+# Protocol 2.5.2 Reference Client
 
 `ProtocolClient` is the executable reference adapter between UI intent and the
 authoritative vNext server. It contains no Solitaire rules and performs no

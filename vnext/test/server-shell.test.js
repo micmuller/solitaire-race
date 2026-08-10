@@ -56,6 +56,7 @@ test('MatchSession produces a replayable authoritative ActionLog', () => {
   const duplicate = session.process('p1', drawEnvelope('m-test', 'p1', 0, 1));
   assert.equal(duplicate.response.kind, 'reject');
   assert.equal(duplicate.response.code, 'DUPLICATE_SEQ');
+  assert.equal(duplicate.response.expectedSeq, 1);
 
   const log = session.actionLog();
   assert.deepEqual(replay(log, defaultExpectedConfig('SESSION-SEED', 'split')), {

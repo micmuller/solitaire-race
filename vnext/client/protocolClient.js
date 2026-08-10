@@ -122,6 +122,9 @@ class ProtocolClient {
         const pending = this.pending;
         this.pending = null;
         if (ownAck) this.nextSeq += 1;
+        if (ownReject && response.code === 'DUPLICATE_SEQ' && Number.isSafeInteger(response.expectedSeq)) {
+          this.nextSeq = response.expectedSeq;
+        }
         pending.resolve(response);
       }
     }

@@ -354,38 +354,67 @@ function render(current, { animate = false } = {}) {
   if (previousRects) animateAuthoritativeChanges(previousRects);
 }
 
-function showGameOverDialog(current) {
+function showGameOverDialog(current, { preview = false } = {}) {
   const { state, rev, stateHash } = current;
   if (state.status !== 'finished' || state.endedReason !== 'completed') return;
-  const key = `${client?.matchId || state.seed}:${rev}:${stateHash}`;
+  const key = preview ? `preview:${Date.now()}` : `${client?.matchId || state.seed}:${rev}:${stateHash}`;
   if (celebratedMatchKey === key) return;
   celebratedMatchKey = key;
   launchCelebration();
   $('#game-over-title').textContent = `${ROLE_LABELS[state.winner] || state.winner} gewinnt`;
-  $('#game-over-summary').textContent = `Alle Karten abgelegt. Endstand ${scoreLine(state)}. Neues Spiel?`;
+  $('#game-over-summary').textContent = `${ROLE_LABELS[state.winner] || state.winner} hat alle eigenen Karten abgelegt. Endstand ${scoreLine(state)}. Neues Spiel?`;
   $('#game-over-p1-score').textContent = String(state.players.p1.score);
   $('#game-over-p2-score').textContent = String(state.players.p2.score);
-  const canStartNew = client?.clientId === 'p1' || client?.clientId === 'observer';
+  const canStartNew = !preview && (client?.clientId === 'p1' || client?.clientId === 'observer');
   $('#game-over-new').disabled = !canStartNew;
-  $('#game-over-new').title = canStartNew ? 'Neues Spiel starten' : 'P1 startet den nächsten Match';
+  $('#game-over-new').title = canStartNew ? 'Neues Spiel starten' : preview ? 'Finalsequenz-Test startet keinen Match' : 'P1 startet den nächsten Match';
   if (!$('#game-over-dialog').open) $('#game-over-dialog').showModal();
 }
 
 function launchCelebration() {
   const layer = document.createElement('div');
   layer.className = 'celebration-layer';
-  const colors = ['#f6d77d', '#72d5a0', '#e06b63', '#7fb4ff', '#f4f2ec'];
-  for (let index = 0; index < 42; index += 1) {
+  const colors = ['#f6d77d', '#72d5a0', '#e06b63', '#7fb4ff', '#f4f2ec', '#ff9f7a'];
+  for (let index = 0; index < 96; index += 1) {
     const piece = document.createElement('span');
     piece.style.setProperty('--x', `${Math.random() * 100}vw`);
-    piece.style.setProperty('--dx', `${Math.random() * 80 - 40}px`);
-    piece.style.setProperty('--delay', `${Math.random() * 260}ms`);
+    piece.style.setProperty('--dx', `${Math.random() * 140 - 70}px`);
+    piece.style.setProperty('--delay', `${Math.random() * 700}ms`);
     piece.style.setProperty('--color', colors[index % colors.length]);
-    piece.style.setProperty('--rotate', `${Math.random() * 540 - 270}deg`);
+    piece.style.setProperty('--rotate', `${Math.random() * 900 - 450}deg`);
     layer.append(piece);
   }
   document.body.append(layer);
-  window.setTimeout(() => layer.remove(), 1800);
+  window.setTimeout(() => layer.remove(), 3900);
+}
+
+function previewFinalSequence() {
+  const baseState = client?.current?.state;
+  const state = structuredClone(baseState || {
+    seed: $('#seed').value.trim() || 'FINAL-SEQUENCE-PREVIEW',
+    status: 'active',
+    endedReason: null,
+    winner: null,
+    endedBy: null,
+    players: {
+      p1: { score: 0 },
+      p2: { score: 0 }
+    }
+  });
+  const winner = client?.clientId === 'p2' ? 'p2' : 'p1';
+  state.status = 'finished';
+  state.endedReason = 'completed';
+  state.winner = winner;
+  state.endedBy = winner;
+  state.players.p1.score ??= 0;
+  state.players.p2.score ??= 0;
+  showGameOverDialog({
+    rev: client?.current?.rev ?? 0,
+    stateHash: client?.current?.stateHash ?? 'preview',
+    state
+  }, { preview: true });
+  setAppMenuOpen(false);
+  setMessage('Finalsequenz-Test abgespielt.', 'ok');
 }
 
 async function startNextGame() {
@@ -795,6 +824,7 @@ $('#create-bot-match').addEventListener('click', () => startHostMatch({ withBot:
 $('#create-bot-versus-match').addEventListener('click', () => startBotVersusMatch());
 $('#stop-bot-match').addEventListener('click', () => stopActiveBot());
 $('#resign-match').addEventListener('click', () => resignMatch());
+$('#preview-final-sequence').addEventListener('click', () => previewFinalSequence());
 $('#app-menu-toggle').addEventListener('click', (event) => {
   event.preventDefault();
   event.stopPropagation();

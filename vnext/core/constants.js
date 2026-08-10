@@ -10,8 +10,8 @@ const CARDS_PER_PLAYER = 52;
 const TABLEAU_COUNT = 7;
 const TABLEAU_CARD_COUNT = 28;
 const STOCK_CARD_COUNT = 24;
-const APP_VERSION = '1.1.0-alpha.7';
-const PROTOCOL_VERSION = '2.5.1';
+const APP_VERSION = '1.1.0-alpha.8';
+const PROTOCOL_VERSION = '2.5.2';
 const SCHEMA_VERSION = '1.4.0';
 const RULES_VERSION = '1.0.0';
 
