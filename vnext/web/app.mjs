@@ -340,7 +340,7 @@ function updateActionControls() {
   $('#seed').disabled = hostLocked;
   $('#mode').disabled = hostLocked;
   $('#bot-speed').disabled = hostLocked;
-  $('#resign-match').disabled = client?.clientId !== 'p2' || isMatchFinished();
+  $('#resign-match').disabled = !ACTION_PLAYER_IDS.has(client?.clientId) || isMatchFinished();
   $('#end-lobby-game').disabled = client?.clientId !== 'p1' || !lobbyPlayer || !activeLobbyGameId;
   updateRestartControl();
   updateBotControls();
@@ -592,25 +592,42 @@ function render(current, { animate = false } = {}) {
 
 function showGameOverDialog(current, { preview = false } = {}) {
   const { state, rev, stateHash } = current;
-  if (state.status !== 'finished' || state.endedReason !== 'completed') return;
+  if (state.status !== 'finished') return;
   const key = preview ? `preview:${Date.now()}` : `${client?.matchId || state.seed}:${rev}:${stateHash}`;
   if (celebratedMatchKey === key) return;
   celebratedMatchKey = key;
   if (gameOverDialogTimer) window.clearTimeout(gameOverDialogTimer);
   closeDialog($('#game-over-dialog'));
   closeDialog($('#restart-dialog'));
+  if (state.endedReason === 'resign') {
+    renderGameOverDialog(state, { preview });
+    if (!$('#game-over-dialog').open) $('#game-over-dialog').showModal();
+    return;
+  }
+  if (state.endedReason !== 'completed') return;
   launchCelebration();
   gameOverDialogTimer = window.setTimeout(() => {
     gameOverDialogTimer = null;
-    $('#game-over-title').textContent = `${ROLE_LABELS[state.winner] || state.winner} gewinnt`;
-    $('#game-over-summary').textContent = `${ROLE_LABELS[state.winner] || state.winner} hat alle eigenen Karten abgelegt. Endstand ${scoreLine(state)}. Neues Spiel?`;
-    $('#game-over-p1-score').textContent = String(state.players.p1.score);
-    $('#game-over-p2-score').textContent = String(state.players.p2.score);
-    const canStartNew = !preview && canRestartCurrentMatch();
-    $('#game-over-new').disabled = !canStartNew;
-    $('#game-over-new').title = canStartNew ? 'Neues Spiel starten' : preview ? 'Finalsequenz-Test startet keinen Match' : 'P1 startet den nächsten Match';
+    renderGameOverDialog(state, { preview });
     if (!$('#game-over-dialog').open) $('#game-over-dialog').showModal();
   }, GAME_OVER_DIALOG_DELAY_MS);
+}
+
+function renderGameOverDialog(state, { preview = false } = {}) {
+  const winnerLabel = ROLE_LABELS[state.winner] || state.winner || '-';
+  const endedByLabel = ROLE_LABELS[state.endedBy] || state.endedBy || '-';
+  $('#game-over-title').textContent = `${winnerLabel} gewinnt`;
+  $('#game-over-summary').textContent = state.endedReason === 'resign'
+    ? `${endedByLabel} hat aufgegeben. Endstand ${scoreLine(state)}.`
+    : `${winnerLabel} hat alle eigenen Karten abgelegt. Endstand ${scoreLine(state)}. Neues Spiel?`;
+  $('#game-over-p1-score').textContent = String(state.players.p1.score);
+  $('#game-over-p2-score').textContent = String(state.players.p2.score);
+  const canStartNew = !preview && canRestartCurrentMatch();
+  $('#game-over-new').hidden = false;
+  $('#game-over-new').disabled = !canStartNew;
+  $('#game-over-new').title = canStartNew ? 'Restart-Menue oeffnen' : preview ? 'Finalsequenz-Test startet keinen Match' : 'Nur P1 kann einen Restart starten';
+  $('#game-over-lobby').dataset.preview = String(preview);
+  $('#game-over-lobby').textContent = preview ? 'Schliessen' : 'Zur Lobby';
 }
 
 function launchCelebration() {
@@ -1184,8 +1201,8 @@ async function restartHostMatch({ randomSeed = false } = {}) {
 }
 
 function resignMatch() {
-  if (client?.clientId !== 'p2') {
-    setMessage('Aufgeben ist aktuell nur fuer P2 verfuegbar.', 'warn');
+  if (!ACTION_PLAYER_IDS.has(client?.clientId)) {
+    setMessage('Aufgeben ist nur fuer P1 oder P2 verfuegbar.', 'warn');
     return;
   }
   if (isMatchFinished()) {
@@ -1277,7 +1294,13 @@ $('#restart-new-seed').addEventListener('click', () => {
 });
 $('#restart-cancel').addEventListener('click', () => $('#restart-dialog').close());
 $('#game-over-new').addEventListener('click', () => startNextGame().catch((error) => setMessage(error.message, 'error')));
-$('#game-over-close').addEventListener('click', () => $('#game-over-dialog').close());
+$('#game-over-lobby').addEventListener('click', () => {
+  if ($('#game-over-lobby').dataset.preview === 'true') {
+    $('#game-over-dialog').close();
+    return;
+  }
+  returnToLobby().catch((error) => setMessage(error.message, 'error'));
+});
 
 $('#connect-match').addEventListener('click', () => connectToMatch().catch((error) => setMessage(error.message, 'error')));
 $('#version-badge').addEventListener('click', (event) => {

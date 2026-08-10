@@ -24,6 +24,9 @@ Current vertical slice:
 - show each player's authoritative foundation point score next to P1/P2;
 - show a completed-match celebration for about 10 seconds before opening the
   final-score dialog after the first player places all own cards;
+- let either `p1` or `p2` use `Aufgeben`; resign shows the same score dialog
+  immediately without celebration, with `Zur Lobby` for both players and the
+  restart menu available only to `p1`;
 - replay the same final dialog and celebration sequence from the menu without
   mutating the authoritative match state;
 - enlarge cards and rank/suit corners on landscape tablets while dynamically
@@ -124,7 +127,9 @@ bot or bots. The explicit `Bot stoppen` control stops managed bots without
 changing the current match.
 
 When the connected role is `p2`, host/setup actions are disabled to avoid
-accidentally starting a new `p1` match. `p2` can use `Aufgeben` to send a
-server-authoritative `resign`, which broadcasts a finished GameOver state.
+accidentally starting a new `p1` match. Both `p1` and `p2` can use `Aufgeben`
+to send a server-authoritative `resign`, which broadcasts a finished GameOver
+state. The resign dialog skips celebration, keeps the final score visible, and
+offers `Zur Lobby`; only `p1` can open the restart menu from there.
 
 Next follow-up: PWA packaging for the new entry point.

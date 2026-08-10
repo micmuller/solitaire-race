@@ -62,7 +62,7 @@ function controlledMatch(configure) {
 }
 
 test('version axes are exposed independently', () => {
-  assert.equal(APP_VERSION, '1.1.0-alpha.14');
+  assert.equal(APP_VERSION, '1.1.0-alpha.15');
   assert.equal(PROTOCOL_VERSION, '2.5.2');
   assert.equal(RULES_VERSION, '1.0.0');
   assert.equal(SCHEMA_VERSION, '1.4.0');
@@ -266,6 +266,16 @@ test('resign finishes the match and rejects later actions', () => {
   assert.equal(rejected.code, 'MATCH_FINISHED');
   assert.equal(rejected.rev, result.rev);
   assert.equal(rejected.stateHash, result.stateHash);
+});
+
+test('p1 can resign and p2 wins the match', () => {
+  const current = initMatch('SEED-P1-RESIGN', 'split');
+  const result = applyAction(current, 'p1', action('resign', {}));
+  assert.equal(result.result, 'ack');
+  assert.equal(result.state.status, 'finished');
+  assert.equal(result.state.endedReason, 'resign');
+  assert.equal(result.state.endedBy, 'p1');
+  assert.equal(result.state.winner, 'p2');
 });
 
 test('final player foundationMove completes the Race match with the finisher as winner', () => {
