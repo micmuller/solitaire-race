@@ -8,6 +8,7 @@ const { WebSocket } = require('ws');
 const { APP_VERSION, PROTOCOL_VERSION } = require('../core');
 const { defaultExpectedConfig, replay } = require('../replay');
 const { createVNextServer } = require('../server');
+const { LobbyStore } = require('../server/lobbyStore');
 const { MatchSession } = require('../server/matchSession');
 
 const silentLogger = { log() {}, error() {} };
@@ -119,6 +120,53 @@ test('future base revision still returns an unchanged recovery snapshot', () => 
   assert.equal(outcome.response.reason, 'OUT_OF_SYNC');
   assert.equal(outcome.response.rev, 0);
   assert.equal(session.lastAcceptedSeq.p1, -1);
+});
+
+test('LobbyStore maps nickname sessions to games and reserves player history fields', () => {
+  let nextId = 0;
+  const lobby = new LobbyStore({
+    idFactory: () => `id-${nextId += 1}`,
+    clock: () => '2026-08-10T12:00:00.000Z'
+  });
+
+  const host = lobby.createOrUpdatePlayer({ nickname: '  Michael   M.  ' });
+  const guest = lobby.createOrUpdatePlayer({ nickname: 'Sandra' });
+  assert.equal(host.nickname, 'Michael M.');
+  assert.deepEqual(host.stats, {
+    gamesPlayed: 0,
+    gamesWon: 0,
+    totalScore: 0,
+    bestScore: 0,
+    lastGameAt: null
+  });
+
+  const game = lobby.createGame({
+    sessionId: host.sessionId,
+    matchId: 'm-lobby',
+    seed: 'LOBBY-SEED',
+    mode: 'split',
+    name: 'iPad Abendrunde'
+  });
+  assert.equal(game.status, 'waiting');
+  assert.equal(game.players.p1.nickname, 'Michael M.');
+  assert.equal(game.players.p2, null);
+  assert.equal(game.historyPrepared, true);
+
+  const joined = lobby.joinGame({ gameId: game.gameId, sessionId: guest.sessionId });
+  assert.equal(joined.role, 'p2');
+  assert.equal(joined.matchId, 'm-lobby');
+  assert.equal(joined.game.status, 'active');
+  assert.equal(joined.game.players.p2.nickname, 'Sandra');
+
+  const finished = lobby.markMatchFinished('m-lobby', {
+    winner: 'p1',
+    endedReason: 'completed',
+    players: {
+      p1: { score: 52 },
+      p2: { score: 41 }
+    }
+  });
+  assert.equal(finished.status, 'finished');
 });
 
 test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritative ack', async (t) => {
@@ -241,4 +289,60 @@ test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritativ
     assert.match(runtimeLog, new RegExp(`\\[vNext\\] ${event}`));
   }
   assert.doesNotMatch(runtimeLog, /"state"|"players"|"foundations"/);
+});
+
+test('vNext lobby API creates a host game and lets a nickname join as P2', async (t) => {
+  const app = createVNextServer({ logger: silentLogger });
+  const address = await app.start({ port: 0 });
+  const httpBase = `http://127.0.0.1:${address.port}`;
+  t.after(() => app.close());
+
+  const hostResponse = await fetch(`${httpBase}/vnext/lobby/sessions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ nickname: 'Host iPad' })
+  });
+  assert.equal(hostResponse.status, 200);
+  const host = await hostResponse.json();
+
+  const guestResponse = await fetch(`${httpBase}/vnext/lobby/sessions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ nickname: 'Guest iPad' })
+  });
+  assert.equal(guestResponse.status, 200);
+  const guest = await guestResponse.json();
+
+  const createResponse = await fetch(`${httpBase}/vnext/lobby/games`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: host.player.sessionId,
+      name: 'Test Lobby',
+      seed: 'LOBBY-HTTP-SEED',
+      mode: 'shared'
+    })
+  });
+  assert.equal(createResponse.status, 201);
+  const created = await createResponse.json();
+  assert.equal(created.role, 'p1');
+  assert.equal(created.game.status, 'waiting');
+  assert.equal(created.game.players.p1.nickname, 'Host iPad');
+  assert.equal(app.sessions.has(created.matchId), true);
+
+  const gamesBeforeJoin = await fetch(`${httpBase}/vnext/lobby/games`).then((response) => response.json());
+  assert.equal(gamesBeforeJoin.games.length, 1);
+  assert.equal(gamesBeforeJoin.games[0].players.p2, null);
+
+  const joinResponse = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/join`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: guest.player.sessionId })
+  });
+  assert.equal(joinResponse.status, 200);
+  const joined = await joinResponse.json();
+  assert.equal(joined.role, 'p2');
+  assert.equal(joined.matchId, created.matchId);
+  assert.equal(joined.game.status, 'active');
+  assert.equal(joined.game.players.p2.nickname, 'Guest iPad');
 });

@@ -46,13 +46,25 @@
         <button id="app-menu-close" class="icon-button" type="button" aria-label="Menü schliessen">×</button>
       </div>
       <nav class="menu-tabs" aria-label="Menübereiche">
-        <button class="menu-tab active" type="button" data-menu-tab="game">Spiel</button>
+        <button class="menu-tab active" type="button" data-menu-tab="lobby">Lobby</button>
+        <button class="menu-tab" type="button" data-menu-tab="game">Spiel</button>
         <button class="menu-tab" type="button" data-menu-tab="match">Neues Spiel</button>
         <button class="menu-tab" type="button" data-menu-tab="bot">Bot</button>
         <button class="menu-tab" type="button" data-menu-tab="share">Teilen</button>
         <button class="menu-tab" type="button" data-menu-tab="info">Info</button>
       </nav>
-      <div class="menu-panel active" data-menu-panel="game">
+      <div class="menu-panel active" data-menu-panel="lobby">
+        <div class="menu-section">
+          <h2>Lobby</h2>
+          <div class="menu-grid">
+            <label>Nickname<input id="lobby-nickname" maxlength="32" autocomplete="nickname"></label>
+            <button id="lobby-save-name" type="button">Anmelden</button>
+            <button id="lobby-refresh" type="button">Aktualisieren</button>
+          </div>
+          <div class="lobby-list" id="menu-lobby-list"></div>
+        </div>
+      </div>
+      <div class="menu-panel" data-menu-panel="game">
         <div class="menu-section">
           <h2>Spiel</h2>
           <div class="menu-grid">
@@ -65,9 +77,12 @@
         <div class="menu-section">
           <h2>Neues Spiel</h2>
           <div class="menu-grid">
+            <label>Spielname<input id="lobby-game-name" maxlength="48" autocomplete="off"></label>
+            <button id="create-lobby-game" class="primary" type="button">Als P1 hosten</button>
             <label>Seed<input id="seed" value="WEB-VNEXT-001" autocomplete="off"></label>
             <button id="random-seed" title="Random Seed generieren" aria-label="Random Seed generieren">Zufall</button>
             <label>Modus<select id="mode"><option value="split">Split</option><option value="shared">Shared</option></select></label>
+            <button id="direct-create-match">Technisch starten</button>
             <button id="create-bot-match">Match mit Bot</button>
             <button id="create-bot-versus-match">Bot vs Bot</button>
           </div>
@@ -108,6 +123,28 @@
           </div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section id="lobby-overlay" class="lobby-overlay" aria-label="Lobby">
+    <div class="lobby-panel">
+      <div class="lobby-header">
+        <div>
+          <strong>Solitaire HighNoon Lobby</strong>
+          <span>Nickname setzen, Spiel erstellen oder offenes Spiel beitreten.</span>
+        </div>
+        <button id="lobby-overlay-refresh" class="icon-button" type="button" title="Lobby aktualisieren" aria-label="Lobby aktualisieren">↻</button>
+      </div>
+      <div class="lobby-controls">
+        <label>Nickname<input id="start-lobby-nickname" maxlength="32" autocomplete="nickname"></label>
+        <button id="start-lobby-save-name" type="button">Anmelden</button>
+      </div>
+      <div class="lobby-controls">
+        <label>Spielname<input id="start-lobby-game-name" maxlength="48" autocomplete="off"></label>
+        <button id="start-create-lobby-game" class="primary" type="button">Als P1 hosten</button>
+      </div>
+      <div id="start-lobby-list" class="lobby-list"></div>
+      <button id="lobby-open-menu" type="button">Menü öffnen</button>
     </div>
   </section>
 

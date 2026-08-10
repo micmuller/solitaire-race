@@ -1,4 +1,14 @@
-import { ProtocolClient, createMatch, restartMatch, startBot, stopBots } from './protocol-client.mjs';
+import {
+  ProtocolClient,
+  createLobbyGame,
+  createLobbySession,
+  createMatch,
+  joinLobbyGame,
+  listLobbyGames,
+  restartMatch,
+  startBot,
+  stopBots
+} from './protocol-client.mjs';
 import { cueForIntentResult } from './effects.mjs';
 import { autoFoundationIntent, dragSelection, dropIntent, foundationIntent, tableauIntent, tableauSelection, wasteSelection } from './intent-mapping.mjs';
 import { inviteUrl, matchUrl, readLaunchParams } from './lobby.mjs';
@@ -16,6 +26,8 @@ const CELEBRATION_DURATION_MS = 10500;
 const CARD_SINGLE_CLICK_DELAY_MS = 340;
 const DOUBLE_TAP_MS = 340;
 const DOUBLE_TAP_DISTANCE_PX = 28;
+const LOBBY_SESSION_STORAGE_KEY = 'solitaire-vnext:lobbySessionId';
+const LOBBY_NICKNAME_STORAGE_KEY = 'solitaire-vnext:nickname';
 const baseUrl = window.location.origin;
 let client = null;
 let selection = null;
@@ -33,6 +45,8 @@ let gameOverDialogTimer = null;
 let debugEnabled = false;
 let debugSuppressedClicks = 0;
 let debugPendingStart = null;
+let lobbyPlayer = null;
+let lobbyGames = [];
 const debugHistory = [];
 
 const configReady = loadConfig();
@@ -79,6 +93,103 @@ function toggleAppMenu() {
 
 function closeDialog(dialog) {
   if (dialog?.open) dialog.close();
+}
+
+function storageGet(key) {
+  try {
+    return window.localStorage.getItem(key) || '';
+  } catch {
+    return '';
+  }
+}
+
+function storageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Local storage is only a convenience for the lobby nickname/session.
+  }
+}
+
+function lobbyNickname() {
+  return ($('#lobby-nickname').value || $('#start-lobby-nickname').value || '').trim().replace(/\s+/g, ' ');
+}
+
+function setLobbyNickname(value) {
+  $('#lobby-nickname').value = value;
+  $('#start-lobby-nickname').value = value;
+}
+
+function syncLobbyGameName(value) {
+  $('#lobby-game-name').value = value;
+  $('#start-lobby-game-name').value = value;
+}
+
+async function ensureLobbySession() {
+  await configReady;
+  const nickname = lobbyNickname();
+  if (!nickname) {
+    setMessage('Nickname fehlt.', 'error');
+    throw new Error('Nickname fehlt');
+  }
+  const result = await createLobbySession(baseUrl, {
+    sessionId: storageGet(LOBBY_SESSION_STORAGE_KEY),
+    nickname
+  });
+  lobbyPlayer = result.player;
+  storageSet(LOBBY_SESSION_STORAGE_KEY, lobbyPlayer.sessionId);
+  storageSet(LOBBY_NICKNAME_STORAGE_KEY, lobbyPlayer.nickname);
+  setLobbyNickname(lobbyPlayer.nickname);
+  setMessage(`Lobby: ${lobbyPlayer.nickname} angemeldet.`, 'ok');
+  return lobbyPlayer;
+}
+
+function lobbyGameLine(game) {
+  const p1 = game.players.p1?.nickname || 'P1';
+  const p2 = game.players.p2?.nickname || 'offen';
+  const status = { waiting: 'wartet', active: 'laeuft', finished: 'beendet' }[game.status] || game.status;
+  return `${p1} vs ${p2} · ${status} · ${MODE_LABELS[game.mode] || game.mode}`;
+}
+
+function renderLobbyList(container, games) {
+  container.replaceChildren();
+  if (!games.length) {
+    const empty = document.createElement('div');
+    empty.className = 'lobby-empty';
+    empty.textContent = 'Keine Lobby-Spiele offen.';
+    container.append(empty);
+    return;
+  }
+  games.forEach((game) => {
+    const item = document.createElement('div');
+    item.className = 'lobby-game';
+    item.dataset.status = game.status;
+    const details = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = game.name;
+    const meta = document.createElement('span');
+    meta.textContent = lobbyGameLine(game);
+    details.append(title, meta);
+    const action = document.createElement('button');
+    action.type = 'button';
+    const ownHost = lobbyPlayer?.sessionId && game.players.p1?.sessionId === lobbyPlayer.sessionId;
+    const ownGuest = lobbyPlayer?.sessionId && game.players.p2?.sessionId === lobbyPlayer.sessionId;
+    action.textContent = ownHost ? 'Als P1 öffnen' : ownGuest ? 'Als P2 öffnen' : 'Als P2 beitreten';
+    action.disabled = game.status === 'finished' || (game.players.p2 && !ownGuest && !ownHost);
+    action.addEventListener('click', () => joinLobbyGameAndConnect(game));
+    item.append(details, action);
+    container.append(item);
+  });
+}
+
+async function refreshLobbyGames({ quiet = false } = {}) {
+  await configReady;
+  const result = await listLobbyGames(baseUrl);
+  lobbyGames = result.games || [];
+  renderLobbyList($('#start-lobby-list'), lobbyGames);
+  renderLobbyList($('#menu-lobby-list'), lobbyGames);
+  if (!quiet) setMessage(`Lobby aktualisiert: ${lobbyGames.length} Spiel${lobbyGames.length === 1 ? '' : 'e'}.`, 'ok');
+  return lobbyGames;
 }
 
 function setMenuPanel(panelName) {
@@ -219,6 +330,8 @@ function updateBotControls() {
 function updateActionControls() {
   const hostLocked = isP2User();
   $('#create-match').disabled = hostLocked;
+  $('#create-lobby-game').disabled = hostLocked;
+  $('#start-create-lobby-game').disabled = hostLocked;
   $('#create-bot-match').disabled = hostLocked;
   $('#create-bot-versus-match').disabled = hostLocked;
   $('#random-seed').disabled = hostLocked;
@@ -825,11 +938,11 @@ document.addEventListener('pointercancel', (event) => {
   clearDrag();
 });
 
-async function connectToMatch() {
+async function connectToMatch({ matchId: requestedMatchId, clientId: requestedClientId, updateRoute = true } = {}) {
   await configReady;
   await stopActiveBot({ quiet: true });
-  const matchId = $('#match-id').value.trim();
-  const clientId = $('#client-id').value;
+  const matchId = (requestedMatchId || $('#match-id').value).trim();
+  const clientId = requestedClientId || $('#client-id').value;
   if (!matchId) return setMessage('Match-ID fehlt.', 'error');
   client?.close();
   selection = null;
@@ -850,13 +963,67 @@ async function connectToMatch() {
   setMessage('Verbinde ...');
   await client.connect();
   $('#game').hidden = false;
+  $('#lobby-overlay').hidden = true;
   $('#connection-dot').classList.add('online');
   $('#connection-label').textContent = `${clientId.toUpperCase()} verbunden`;
   updateHeaderSummary();
   updateActionControls();
-  setRoute(matchId, clientId);
+  $('#match-id').value = matchId;
+  $('#client-id').value = clientId;
+  if (updateRoute) setRoute(matchId, clientId);
   setInvite(matchId, clientId === 'p1');
   setMessage(`Match ${matchId.slice(0, 18)} aktiv`, 'ok');
+}
+
+async function createLobbyHostGame() {
+  try {
+    const player = await ensureLobbySession();
+    await stopActiveBot({ quiet: true });
+    const seed = $('#seed').value.trim() || generateRandomSeed();
+    $('#seed').value = seed;
+    const name = ($('#lobby-game-name').value || $('#start-lobby-game-name').value || `${player.nickname}s Spiel`).trim();
+    syncLobbyGameName(name);
+    const created = await createLobbyGame(baseUrl, {
+      sessionId: player.sessionId,
+      name,
+      seed,
+      mode: $('#mode').value
+    });
+    currentMatchKind = 'human';
+    $('#match-id').value = created.matchId;
+    $('#client-id').value = 'p1';
+    setInvite(created.matchId, false);
+    await connectToMatch({ matchId: created.matchId, clientId: 'p1' });
+    await refreshLobbyGames({ quiet: true });
+    setAppMenuOpen(false);
+    setMessage(`Lobby-Spiel erstellt: ${created.game.name}`, 'ok');
+  } catch (error) {
+    if (error.message !== 'Nickname fehlt') setMessage(error.message, 'error');
+  }
+}
+
+async function joinLobbyGameAndConnect(game) {
+  try {
+    const player = await ensureLobbySession();
+    let joined;
+    if (game.players.p1?.sessionId === player.sessionId) {
+      joined = { game, role: 'p1', matchId: game.matchId };
+    } else if (game.players.p2?.sessionId === player.sessionId) {
+      joined = { game, role: 'p2', matchId: game.matchId };
+    } else {
+      joined = await joinLobbyGame(baseUrl, game.gameId, { sessionId: player.sessionId });
+    }
+    currentMatchKind = 'human';
+    $('#match-id').value = joined.matchId;
+    $('#client-id').value = joined.role;
+    await connectToMatch({ matchId: joined.matchId, clientId: joined.role });
+    await refreshLobbyGames({ quiet: true });
+    setAppMenuOpen(false);
+    setMessage(`${joined.game.name} als ${ROLE_LABELS[joined.role]} geöffnet.`, 'ok');
+  } catch (error) {
+    setMessage(error.message, 'error');
+    refreshLobbyGames({ quiet: true }).catch(() => {});
+  }
 }
 
 async function startHostMatch({ randomSeed = false, withBot = false } = {}) {
@@ -982,7 +1149,26 @@ $('#client-id').addEventListener('change', () => {
   updateHeaderSummary();
   updateActionControls();
 });
-$('#create-match').addEventListener('click', () => startHostMatch());
+$('#create-match').addEventListener('click', () => createLobbyHostGame());
+$('#direct-create-match').addEventListener('click', () => startHostMatch());
+$('#create-lobby-game').addEventListener('click', () => createLobbyHostGame());
+$('#start-create-lobby-game').addEventListener('click', () => createLobbyHostGame());
+$('#lobby-save-name').addEventListener('click', () => ensureLobbySession().then(() => refreshLobbyGames({ quiet: true })).catch((error) => {
+  if (error.message !== 'Nickname fehlt') setMessage(error.message, 'error');
+}));
+$('#start-lobby-save-name').addEventListener('click', () => ensureLobbySession().then(() => refreshLobbyGames({ quiet: true })).catch((error) => {
+  if (error.message !== 'Nickname fehlt') setMessage(error.message, 'error');
+}));
+$('#lobby-refresh').addEventListener('click', () => refreshLobbyGames().catch((error) => setMessage(error.message, 'error')));
+$('#lobby-overlay-refresh').addEventListener('click', () => refreshLobbyGames().catch((error) => setMessage(error.message, 'error')));
+$('#lobby-open-menu').addEventListener('click', () => {
+  setMenuPanel('lobby');
+  setAppMenuOpen(true);
+});
+$('#lobby-nickname').addEventListener('input', (event) => setLobbyNickname(event.target.value));
+$('#start-lobby-nickname').addEventListener('input', (event) => setLobbyNickname(event.target.value));
+$('#lobby-game-name').addEventListener('input', (event) => syncLobbyGameName(event.target.value));
+$('#start-lobby-game-name').addEventListener('input', (event) => syncLobbyGameName(event.target.value));
 $('#create-bot-match').addEventListener('click', () => startHostMatch({ withBot: true }));
 $('#create-bot-versus-match').addEventListener('click', () => startBotVersusMatch());
 $('#stop-bot-match').addEventListener('click', () => stopActiveBot());
@@ -1102,11 +1288,17 @@ window.addEventListener('resize', () => {
 });
 
 const launch = readLaunchParams(window.location.search);
+const savedNickname = storageGet(LOBBY_NICKNAME_STORAGE_KEY);
+if (savedNickname) setLobbyNickname(savedNickname);
+else setLobbyNickname(`Spieler ${Math.floor(1000 + Math.random() * 9000)}`);
+syncLobbyGameName(`${lobbyNickname()}s Spiel`);
 if (launch) {
   $('#match-id').value = launch.matchId;
   $('#client-id').value = launch.role;
   setInvite(launch.matchId, launch.role === 'p1');
   connectToMatch().catch((error) => setMessage(error.message, 'error'));
+} else {
+  refreshLobbyGames({ quiet: true }).catch((error) => setMessage(error.message, 'error'));
 }
 
 updateBotControls();

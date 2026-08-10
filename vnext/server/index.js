@@ -10,6 +10,7 @@ const { WebSocket, WebSocketServer } = require('ws');
 const { APP_VERSION, MODES, PLAYER_IDS, PROTOCOL_VERSION } = require('../core');
 const { createManagedBot } = require('../bot/managedBot');
 const { SPEEDS, normalizeSpeed } = require('../bot/runner');
+const { LobbyStore } = require('./lobbyStore');
 const { MatchSession } = require('./matchSession');
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -99,6 +100,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
   const sessions = new Map();
   const peers = new Map();
   const bots = new Map();
+  const lobby = new LobbyStore();
   let listenPort = 3011;
 
   function log(event, fields = {}) {
@@ -166,8 +168,88 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
         status: 'ok',
         appVersion: APP_VERSION,
         protocolVersion: PROTOCOL_VERSION,
-        matches: sessions.size
+        matches: sessions.size,
+        lobbyGames: lobby.games.size
       });
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/vnext/lobby/sessions') {
+      try {
+        const body = await readJson(request);
+        const player = lobby.createOrUpdatePlayer({ sessionId: body.sessionId, nickname: body.nickname });
+        log('LOBBY_SESSION', { playerId: player.playerId, nickname: player.nickname });
+        sendJson(response, 200, { player });
+      } catch (error) {
+        if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
+      }
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/vnext/lobby/games') {
+      sendJson(response, 200, { games: lobby.listGames() });
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/vnext/lobby/games') {
+      try {
+        const body = await readJson(request);
+        const seed = typeof body.seed === 'string' && body.seed.length > 0 ? body.seed : null;
+        const mode = typeof body.mode === 'string' && body.mode.length > 0 ? body.mode : null;
+        if (!seed || !MODES.includes(mode)) {
+          sendJson(response, 400, { error: 'seed and mode (split|shared) are required' });
+          return;
+        }
+        const matchId = `m-${crypto.randomUUID()}`;
+        const session = new MatchSession({ matchId, seed, mode });
+        sessions.set(matchId, session);
+        const game = lobby.createGame({ sessionId: body.sessionId, matchId, seed, mode, name: body.name });
+        log('LOBBY_GAME_CREATED', {
+          gameId: game.gameId,
+          matchId,
+          mode,
+          host: game.players.p1?.nickname,
+          rev: session.current.rev,
+          hash: shortHash(session.current.stateHash)
+        });
+        sendJson(response, 201, {
+          game,
+          matchId,
+          role: 'p1',
+          mode,
+          seed,
+          protocolVersion: PROTOCOL_VERSION,
+          rev: session.current.rev,
+          stateHash: session.current.stateHash
+        });
+      } catch (error) {
+        if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
+      }
+      return;
+    }
+    const lobbyPath = url.pathname.match(/^\/vnext\/lobby\/games\/([^/]+)(\/join|\/leave)?$/);
+    if (request.method === 'POST' && lobbyPath?.[2] === '/join') {
+      try {
+        const body = await readJson(request);
+        const joined = lobby.joinGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: body.sessionId });
+        log('LOBBY_GAME_JOINED', {
+          gameId: joined.game.gameId,
+          matchId: joined.matchId,
+          role: joined.role,
+          guest: joined.game.players.p2?.nickname
+        });
+        sendJson(response, 200, joined);
+      } catch (error) {
+        if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
+      }
+      return;
+    }
+    if (request.method === 'POST' && lobbyPath?.[2] === '/leave') {
+      try {
+        const body = await readJson(request);
+        const game = lobby.leaveGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: body.sessionId });
+        log('LOBBY_GAME_LEFT', { gameId: game.gameId, matchId: game.matchId, status: game.status });
+        sendJson(response, 200, { game });
+      } catch (error) {
+        if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
+      }
       return;
     }
     if (request.method === 'POST' && url.pathname === '/vnext/matches') {
@@ -278,6 +360,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
           return;
         }
         const restartSnapshot = session.restart({ seed, mode });
+        lobby.markMatchActive(session.matchId);
         const peersNotified = broadcast(session.matchId, restartSnapshot);
         log('MATCH_RESTARTED', {
           matchId: session.matchId,
@@ -396,6 +479,9 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
         action: envelope?.kind
       });
       const outcome = sessions.get(matchId).process(clientId, envelope);
+      if (outcome.response.kind === 'ack' && outcome.response.state?.status === 'finished') {
+        lobby.markMatchFinished(matchId, outcome.response.state);
+      }
       if (outcome.response.kind === 'ack') {
         log('ACTION_ACK', {
           matchId,
@@ -467,7 +553,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     });
   }
 
-  return { bots, close, server, sessions, start, wss };
+  return { bots, close, lobby, server, sessions, start, wss };
 }
 
 module.exports = { createVNextServer };

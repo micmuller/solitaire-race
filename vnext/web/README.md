@@ -5,8 +5,11 @@ It is a separate path from frozen `public/` and imports none of the v1 scripts.
 
 Current vertical slice:
 
+- start from a Lobby overlay with locally remembered nickname, create a named
+  Lobby game as `p1`, or join an open Lobby game as `p2` without copying an
+  invite URL or manually entering a Match-ID;
 - create a split/shared match as host `p1` and expose a shareable invite URL
-  that auto-joins as `p2`;
+  that auto-joins as `p2` as a technical fallback;
 - create a split/shared match as host `p1` with a server-managed bot connected
   as `p2`, using selectable Easy/Mittel/Schwer bot speed;
 - create and observe a Bot-vs-Bot match with both `p1` and `p2` controlled by
@@ -14,7 +17,7 @@ Current vertical slice:
 - restore host/join identity from `?matchId=...&role=p1|p2` URL state;
 - connect through Protocol 2.5.2 and render the initial authoritative snapshot;
 - keep Start, Restart and Aufgeben in the header while secondary controls live
-  in a tabbed overlay menu for Spiel, Neues Spiel, Bot, Teilen and Info;
+  in a tabbed overlay menu for Lobby, Spiel, Neues Spiel, Bot, Teilen and Info;
 - render both players, all tableaus and eight global foundations;
 - show each player's authoritative foundation point score next to P1/P2;
 - show a completed-match celebration for about 10 seconds before opening the
@@ -46,6 +49,25 @@ Current vertical slice:
 The visual structure, felt treatment, card layout and responsive board geometry
 are derived from the established v1 Web UI. No v1 state, rule, move, snapshot,
 echo, bot or local deal code is included.
+
+## Lobby Flow
+
+The normal Web entry flow is now Lobby-first:
+
+1. The player enters a nickname. The browser stores the nickname and opaque
+   Lobby session id in local storage.
+2. `Start` or `Als P1 hosten` creates a named Lobby game. The server creates
+   the underlying authoritative match and assigns the local player to `p1`.
+3. Other players open the same Web client, see the Lobby game list, and choose
+   `Als P2 beitreten`. The client receives the underlying technical `matchId`
+   from the Lobby API and connects as `p2`.
+4. The `Teilen` tab keeps the old Match-ID and invite URL tooling for debugging
+   and fallback cases.
+
+The Lobby model already exposes stable `playerId`, `sessionId`, nickname and
+reserved history fields (`gamesPlayed`, `gamesWon`, `totalScore`, `bestScore`,
+`lastGameAt`). They are in-memory in alpha.13; persistence, leaderboards and
+cross-device identity can be added behind the same API later.
 
 Still pending:
 

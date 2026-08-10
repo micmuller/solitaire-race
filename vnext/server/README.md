@@ -36,6 +36,12 @@ Current smoke scope:
 HTTP endpoints:
 
 - `GET /health`
+- `POST /vnext/lobby/sessions` with `{ "nickname": "...", "sessionId": "optional" }`
+- `GET /vnext/lobby/games`
+- `POST /vnext/lobby/games` with
+  `{ "sessionId": "...", "name": "...", "seed": "...", "mode": "split|shared" }`
+- `POST /vnext/lobby/games/:gameId/join` with `{ "sessionId": "..." }`
+- `POST /vnext/lobby/games/:gameId/leave` with `{ "sessionId": "..." }`
 - `POST /vnext/matches` with `{ "seed": "...", "mode": "split|shared" }`
 - `GET /vnext/matches/:matchId`
 - `GET /vnext/matches/:matchId/replay`
@@ -59,6 +65,15 @@ peers.
 The bot endpoint starts a server-managed thin bot client on the requested free
 player id. The delete endpoint stops the managed bot so Web actions such as
 starting, joining or restarting a match do not leave an old bot running.
+
+Lobby sessions and Lobby games are an in-memory coordination layer above the
+authoritative match sessions. A Lobby game owns the human-facing game name,
+host/guest nicknames and the underlying technical `matchId`; `p1` and `p2`
+still connect to the same WebSocket protocol after the Lobby resolves the
+match. Player records already include reserved history fields for later
+persistence and leaderboards: `gamesPlayed`, `gamesWon`, `totalScore`,
+`bestScore` and `lastGameAt`. Alpha.13 does not persist or aggregate these
+fields yet.
 
 The terminal logs compact structured events such as `MATCH_CREATED`,
 `WS_CONNECTED`, `SNAPSHOT_SENT`, `ACTION_RECEIVED`, `ACTION_ACK`,
