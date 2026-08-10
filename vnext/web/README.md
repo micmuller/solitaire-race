@@ -24,6 +24,8 @@ Current vertical slice:
 - submit stock draw/recycle and top-tableau flip as Action Intents;
 - select waste or a face-up tableau suffix and submit tableau/foundation moves
   through a second target click/tap;
+- send the same automatic foundation move by double-clicking with a mouse or
+  double-tapping on touch devices when the card can legally move;
 - drag the waste top card or a face-up tableau suffix onto the same
   tableau/foundation intent targets without local state mutation;
 - animate card position changes only after an authoritative ack render and

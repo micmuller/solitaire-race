@@ -13,6 +13,9 @@ const ROLE_LABELS = { p1: 'P1', p2: 'P2', observer: 'Observer' };
 const MODE_LABELS = { split: 'Split', shared: 'Shared' };
 const GAME_OVER_DIALOG_DELAY_MS = 10000;
 const CELEBRATION_DURATION_MS = 10500;
+const CARD_SINGLE_CLICK_DELAY_MS = 340;
+const DOUBLE_TAP_MS = 340;
+const DOUBLE_TAP_DISTANCE_PX = 28;
 const baseUrl = window.location.origin;
 let client = null;
 let selection = null;
@@ -225,12 +228,19 @@ function cardElement(card, compact = false) {
   return element;
 }
 
+function isDoubleTap(previousTap, event) {
+  if (!previousTap) return false;
+  if (event.timeStamp - previousTap.timeStamp > DOUBLE_TAP_MS) return false;
+  return Math.hypot(event.clientX - previousTap.x, event.clientY - previousTap.y) <= DOUBLE_TAP_DISTANCE_PX;
+}
+
 function renderStack(container, cards, { compact = false, tableau = false, onCardClick, onCardDoubleClick, onCardPointerDown } = {}) {
   container.replaceChildren();
   cards.forEach((card, index) => {
     const element = cardElement(card, compact);
     if (tableau) element.style.setProperty('--stack-index', index);
     let clickTimer = null;
+    let previousTap = null;
     if (onCardClick) {
       element.classList.add('interactive');
       element.addEventListener('click', (event) => {
@@ -241,7 +251,7 @@ function renderStack(container, cards, { compact = false, tableau = false, onCar
           clickTimer = window.setTimeout(() => {
             clickTimer = null;
             onCardClick(card, index);
-          }, 260);
+          }, CARD_SINGLE_CLICK_DELAY_MS);
           return;
         }
         onCardClick(card, index);
@@ -255,6 +265,20 @@ function renderStack(container, cards, { compact = false, tableau = false, onCar
         window.clearTimeout(clickTimer);
         clickTimer = null;
         onCardDoubleClick(card, index);
+      });
+      element.addEventListener('pointerup', (event) => {
+        if (event.pointerType === 'mouse' || drag?.active) return;
+        if (isDoubleTap(previousTap, event)) {
+          event.stopPropagation();
+          event.preventDefault();
+          suppressNextClick = true;
+          previousTap = null;
+          window.clearTimeout(clickTimer);
+          clickTimer = null;
+          onCardDoubleClick(card, index);
+          return;
+        }
+        previousTap = { timeStamp: event.timeStamp, x: event.clientX, y: event.clientY };
       });
     }
     if (onCardPointerDown) {

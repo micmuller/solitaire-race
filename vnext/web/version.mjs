@@ -1,4 +1,4 @@
-export const WEB_CLIENT_VERSION = '0.1.0-alpha.9';
+export const WEB_CLIENT_VERSION = '0.1.0-alpha.10';
 
 export function labelsFromConfig(config = {}) {
   const serverVersion = config.serverVersion || config.appVersion || '-';
