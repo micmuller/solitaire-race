@@ -58,6 +58,10 @@ snapshot and accepts protocol-2.5.2 action envelopes from `p1` and `p2`.
 Observer sockets receive authoritative snapshots/acks but are read-only.
 Accepted actions are broadcast as authoritative acks containing the resulting
 state, revision and hash.
+Player reconnects append `reconnect=1`. A marked reconnect atomically replaces
+an existing stale socket for the same match/player before sending the fresh
+initial snapshot; an unmarked duplicate player connection remains rejected
+with HTTP `409`.
 `resign` is an accepted action that finishes the match and broadcasts the
 GameOver state to all connected peers.
 Restart resets the existing match session to revision `0`, resets client

@@ -438,14 +438,20 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     }
     const matchId = url.searchParams.get('matchId');
     const clientId = url.searchParams.get('clientId');
+    const reconnect = url.searchParams.get('reconnect') === '1';
     const session = sessions.get(matchId);
     const observer = clientId === OBSERVER_ID;
-    if (!session || (!observer && !PLAYER_IDS.includes(clientId)) || (!observer && peers.get(matchId)?.has(clientId))) {
+    const existingPeer = observer ? null : peers.get(matchId)?.get(clientId);
+    if (!session || (!observer && !PLAYER_IDS.includes(clientId)) || (existingPeer && !reconnect)) {
       socket.write('HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
     }
     wss.handleUpgrade(request, socket, head, (webSocket) => {
+      if (existingPeer) {
+        log('WS_REPLACED', { matchId, clientId });
+        existingPeer.terminate();
+      }
       webSocket.matchId = matchId;
       webSocket.clientId = clientId;
       webSocket.peerKey = peerKey(clientId);

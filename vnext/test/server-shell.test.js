@@ -33,6 +33,26 @@ function connect(url) {
   });
 }
 
+function rejectedUpgradeStatus(url) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url);
+    let settled = false;
+    socket.once('unexpected-response', (_request, response) => {
+      settled = true;
+      resolve(response.statusCode);
+      socket.terminate();
+    });
+    socket.once('open', () => {
+      settled = true;
+      socket.close();
+      reject(new Error('websocket upgrade unexpectedly succeeded'));
+    });
+    socket.once('error', (error) => {
+      if (!settled) reject(error);
+    });
+  });
+}
+
 function drawEnvelope(matchId, clientId, seq, baseRev) {
   return {
     matchId,
@@ -314,6 +334,48 @@ test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritativ
     assert.match(runtimeLog, new RegExp(`\\[vNext\\] ${event}`));
   }
   assert.doesNotMatch(runtimeLog, /"state"|"players"|"foundations"/);
+});
+
+test('marked reconnect replaces a stale player socket while duplicate connects stay blocked', async (t) => {
+  const logLines = [];
+  const app = createVNextServer({
+    logger: { log(line) { logLines.push(line); }, error: silentLogger.error }
+  });
+  const address = await app.start({ port: 0 });
+  const httpBase = `http://127.0.0.1:${address.port}`;
+  const wsBase = `ws://127.0.0.1:${address.port}`;
+  const sockets = [];
+  t.after(async () => {
+    for (const socket of sockets) socket.close();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await app.close();
+  });
+
+  const createResponse = await fetch(`${httpBase}/vnext/matches`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed: 'RECONNECT-SEED', mode: 'split' })
+  });
+  const created = await createResponse.json();
+  const playerURL = `${wsBase}/vnext?matchId=${created.matchId}&clientId=p1`;
+
+  const original = await connect(playerURL);
+  sockets.push(original.socket);
+  await original.next();
+  assert.equal(await rejectedUpgradeStatus(playerURL), 409);
+
+  const replacement = await connect(`${playerURL}&reconnect=1`);
+  sockets.push(replacement.socket);
+  const snapshot = await replacement.next();
+  assert.equal(snapshot.kind, 'snapshot');
+  assert.equal(snapshot.reason, 'INITIAL_CONNECT');
+  assert.equal(snapshot.rev, 0);
+
+  replacement.socket.send(JSON.stringify(drawEnvelope(created.matchId, 'p1', 0, 0)));
+  const ack = await replacement.next();
+  assert.equal(ack.kind, 'ack');
+  assert.equal(ack.rev, 1);
+  assert.match(logLines.join('\n'), /\[vNext\] WS_REPLACED/);
 });
 
 test('vNext lobby API creates a host game and lets a nickname join as P2', async (t) => {
