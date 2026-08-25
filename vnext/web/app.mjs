@@ -29,6 +29,7 @@ const DOUBLE_TAP_MS = 340;
 const DOUBLE_TAP_DISTANCE_PX = 28;
 const LOBBY_SESSION_STORAGE_KEY = 'solitaire-vnext:lobbySessionId';
 const LOBBY_NICKNAME_STORAGE_KEY = 'solitaire-vnext:nickname';
+const HUD_VISIBLE_STORAGE_KEY = 'solitaire-vnext:hudVisible';
 const baseUrl = window.location.origin;
 let client = null;
 let selection = null;
@@ -81,16 +82,36 @@ function setVersionLabels() {
   $('#menu-server-version').textContent = serverVersion;
   $('#menu-protocol-version').textContent = serverProtocolVersion;
   $('#menu-web-version').textContent = WEB_CLIENT_VERSION;
+  $('#hud-server-version').textContent = serverVersion;
+  $('#hud-client-version').textContent = WEB_CLIENT_VERSION;
 }
 
 function setAppMenuOpen(isOpen) {
   $('#app-menu').hidden = !isOpen;
   $('#app-menu-toggle').setAttribute('aria-expanded', String(isOpen));
+  if (isOpen) setProfileMenuOpen(false);
   if (isOpen) updateMenuInfo();
 }
 
 function toggleAppMenu() {
   setAppMenuOpen($('#app-menu').hidden);
+}
+
+function isHudVisible() {
+  return storageGet(HUD_VISIBLE_STORAGE_KEY) === '1';
+}
+
+function setHudVisible(isVisible) {
+  $('#game-hud').hidden = !isVisible;
+  $('#hud-toggle').checked = isVisible;
+  storageSet(HUD_VISIBLE_STORAGE_KEY, isVisible ? '1' : '0');
+}
+
+function setProfileMenuOpen(isOpen) {
+  $('#profile-menu').hidden = !isOpen;
+  $('#profile-toggle').setAttribute('aria-expanded', String(isOpen));
+  if (isOpen) setAppMenuOpen(false);
+  if (isOpen) updateProfileInfo();
 }
 
 function closeDialog(dialog) {
@@ -120,6 +141,7 @@ function lobbyNickname() {
 function setLobbyNickname(value) {
   $('#lobby-nickname').value = value;
   $('#start-lobby-nickname').value = value;
+  updateProfileInfo();
 }
 
 function syncLobbyGameName(value) {
@@ -142,6 +164,7 @@ async function ensureLobbySession() {
   storageSet(LOBBY_SESSION_STORAGE_KEY, lobbyPlayer.sessionId);
   storageSet(LOBBY_NICKNAME_STORAGE_KEY, lobbyPlayer.nickname);
   setLobbyNickname(lobbyPlayer.nickname);
+  updateProfileInfo();
   setMessage(`Lobby: ${lobbyPlayer.nickname} angemeldet.`, 'ok');
   return lobbyPlayer;
 }
@@ -236,6 +259,22 @@ function updateHeaderSummary() {
   $('#summary-seed').textContent = seed || '-';
   $('#summary-mode').textContent = MODE_LABELS[mode] || mode || '-';
   $('#summary-role').textContent = ROLE_LABELS[role] || role || '-';
+  updateProfileInfo();
+}
+
+function updateProfileInfo() {
+  const role = client?.clientId || $('#client-id').value || 'p1';
+  const roleLabel = ROLE_LABELS[role] || role || '-';
+  const stats = lobbyPlayer?.stats || {};
+  const name = lobbyPlayer?.nickname || lobbyNickname() || roleLabel;
+  $('#profile-label').textContent = name;
+  $('#profile-name').textContent = name || '-';
+  $('#profile-role').textContent = roleLabel;
+  $('#profile-match').textContent = client?.matchId || $('#match-id').value || '-';
+  $('#profile-games').textContent = String(stats.gamesPlayed ?? 0);
+  $('#profile-wins').textContent = String(stats.gamesWon ?? 0);
+  $('#profile-score').textContent = String(stats.totalScore ?? 0);
+  $('#profile-best').textContent = String(stats.bestScore ?? 0);
 }
 
 function setMessage(text, tone = '') {
@@ -1265,6 +1304,7 @@ $('#stop-bot-match').addEventListener('click', () => stopActiveBot());
 $('#resign-match').addEventListener('click', () => resignMatch());
 $('#end-lobby-game').addEventListener('click', () => endCurrentLobbyGame());
 $('#preview-final-sequence').addEventListener('click', () => previewFinalSequence());
+$('#hud-toggle').addEventListener('change', (event) => setHudVisible(event.target.checked));
 $('#debug-toggle').addEventListener('change', (event) => {
   debugEnabled = event.target.checked;
   renderDebugOverlay();
@@ -1291,6 +1331,15 @@ $('#app-menu-toggle').addEventListener('click', (event) => {
   event.preventDefault();
   event.stopPropagation();
   toggleAppMenu();
+});
+$('#profile-menu-close').addEventListener('click', () => setProfileMenuOpen(false));
+$('#profile-menu').addEventListener('click', (event) => {
+  if (event.target === $('#profile-menu')) setProfileMenuOpen(false);
+});
+$('#profile-toggle').addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  setProfileMenuOpen($('#profile-menu').hidden);
 });
 $('#restart-match').addEventListener('click', () => {
   if (!canRestartCurrentMatch()) {
@@ -1367,11 +1416,16 @@ document.addEventListener('click', (event) => {
   if (event.target.closest('#app-menu-toggle') || event.target.closest('#app-menu')) return;
   setAppMenuOpen(false);
 });
+document.addEventListener('click', (event) => {
+  if (event.target.closest('#profile-toggle') || event.target.closest('#profile-menu')) return;
+  setProfileMenuOpen(false);
+});
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && selection) setSelection(null);
   if (event.key === 'Escape') {
     setVersionMenuOpen($('#version-menu'), $('#version-badge'), false);
     setAppMenuOpen(false);
+    setProfileMenuOpen(false);
   }
 });
 
@@ -1401,3 +1455,4 @@ if (launch) {
 updateBotControls();
 updateHeaderSummary();
 updateActionControls();
+setHudVisible(isHudVisible());

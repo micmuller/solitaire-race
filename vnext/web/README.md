@@ -16,8 +16,12 @@ Current vertical slice:
   server-managed bots at the selected speed;
 - restore host/join identity from `?matchId=...&role=p1|p2` URL state;
 - connect through Protocol 2.5.2 and render the initial authoritative snapshot;
-- keep Start, Restart and Aufgeben in the header while secondary controls live
-  in a tabbed overlay menu for Lobby, Spiel, Neues Spiel, Bot, Teilen and Info;
+- keep the board below a centered brand/version strip, with Settings on the
+  top-left and player profile on the top-right;
+- move gameplay controls into a tabbed overlay menu for Lobby, Spiel, Neues
+  Spiel, Bot, Teilen and Info;
+- expose connection, seed, mode, role, server version, Web client version,
+  revision and short hash in an optional transparent bottom-right Info HUD;
 - allow `p1` to end the current Lobby game from the Spiel menu, notify connected
   peers and return the Web client to the Lobby overlay;
 - render both players, all tableaus and eight global foundations;
@@ -48,7 +52,7 @@ Current vertical slice:
 - keep a rejected selection available for another target and allow explicit or
   Escape-key cancellation;
 - update only after authoritative ack/snapshot;
-- expose connection, revision, short hash, pending, reject and GameOver status.
+- expose pending, reject and GameOver status.
 - recover from `DUPLICATE_SEQ` rejects by adopting the server-provided
   `expectedSeq` before the next action.
 - expose an optional Debug overlay from the menu with recent input events,
@@ -82,6 +86,12 @@ cross-device identity can be added behind the same API later.
 Still pending:
 
 - PWA packaging for the new entry point.
+- show the Web player icon flush right.
+- eliminate the remaining hidden legacy Start button wiring after the new Lobby
+  flow fully replaces the old technical fallback.
+- match the Web Info HUD visual treatment to the iPad HUD.
+- continue broader UI refinement after the next iPad/Web and iPad/iPad smoke
+  tests.
 
 ## Session Close 2026-08-01
 
@@ -135,4 +145,5 @@ to send a server-authoritative `resign`, which broadcasts a finished GameOver
 state. The resign dialog skips celebration, keeps the final score visible, and
 offers `Zur Lobby`; only `p1` can open the restart menu from there.
 
-Next follow-up: PWA packaging for the new entry point.
+Next follow-up: Lobby smoke testing across Web/iPad and iPad/iPad, then focused
+UI refinement.

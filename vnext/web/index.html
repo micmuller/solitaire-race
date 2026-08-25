@@ -8,6 +8,7 @@
 </head>
 <body>
   <header class="app-bar">
+    <button id="app-menu-toggle" class="icon-button app-corner-button" type="button" aria-label="Menü" aria-expanded="false">⚙</button>
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">H</span>
       <div>
@@ -20,10 +21,22 @@
         <div><span>Webclient</span><strong id="web-version">-</strong></div>
       </div>
     </div>
+    <button id="profile-toggle" class="profile-button" type="button" aria-label="Spielerprofil" aria-expanded="false">
+      <span id="profile-label">P1</span>
+      <span aria-hidden="true">●</span>
+    </button>
+    <div class="header-actions" hidden>
+      <button id="create-match" class="primary">Start</button>
+    </div>
+  </header>
+
+  <aside id="game-hud" class="game-hud" aria-label="Spielstatus" hidden>
     <div class="header-summary" aria-label="Matchstatus">
       <span class="summary-chip"><span>Seed</span><strong id="summary-seed">-</strong></span>
       <span class="summary-chip"><span>Modus</span><strong id="summary-mode">Split</strong></span>
       <span class="summary-chip"><span>Rolle</span><strong id="summary-role">P1</strong></span>
+      <span class="summary-chip"><span>Server</span><strong id="hud-server-version">-</strong></span>
+      <span class="summary-chip"><span>Client</span><strong id="hud-client-version">-</strong></span>
     </div>
     <div class="telemetry" aria-label="Verbindungsstatus">
       <span id="connection-dot" class="status-dot"></span>
@@ -31,13 +44,25 @@
       <span id="revision">rev -</span>
       <span id="state-hash" class="mono">hash -</span>
     </div>
-    <div class="header-actions">
-      <button id="create-match" class="primary">Start</button>
-      <button id="resign-match" class="danger">Aufgeben</button>
-      <button id="restart-match" class="icon-button" title="Match neu starten" aria-label="Match neu starten">↻</button>
-      <button id="app-menu-toggle" class="icon-button" type="button" aria-label="Menü" aria-expanded="false">☰</button>
+  </aside>
+
+  <section id="profile-menu" class="profile-menu" hidden aria-label="Spieler">
+    <div class="profile-panel">
+      <div class="app-menu-header">
+        <strong>Spieler</strong>
+        <button id="profile-menu-close" class="icon-button" type="button" aria-label="Spieler schliessen">×</button>
+      </div>
+      <div class="info-grid">
+        <span>Name</span><strong id="profile-name">-</strong>
+        <span>Rolle</span><strong id="profile-role">-</strong>
+        <span>Match</span><strong id="profile-match">-</strong>
+        <span>Spiele</span><strong id="profile-games">0</strong>
+        <span>Siege</span><strong id="profile-wins">0</strong>
+        <span>Punkte</span><strong id="profile-score">0</strong>
+        <span>Bestscore</span><strong id="profile-best">0</strong>
+      </div>
     </div>
-  </header>
+  </section>
 
   <section id="app-menu" class="app-menu" hidden aria-label="Menü">
     <div class="app-menu-panel">
@@ -68,8 +93,11 @@
         <div class="menu-section">
           <h2>Spiel</h2>
           <div class="menu-grid">
+            <button id="restart-match" class="primary" type="button">Neu starten</button>
+            <button id="resign-match" class="danger" type="button">Aufgeben</button>
             <button id="end-lobby-game" class="danger" type="button">Spiel beenden</button>
             <button id="preview-final-sequence">Finale testen</button>
+            <label class="toggle-row"><input id="hud-toggle" type="checkbox"> Info-HUD</label>
             <label class="toggle-row"><input id="debug-toggle" type="checkbox"> Debug</label>
           </div>
         </div>
