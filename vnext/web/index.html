@@ -25,9 +25,6 @@
       <span id="profile-label">P1</span>
       <span aria-hidden="true">●</span>
     </button>
-    <div class="header-actions" hidden>
-      <button id="create-match" class="primary">Start</button>
-    </div>
   </header>
 
   <aside id="game-hud" class="game-hud" aria-label="Spielstatus" hidden>
@@ -72,6 +69,7 @@
       </div>
       <nav class="menu-tabs" aria-label="Menübereiche">
         <button class="menu-tab active" type="button" data-menu-tab="lobby">Lobby</button>
+        <button class="menu-tab" type="button" data-menu-tab="settings">Settings</button>
         <button class="menu-tab" type="button" data-menu-tab="game">Spiel</button>
         <button class="menu-tab" type="button" data-menu-tab="match">Neues Spiel</button>
         <button class="menu-tab" type="button" data-menu-tab="bot">Bot</button>
@@ -89,6 +87,17 @@
           <div class="lobby-list" id="menu-lobby-list"></div>
         </div>
       </div>
+      <div class="menu-panel" data-menu-panel="settings">
+        <div class="menu-section">
+          <h2>Settings</h2>
+          <div class="menu-grid">
+            <label>Server-Pfad<input id="server-base-url" placeholder="http://192.168.0.138:3011" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+            <button id="save-server-base-url" type="button">Speichern</button>
+            <button id="reset-server-base-url" type="button">Aktueller Host</button>
+            <label class="toggle-row"><input id="hud-toggle" type="checkbox"> Info-HUD</label>
+          </div>
+        </div>
+      </div>
       <div class="menu-panel" data-menu-panel="game">
         <div class="menu-section">
           <h2>Spiel</h2>
@@ -97,7 +106,6 @@
             <button id="resign-match" class="danger" type="button">Aufgeben</button>
             <button id="end-lobby-game" class="danger" type="button">Spiel beenden</button>
             <button id="preview-final-sequence">Finale testen</button>
-            <label class="toggle-row"><input id="hud-toggle" type="checkbox"> Info-HUD</label>
             <label class="toggle-row"><input id="debug-toggle" type="checkbox"> Debug</label>
           </div>
         </div>

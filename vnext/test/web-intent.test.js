@@ -185,14 +185,14 @@ test('lobby urls encode host and invite identities', () => {
 });
 
 test('web client version is exposed for the header menu', () => {
-  assert.equal(version.WEB_CLIENT_VERSION, '0.1.0-alpha.16');
+  assert.equal(version.WEB_CLIENT_VERSION, '1.0.5');
   assert.deepEqual(version.labelsFromConfig({
     serverVersion: '1.1.0-alpha.16',
     protocolVersion: '2.5.2'
   }), {
     serverVersion: '1.1.0-alpha.16',
     protocolVersion: '2.5.2',
-    webClientVersion: '0.1.0-alpha.16'
+    webClientVersion: '1.0.5'
   });
   assert.equal(version.labelsFromConfig({ appVersion: '1.1.0-alpha.16' }).serverVersion, '1.1.0-alpha.16');
 });

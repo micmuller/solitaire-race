@@ -30,7 +30,9 @@ const DOUBLE_TAP_DISTANCE_PX = 28;
 const LOBBY_SESSION_STORAGE_KEY = 'solitaire-vnext:lobbySessionId';
 const LOBBY_NICKNAME_STORAGE_KEY = 'solitaire-vnext:nickname';
 const HUD_VISIBLE_STORAGE_KEY = 'solitaire-vnext:hudVisible';
-const baseUrl = window.location.origin;
+const SERVER_BASE_URL_STORAGE_KEY = 'solitaire-vnext:serverBaseUrl';
+const defaultBaseUrl = window.location.origin;
+let baseUrl = normalizedServerBaseUrl(storageGet(SERVER_BASE_URL_STORAGE_KEY)) || defaultBaseUrl;
 let client = null;
 let selection = null;
 let interactionLocked = false;
@@ -55,8 +57,10 @@ const debugHistory = [];
 const configReady = loadConfig();
 setRandomSeed();
 setVersionLabels();
+setServerBaseUrlField();
 
 async function loadConfig() {
+  publicBaseUrl = baseUrl;
   try {
     const response = await fetch(`${baseUrl}/vnext/config`);
     if (!response.ok) return;
@@ -72,6 +76,40 @@ async function loadConfig() {
   } finally {
     setVersionLabels();
   }
+}
+
+function normalizedServerBaseUrl(value) {
+  const text = String(value || '').trim().replace(/\/+$/, '');
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    return url.toString().replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function setServerBaseUrlField() {
+  $('#server-base-url').value = baseUrl;
+}
+
+async function applyServerBaseUrl(nextValue, { reset = false } = {}) {
+  const normalized = reset ? defaultBaseUrl : normalizedServerBaseUrl(nextValue);
+  if (!normalized) {
+    setMessage('Server-Pfad ist ungueltig.', 'error');
+    return;
+  }
+  if (client) {
+    setMessage('Server-Pfad gespeichert. Neue Verbindung erst nach Lobby/Neustart.', 'warn');
+  } else {
+    setMessage('Server-Pfad gespeichert.', 'ok');
+  }
+  baseUrl = normalized;
+  storageSet(SERVER_BASE_URL_STORAGE_KEY, reset ? '' : baseUrl);
+  setServerBaseUrlField();
+  await loadConfig();
+  refreshLobbyGames({ quiet: true }).catch((error) => setMessage(error.message, 'error'));
 }
 
 function setVersionLabels() {
@@ -336,7 +374,7 @@ function currentPath() {
 }
 
 function setRoute(matchId, role) {
-  const url = matchUrl({ origin: baseUrl, pathname: currentPath(), matchId, role });
+  const url = matchUrl({ origin: window.location.origin, pathname: currentPath(), matchId, role });
   if (url) window.history.replaceState({}, '', url);
 }
 
@@ -383,7 +421,6 @@ function updateBotControls() {
 
 function updateActionControls() {
   const hostLocked = isP2User();
-  $('#create-match').disabled = hostLocked;
   $('#create-lobby-game').disabled = hostLocked;
   $('#start-create-lobby-game').disabled = hostLocked;
   $('#create-bot-match').disabled = hostLocked;
@@ -1278,7 +1315,6 @@ $('#client-id').addEventListener('change', () => {
   updateHeaderSummary();
   updateActionControls();
 });
-$('#create-match').addEventListener('click', () => createLobbyHostGame());
 $('#direct-create-match').addEventListener('click', () => startHostMatch());
 $('#create-lobby-game').addEventListener('click', () => createLobbyHostGame());
 $('#start-create-lobby-game').addEventListener('click', () => createLobbyHostGame());
@@ -1305,6 +1341,17 @@ $('#resign-match').addEventListener('click', () => resignMatch());
 $('#end-lobby-game').addEventListener('click', () => endCurrentLobbyGame());
 $('#preview-final-sequence').addEventListener('click', () => previewFinalSequence());
 $('#hud-toggle').addEventListener('change', (event) => setHudVisible(event.target.checked));
+$('#save-server-base-url').addEventListener('click', () => {
+  applyServerBaseUrl($('#server-base-url').value).catch((error) => setMessage(error.message, 'error'));
+});
+$('#reset-server-base-url').addEventListener('click', () => {
+  applyServerBaseUrl('', { reset: true }).catch((error) => setMessage(error.message, 'error'));
+});
+$('#server-base-url').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  applyServerBaseUrl(event.currentTarget.value).catch((error) => setMessage(error.message, 'error'));
+});
 $('#debug-toggle').addEventListener('change', (event) => {
   debugEnabled = event.target.checked;
   renderDebugOverlay();
