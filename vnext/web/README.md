@@ -8,6 +8,10 @@ Current vertical slice:
 - start from a Lobby overlay with locally remembered nickname, create a named
   Lobby game as `p1`, or join an open Lobby game as `p2` without copying an
   invite URL or manually entering a Match-ID;
+- keep a newly hosted Lobby game in a visible waiting state and block gameplay
+  until the server announces that `p2` joined;
+- let `p1` delete an owned waiting game and let `p2` release the seat before
+  the first accepted move;
 - create a split/shared match as host `p1` and expose a shareable invite URL
   that auto-joins as `p2` as a technical fallback;
 - create a split/shared match as host `p1` with a server-managed bot connected
@@ -45,7 +49,8 @@ Current vertical slice:
 - animate card position changes only after an authoritative ack render and
   play synthesized audio cues for ack/reject/recovery results;
 - generate readable random seeds and restart the active host match with either
-  the same seed or a new random seed;
+  the same seed or a new random seed plus an independently selected Split or
+  Shared mode;
 - close any open final-score/restart overlays on all clients when a
   server-authoritative `RESTART` snapshot arrives, so `p2` immediately returns
   to the playable board after `p1` starts the next round;
@@ -69,19 +74,22 @@ The normal Web entry flow is now Lobby-first:
 1. The player enters a nickname. The browser stores the nickname and opaque
    Lobby session id in local storage.
 2. `Start` or `Als P1 hosten` creates a named Lobby game. The server creates
-   the underlying authoritative match and assigns the local player to `p1`.
+   the underlying authoritative match, assigns the local player to `p1`, and
+   blocks moves while the game is waiting for `p2`.
 3. Other players open the same Web client, see the Lobby game list, and choose
    `Als P2 beitreten`. The client receives the underlying technical `matchId`
    from the Lobby API and connects as `p2`.
-4. The `Teilen` tab keeps the old Match-ID and invite URL tooling for debugging
+4. Both clients become playable when the server emits `lobbyStart`. P1 can
+   delete an owned waiting game; P2 can leave before the first accepted move.
+5. The `Teilen` tab keeps the old Match-ID and invite URL tooling for debugging
    and fallback cases.
-5. `p1` can use `Spiel beenden` in the Spiel menu to mark the Lobby game
+6. `p1` can use `Spiel beenden` in the Spiel menu to mark the Lobby game
    finished and return connected clients to the Lobby.
 
-The Lobby model already exposes stable `playerId`, `sessionId`, nickname and
-reserved history fields (`gamesPlayed`, `gamesWon`, `totalScore`, `bestScore`,
-`lastGameAt`). They are in-memory in alpha.13; persistence, leaderboards and
-cross-device identity can be added behind the same API later.
+The Lobby model exposes stable `playerId`, `sessionId`, nickname and in-memory
+history fields (`gamesPlayed`, `gamesWon`, `totalScore`, `bestScore`,
+`lastGameAt`). A finished authoritative match records these fields exactly
+once; persistence, leaderboards and cross-device identity remain later work.
 
 Still pending:
 
@@ -125,10 +133,10 @@ when hosted locally; seed and mode display are synchronized from the
 authoritative snapshot.
 
 The Restart control is host-only and server-authoritative: host `p1` keeps the
-same match and invite link, while the server resets the session and broadcasts a
-`RESTART` snapshot so `p2` returns to the same fresh state. New-seed restarts
-use the same path with a newly generated seed. Joined `p2` clients cannot start
-a restart.
+same match and invite link, chooses the same or a newly generated seed and
+independently selects Split or Shared. The server verifies the Lobby host
+session, resets the session and broadcasts a `RESTART` snapshot so `p2` returns
+to the same fresh state. Joined `p2` clients cannot start a restart.
 
 The GameOver dialog uses the same restart dialog for `Neues Spiel`; it no
 longer creates a separate fresh p1-only match. Human-vs-bot and Bot-vs-Bot

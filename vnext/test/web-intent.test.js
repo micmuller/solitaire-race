@@ -1,6 +1,8 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 
 let mapping;
@@ -160,6 +162,28 @@ test('browser protocol client emits restart response before restart state', () =
   assert.equal(client.current.rev, 0);
 });
 
+test('browser protocol client forwards lobby lifecycle events without changing game state', () => {
+  const client = new protocolClient.ProtocolClient({
+    baseUrl: 'http://example.test',
+    matchId: 'm-lifecycle',
+    clientId: 'p1'
+  });
+  client.current = { rev: 0, stateHash: 'same-hash', state: { seed: 'SAME', status: 'active' } };
+  const events = [];
+  client.subscribe((event) => events.push(event.type));
+
+  for (const kind of ['lobbyStart', 'lobbyWaiting', 'lobbyDelete']) {
+    client.handle({ kind, matchId: 'm-lifecycle', protocolVersion: protocolClient.PROTOCOL_VERSION });
+  }
+
+  assert.deepEqual(events, [
+    'lobbyStart', 'response',
+    'lobbyWaiting', 'response',
+    'lobbyDelete', 'response'
+  ]);
+  assert.equal(client.current.stateHash, 'same-hash');
+});
+
 test('lobby urls encode host and invite identities', () => {
   assert.deepEqual(lobby.readLaunchParams('?matchId=m-123&role=p2'), { matchId: 'm-123', role: 'p2' });
   assert.deepEqual(lobby.readLaunchParams('?matchId=m-123&role=observer'), { matchId: 'm-123', role: 'observer' });
@@ -185,14 +209,14 @@ test('lobby urls encode host and invite identities', () => {
 });
 
 test('web client version is exposed for the header menu', () => {
-  assert.equal(version.WEB_CLIENT_VERSION, '1.0.5');
+  assert.equal(version.WEB_CLIENT_VERSION, '1.0.6');
   assert.deepEqual(version.labelsFromConfig({
     serverVersion: '1.1.0-alpha.16',
     protocolVersion: '2.5.2'
   }), {
     serverVersion: '1.1.0-alpha.16',
     protocolVersion: '2.5.2',
-    webClientVersion: '1.0.5'
+    webClientVersion: '1.0.6'
   });
   assert.equal(version.labelsFromConfig({ appVersion: '1.1.0-alpha.16' }).serverVersion, '1.1.0-alpha.16');
 });
@@ -219,4 +243,19 @@ test('version menu toggles open and closed from the badge state', () => {
 test('random seed generator creates stable readable seed format', () => {
   assert.equal(seed.generateRandomSeed(1722500000000, () => 0.5), 'HN-LZB00Y68-ZIK0ZK');
   assert.match(seed.generateRandomSeed(), /^HN-[0-9A-Z]+-[0-9A-Z]{6,}$/);
+});
+
+test('web lobby exposes the approved menu defaults and synchronized mode controls', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '../web/app.mjs'), 'utf8');
+
+  assert.doesNotMatch(html, /id="lobby-open-menu"/);
+  assert.match(html, /class="menu-tab active"[^>]+data-menu-tab="game"/);
+  assert.match(html, /class="menu-panel active"[^>]+data-menu-panel="game"/);
+  assert.equal((html.match(/data-lobby-mode="split"/g) || []).length, 2);
+  assert.equal((html.match(/data-lobby-mode="shared"/g) || []).length, 2);
+  assert.match(html, /data-menu-panel="settings"[\s\S]+id="preview-final-sequence"[\s\S]+id="debug-toggle"/);
+  assert.match(source, /if \(isOpen\) \{\s+setMenuPanel\('game'\)/);
+  assert.match(source, /const LOBBY_LOGIN_ENABLED = false;/);
+  assert.match(source, /async function createLobbyHostGame\(\)[\s\S]+setRandomSeed\(\);\s+const seed = \$\('#seed'\)\.value;/);
 });

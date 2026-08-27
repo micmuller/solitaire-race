@@ -115,10 +115,11 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     return typeof hash === 'string' ? hash.slice(0, 12) : undefined;
   }
 
-  function broadcast(matchId, payload) {
+  function broadcast(matchId, payload, { clientType } = {}) {
     const encoded = JSON.stringify(payload);
     let sent = 0;
     for (const socket of peers.get(matchId)?.values() || []) {
+      if (clientType && socket.clientType !== clientType) continue;
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(encoded);
         sent += 1;
@@ -146,6 +147,27 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     bot.stop();
     bots.delete(key);
     return bot.report;
+  }
+
+  function disposeMatch(matchId, reason) {
+    stopBot(matchId, 'p1');
+    stopBot(matchId, 'p2');
+    const room = peers.get(matchId);
+    peers.delete(matchId);
+    sessions.delete(matchId);
+    for (const socket of room?.values() || []) {
+      if (socket.readyState === WebSocket.OPEN) socket.close(1000, reason);
+    }
+  }
+
+  function disconnectPeer(matchId, clientId, reason) {
+    const room = peers.get(matchId);
+    const socket = room?.get(clientId);
+    if (!socket) return false;
+    room.delete(clientId);
+    if (room.size === 0) peers.delete(matchId);
+    if (socket.readyState === WebSocket.OPEN) socket.close(1000, reason);
+    return true;
   }
 
   async function handleRequest(request, response) {
@@ -235,6 +257,13 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
           role: joined.role,
           guest: joined.game.players.p2?.nickname
         });
+        broadcast(joined.matchId, {
+          kind: 'lobbyStart',
+          matchId: joined.matchId,
+          protocolVersion: PROTOCOL_VERSION,
+          game: joined.game,
+          reason: 'P2_JOINED'
+        }, { clientType: 'web' });
         sendJson(response, 200, joined);
       } catch (error) {
         if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
@@ -244,9 +273,44 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     if (request.method === 'POST' && lobbyPath?.[2] === '/leave') {
       try {
         const body = await readJson(request);
-        const game = lobby.leaveGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: body.sessionId });
+        const gameId = decodeURIComponent(lobbyPath[1]);
+        const existing = lobby.games.get(gameId);
+        const session = existing ? sessions.get(existing.matchId) : null;
+        if (session && session.current.rev > 0) {
+          sendJson(response, 409, { error: 'p2 can only leave before the first move' });
+          return;
+        }
+        const game = lobby.leaveGame({ gameId, sessionId: body.sessionId });
+        broadcast(game.matchId, {
+          kind: 'lobbyWaiting',
+          matchId: game.matchId,
+          protocolVersion: PROTOCOL_VERSION,
+          game,
+          reason: 'P2_LEFT'
+        }, { clientType: 'web' });
+        disconnectPeer(game.matchId, 'p2', 'p2 left lobby game');
         log('LOBBY_GAME_LEFT', { gameId: game.gameId, matchId: game.matchId, status: game.status });
         sendJson(response, 200, { game });
+      } catch (error) {
+        if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
+      }
+      return;
+    }
+    if (request.method === 'DELETE' && lobbyPath && !lobbyPath[2]) {
+      try {
+        const body = await readJson(request);
+        const game = lobby.deleteWaitingGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: body.sessionId });
+        const deleted = {
+          kind: 'lobbyDelete',
+          matchId: game.matchId,
+          protocolVersion: PROTOCOL_VERSION,
+          game,
+          reason: 'HOST_DELETED'
+        };
+        const peersNotified = broadcast(game.matchId, deleted, { clientType: 'web' });
+        disposeMatch(game.matchId, 'lobby game deleted');
+        log('LOBBY_GAME_DELETED', { gameId: game.gameId, matchId: game.matchId, peers: peersNotified });
+        sendJson(response, 200, deleted);
       } catch (error) {
         if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
       }
@@ -267,7 +331,8 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
           game,
           reason: 'HOST_ENDED'
         };
-        const peersNotified = broadcast(matchId, ended);
+        const peersNotified = broadcast(matchId, ended, { clientType: 'web' });
+        disposeMatch(matchId, 'lobby game ended');
         log('LOBBY_GAME_ENDED', { gameId: game.gameId, matchId, peers: peersNotified });
         sendJson(response, 200, ended);
       } catch (error) {
@@ -376,6 +441,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       }
       try {
         const body = await readJson(request);
+        lobby.requireHostForMatch({ matchId: session.matchId, sessionId: body.sessionId });
         const seed = typeof body.seed === 'string' && body.seed.length > 0 ? body.seed : session.header.seed;
         const mode = typeof body.mode === 'string' && body.mode.length > 0 ? body.mode : session.header.mode;
         if (!MODES.includes(mode)) {
@@ -383,7 +449,8 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
           return;
         }
         const restartSnapshot = session.restart({ seed, mode });
-        lobby.markMatchActive(session.matchId);
+        const restartedGame = lobby.markMatchRestarted(session.matchId, { seed, mode });
+        if (restartedGame) restartSnapshot.game = restartedGame;
         const peersNotified = broadcast(session.matchId, restartSnapshot);
         log('MATCH_RESTARTED', {
           matchId: session.matchId,
@@ -438,6 +505,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     }
     const matchId = url.searchParams.get('matchId');
     const clientId = url.searchParams.get('clientId');
+    const clientType = url.searchParams.get('clientType');
     const reconnect = url.searchParams.get('reconnect') === '1';
     const session = sessions.get(matchId);
     const observer = clientId === OBSERVER_ID;
@@ -454,6 +522,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       }
       webSocket.matchId = matchId;
       webSocket.clientId = clientId;
+      webSocket.clientType = clientType;
       webSocket.peerKey = peerKey(clientId);
       wss.emit('connection', webSocket);
     });
@@ -507,6 +576,22 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
         baseRev: envelope?.baseRev,
         action: envelope?.kind
       });
+      const lobbyGame = lobby.gameByMatchId(matchId);
+      if (lobbyGame?.status === 'waiting') {
+        const session = sessions.get(matchId);
+        const response = {
+          kind: 'reject',
+          matchId,
+          clientId,
+          protocolVersion: PROTOCOL_VERSION,
+          code: 'MATCH_NOT_ACTIVE',
+          rev: session.current.rev,
+          stateHash: session.current.stateHash
+        };
+        log('ACTION_REJECT', { matchId, clientId, seq: envelope?.seq, action: envelope?.kind, code: response.code });
+        socket.send(JSON.stringify(response));
+        return;
+      }
       const outcome = sessions.get(matchId).process(clientId, envelope);
       if (outcome.response.kind === 'ack' && outcome.response.state?.status === 'finished') {
         lobby.markMatchFinished(matchId, outcome.response.state);

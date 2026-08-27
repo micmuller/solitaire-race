@@ -106,6 +106,7 @@ class LobbyStore {
 
   listGames() {
     return [...this.games.values()]
+      .filter((game) => game.status !== 'finished')
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
       .map(publicGame);
   }
@@ -181,10 +182,47 @@ class LobbyStore {
       error.statusCode = 404;
       throw error;
     }
-    if (game.players.p2?.sessionId === sessionId) {
-      game.players.p2 = null;
-      game.status = 'waiting';
-      game.updatedAt = this.clock();
+    if (game.players.p2?.sessionId !== sessionId) {
+      const error = new Error('only p2 can leave the lobby game');
+      error.statusCode = 403;
+      throw error;
+    }
+    game.players.p2 = null;
+    game.status = 'waiting';
+    game.updatedAt = this.clock();
+    return publicGame(game);
+  }
+
+  deleteWaitingGame({ gameId, sessionId }) {
+    const game = this.games.get(gameId);
+    if (!game) {
+      const error = new Error('lobby game not found');
+      error.statusCode = 404;
+      throw error;
+    }
+    if (game.players.p1?.sessionId !== sessionId) {
+      const error = new Error('only p1 can delete the lobby game');
+      error.statusCode = 403;
+      throw error;
+    }
+    if (game.status !== 'waiting') {
+      const error = new Error('only waiting lobby games can be deleted');
+      error.statusCode = 409;
+      throw error;
+    }
+    const deleted = publicGame(game);
+    this.games.delete(gameId);
+    this.matchToGame.delete(game.matchId);
+    return deleted;
+  }
+
+  requireHostForMatch({ matchId, sessionId }) {
+    const game = this.gameByMatchId(matchId);
+    if (!game) return null;
+    if (game.players.p1?.sessionId !== sessionId) {
+      const error = new Error('only p1 can control the lobby match');
+      error.statusCode = 403;
+      throw error;
     }
     return publicGame(game);
   }
@@ -214,6 +252,18 @@ class LobbyStore {
     return publicGame(game);
   }
 
+  markMatchRestarted(matchId, { seed, mode }) {
+    const game = this.gameByMatchId(matchId);
+    if (!game) return null;
+    game.seed = seed;
+    game.mode = mode;
+    game.status = game.players.p2 ? 'active' : 'waiting';
+    game.updatedAt = this.clock();
+    game.history.resultRecorded = false;
+    game.history.scoreSnapshot = null;
+    return publicGame(game);
+  }
+
   markMatchFinished(matchId, state) {
     const game = this.gameByMatchId(matchId);
     if (!game || game.status === 'finished') return null;
@@ -226,7 +276,25 @@ class LobbyStore {
       winner: state.winner || null,
       endedReason: state.endedReason || null
     } : null;
+    this.recordResult(game, state);
     return publicGame(game);
+  }
+
+  recordResult(game, state) {
+    if (game.history.resultRecorded || !state?.players) return;
+    const timestamp = this.clock();
+    for (const playerId of ['p1', 'p2']) {
+      const sessionId = game.players[playerId]?.sessionId;
+      const player = sessionId ? this.players.get(sessionId) : null;
+      if (!player) continue;
+      const score = Number.isSafeInteger(state.players[playerId]?.score) ? state.players[playerId].score : 0;
+      player.stats.gamesPlayed += 1;
+      player.stats.totalScore += score;
+      player.stats.bestScore = Math.max(player.stats.bestScore, score);
+      player.stats.lastGameAt = timestamp;
+      if (state.winner === playerId) player.stats.gamesWon += 1;
+    }
+    game.history.resultRecorded = true;
   }
 
   gameByMatchId(matchId) {

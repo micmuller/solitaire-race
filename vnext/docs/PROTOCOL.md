@@ -152,6 +152,7 @@ foundation updates collision-safe.
 - `OWNERSHIP_VIOLATION`
 - `RULE_VIOLATION`
 - `MATCH_FINISHED`
+- `MATCH_NOT_ACTIVE` (lobby match is waiting for P2)
 - `OUT_OF_TURN` (not used in Phase 1)
 - `DUPLICATE_SEQ` (idempotent duplicate; action ignored)
   - Includes `expectedSeq` so thin clients can recover their next sequence
@@ -220,6 +221,7 @@ Example 3: Server snapshot message (stub)
 - ADR-011 binds the thin client state machine used by Web and iOS.
 - ADR-013 permits stale-intent revalidation for race concurrency.
 - ADR-014 defines authoritative per-player foundation scoring.
+- ADR-015 defines lobby waiting/start/finish/delete and host-controlled restart.
 
 ## Open Questions
 - (leer – bewusst offen)

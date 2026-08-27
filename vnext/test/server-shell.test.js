@@ -187,6 +187,18 @@ test('LobbyStore maps nickname sessions to games and reserves player history fie
     }
   });
   assert.equal(finished.status, 'finished');
+  assert.equal(lobby.listGames().length, 0);
+  const updatedHost = lobby.createOrUpdatePlayer({ sessionId: host.sessionId, nickname: host.nickname });
+  assert.equal(updatedHost.stats.gamesPlayed, 1);
+  assert.equal(updatedHost.stats.gamesWon, 1);
+  assert.equal(updatedHost.stats.totalScore, 52);
+  assert.equal(updatedHost.stats.bestScore, 52);
+
+  const restarted = lobby.markMatchRestarted('m-lobby', { seed: 'NEXT-SEED', mode: 'shared' });
+  assert.equal(restarted.status, 'active');
+  assert.equal(restarted.seed, 'NEXT-SEED');
+  assert.equal(restarted.mode, 'shared');
+  assert.equal(lobby.listGames().length, 1);
 });
 
 test('LobbyStore lets only p1 end a lobby game by match id', () => {
@@ -212,6 +224,29 @@ test('LobbyStore lets only p1 end a lobby game by match id', () => {
   );
   const ended = lobby.endGameByMatch({ matchId: 'm-end', sessionId: host.sessionId });
   assert.equal(ended.status, 'finished');
+});
+
+test('LobbyStore lets only p1 delete an owned waiting game', () => {
+  let nextId = 0;
+  const lobby = new LobbyStore({ idFactory: () => `id-${nextId += 1}` });
+  const host = lobby.createOrUpdatePlayer({ nickname: 'Host' });
+  const guest = lobby.createOrUpdatePlayer({ nickname: 'Guest' });
+  const game = lobby.createGame({
+    sessionId: host.sessionId,
+    matchId: 'm-delete',
+    seed: 'DELETE-SEED',
+    mode: 'split',
+    name: 'Delete Test'
+  });
+
+  assert.throws(
+    () => lobby.deleteWaitingGame({ gameId: game.gameId, sessionId: guest.sessionId }),
+    /only p1 can delete/
+  );
+  const deleted = lobby.deleteWaitingGame({ gameId: game.gameId, sessionId: host.sessionId });
+  assert.equal(deleted.matchId, 'm-delete');
+  assert.equal(lobby.listGames().length, 0);
+  assert.equal(lobby.gameByMatchId('m-delete'), null);
 });
 
 test('vNext HTTP and WebSocket shell creates a match and broadcasts authoritative ack', async (t) => {
@@ -483,4 +518,102 @@ test('vNext lobby API allows only p1 to end a lobby game', async (t) => {
   assert.equal(ended.kind, 'lobbyEnd');
   assert.equal(ended.reason, 'HOST_ENDED');
   assert.equal(ended.game.status, 'finished');
+});
+
+test('lobby lifecycle gates start, authorizes restart and deletes waiting games', async (t) => {
+  const app = createVNextServer({ logger: silentLogger });
+  const address = await app.start({ port: 0 });
+  const httpBase = `http://127.0.0.1:${address.port}`;
+  const wsBase = `ws://127.0.0.1:${address.port}`;
+  const sockets = [];
+  t.after(async () => {
+    for (const socket of sockets) socket.close();
+    await app.close();
+  });
+
+  const host = await fetch(`${httpBase}/vnext/lobby/sessions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nickname: 'Host' })
+  }).then((response) => response.json());
+  const guest = await fetch(`${httpBase}/vnext/lobby/sessions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nickname: 'Guest' })
+  }).then((response) => response.json());
+  const created = await fetch(`${httpBase}/vnext/lobby/games`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: host.player.sessionId, name: 'Lifecycle', seed: 'FLOW-SEED', mode: 'split' })
+  }).then((response) => response.json());
+
+  const p1 = await connect(`${wsBase}/vnext?matchId=${created.matchId}&clientId=p1&clientType=web`);
+  sockets.push(p1.socket);
+  await p1.next();
+  p1.socket.send(JSON.stringify(drawEnvelope(created.matchId, 'p1', 0, 0)));
+  const waitingReject = await p1.next();
+  assert.equal(waitingReject.kind, 'reject');
+  assert.equal(waitingReject.code, 'MATCH_NOT_ACTIVE');
+
+  const guestDelete = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}`, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: guest.player.sessionId })
+  });
+  assert.equal(guestDelete.status, 403);
+
+  const p1StartPromise = p1.next();
+  const joined = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/join`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: guest.player.sessionId })
+  }).then((response) => response.json());
+  assert.equal(joined.game.status, 'active');
+  assert.equal((await p1StartPromise).kind, 'lobbyStart');
+
+  const p2 = await connect(`${wsBase}/vnext?matchId=${created.matchId}&clientId=p2&clientType=web`);
+  sockets.push(p2.socket);
+  await p2.next();
+
+  const unauthorizedRestart = await fetch(`${httpBase}/vnext/matches/${created.matchId}/restart`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: guest.player.sessionId, seed: 'NOPE', mode: 'shared' })
+  });
+  assert.equal(unauthorizedRestart.status, 403);
+
+  const p1RestartPromise = p1.next();
+  const p2RestartPromise = p2.next();
+  const restarted = await fetch(`${httpBase}/vnext/matches/${created.matchId}/restart`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: host.player.sessionId, seed: 'FLOW-RESTART', mode: 'shared' })
+  }).then((response) => response.json());
+  assert.equal(restarted.state.seed, 'FLOW-RESTART');
+  assert.equal(restarted.state.mode, 'shared');
+  assert.equal(restarted.game.status, 'active');
+  for (const message of [await p1RestartPromise, await p2RestartPromise]) {
+    assert.equal(message.reason, 'RESTART');
+    assert.equal(message.state.seed, 'FLOW-RESTART');
+    assert.equal(message.state.mode, 'shared');
+  }
+
+  const p1WaitingPromise = p1.next();
+  const p2WaitingPromise = p2.next();
+  const left = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/leave`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: guest.player.sessionId })
+  }).then((response) => response.json());
+  assert.equal(left.game.status, 'waiting');
+  assert.equal((await p1WaitingPromise).kind, 'lobbyWaiting');
+  assert.equal((await p2WaitingPromise).kind, 'lobbyWaiting');
+
+  const p1DeletePromise = p1.next();
+  const deleted = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}`, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: host.player.sessionId })
+  }).then((response) => response.json());
+  assert.equal(deleted.kind, 'lobbyDelete');
+  assert.equal((await p1DeletePromise).reason, 'HOST_DELETED');
+  assert.equal(app.sessions.has(created.matchId), false);
+  const games = await fetch(`${httpBase}/vnext/lobby/games`).then((response) => response.json());
+  assert.equal(games.games.length, 0);
 });

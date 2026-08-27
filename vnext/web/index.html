@@ -18,7 +18,7 @@
       <div id="version-menu" class="version-menu" hidden>
         <div><span>Server</span><strong id="server-version">-</strong></div>
         <div><span>Protocol</span><strong id="protocol-version">-</strong></div>
-        <div><span>Webclient</span><strong id="web-version">-</strong></div>
+        <div><span>Web Client</span><strong id="web-version">-</strong></div>
       </div>
     </div>
     <button id="profile-toggle" class="profile-button" type="button" aria-label="Spielerprofil" aria-expanded="false">
@@ -33,7 +33,7 @@
       <span class="summary-chip"><span>Modus</span><strong id="summary-mode">Split</strong></span>
       <span class="summary-chip"><span>Rolle</span><strong id="summary-role">P1</strong></span>
       <span class="summary-chip"><span>Server</span><strong id="hud-server-version">-</strong></span>
-      <span class="summary-chip"><span>Client</span><strong id="hud-client-version">-</strong></span>
+      <span class="summary-chip"><span>Web Client</span><strong id="hud-client-version">-</strong></span>
     </div>
     <div class="telemetry" aria-label="Verbindungsstatus">
       <span id="connection-dot" class="status-dot"></span>
@@ -68,21 +68,28 @@
         <button id="app-menu-close" class="icon-button" type="button" aria-label="Menü schliessen">×</button>
       </div>
       <nav class="menu-tabs" aria-label="Menübereiche">
-        <button class="menu-tab active" type="button" data-menu-tab="lobby">Lobby</button>
+        <button class="menu-tab" type="button" data-menu-tab="lobby">Lobby</button>
         <button class="menu-tab" type="button" data-menu-tab="settings">Settings</button>
-        <button class="menu-tab" type="button" data-menu-tab="game">Spiel</button>
+        <button class="menu-tab active" type="button" data-menu-tab="game">Spiel</button>
         <button class="menu-tab" type="button" data-menu-tab="match">Neues Spiel</button>
         <button class="menu-tab" type="button" data-menu-tab="bot">Bot</button>
         <button class="menu-tab" type="button" data-menu-tab="share">Teilen</button>
         <button class="menu-tab" type="button" data-menu-tab="info">Info</button>
       </nav>
-      <div class="menu-panel active" data-menu-panel="lobby">
+      <div class="menu-panel" data-menu-panel="lobby">
         <div class="menu-section">
           <h2>Lobby</h2>
           <div class="menu-grid">
             <label>Nickname<input id="lobby-nickname" maxlength="32" autocomplete="nickname"></label>
-            <button id="lobby-save-name" type="button">Anmelden</button>
+            <button id="lobby-save-name" type="button" disabled>Anmelden</button>
             <button id="lobby-refresh" type="button">Aktualisieren</button>
+            <fieldset class="mode-switch-field">
+              <legend>Modus</legend>
+              <div class="mode-switch" role="group" aria-label="Spielmodus">
+                <button type="button" data-lobby-mode="split" aria-pressed="true">Split</button>
+                <button type="button" data-lobby-mode="shared" aria-pressed="false">Shared</button>
+              </div>
+            </fieldset>
           </div>
           <div class="lobby-list" id="menu-lobby-list"></div>
         </div>
@@ -95,18 +102,20 @@
             <button id="save-server-base-url" type="button">Speichern</button>
             <button id="reset-server-base-url" type="button">Aktueller Host</button>
             <label class="toggle-row"><input id="hud-toggle" type="checkbox"> Info-HUD</label>
+            <button id="preview-final-sequence" type="button">Finale testen</button>
+            <label class="toggle-row"><input id="debug-toggle" type="checkbox"> Debug</label>
           </div>
         </div>
       </div>
-      <div class="menu-panel" data-menu-panel="game">
+      <div class="menu-panel active" data-menu-panel="game">
         <div class="menu-section">
           <h2>Spiel</h2>
           <div class="menu-grid">
             <button id="restart-match" class="primary" type="button">Neu starten</button>
             <button id="resign-match" class="danger" type="button">Aufgeben</button>
             <button id="end-lobby-game" class="danger" type="button">Spiel beenden</button>
-            <button id="preview-final-sequence">Finale testen</button>
-            <label class="toggle-row"><input id="debug-toggle" type="checkbox"> Debug</label>
+            <button id="leave-lobby-game" type="button" hidden>Platz verlassen</button>
+            <button id="delete-waiting-game" class="danger" type="button" hidden>Offenes Spiel löschen</button>
           </div>
         </div>
       </div>
@@ -154,7 +163,7 @@
           <div class="info-grid">
             <span>Server</span><strong id="menu-server-version">-</strong>
             <span>Protocol</span><strong id="menu-protocol-version">-</strong>
-            <span>Webclient</span><strong id="menu-web-version">-</strong>
+            <span>Web Client</span><strong id="menu-web-version">-</strong>
             <span>Revision</span><strong id="menu-revision">-</strong>
             <span>Hash</span><strong id="menu-state-hash">-</strong>
           </div>
@@ -174,18 +183,34 @@
       </div>
       <div class="lobby-controls">
         <label>Nickname<input id="start-lobby-nickname" maxlength="32" autocomplete="nickname"></label>
-        <button id="start-lobby-save-name" type="button">Anmelden</button>
+        <button id="start-lobby-save-name" type="button" disabled>Anmelden</button>
       </div>
-      <div class="lobby-controls">
+      <div class="lobby-controls lobby-create-controls">
         <label>Spielname<input id="start-lobby-game-name" maxlength="48" autocomplete="off"></label>
+        <fieldset class="mode-switch-field">
+          <legend>Modus</legend>
+          <div class="mode-switch" role="group" aria-label="Spielmodus">
+            <button type="button" data-lobby-mode="split" aria-pressed="true">Split</button>
+            <button type="button" data-lobby-mode="shared" aria-pressed="false">Shared</button>
+          </div>
+        </fieldset>
         <button id="start-create-lobby-game" class="primary" type="button">Als P1 hosten</button>
       </div>
       <div id="start-lobby-list" class="lobby-list"></div>
-      <button id="lobby-open-menu" type="button">Menü öffnen</button>
     </div>
   </section>
 
   <main id="game" class="game-shell" hidden>
+    <section id="match-waiting" class="match-waiting" hidden>
+      <div>
+        <strong>Warte auf P2</strong>
+        <span>Das Spiel startet, sobald P2 beigetreten ist.</span>
+      </div>
+      <div class="match-waiting-actions">
+        <button id="waiting-copy-invite" type="button">Invite kopieren</button>
+        <button id="waiting-delete-game" class="danger" type="button">Spiel löschen</button>
+      </div>
+    </section>
     <section class="player-area opponent-area">
       <div class="area-heading"><span>Gegner</span><strong><span id="opponent-id">P2</span> · <span id="opponent-score">0</span> Punkte</strong></div>
       <div class="lane">
@@ -242,10 +267,14 @@
   <dialog id="restart-dialog" class="restart-dialog">
     <form method="dialog">
       <strong>Match neu starten?</strong>
-      <p>Soll der aktuelle Seed wiederverwendet werden?</p>
+      <fieldset class="restart-options">
+        <legend>Seed</legend>
+        <label><input type="radio" name="restart-seed" value="same" checked> Gleicher Seed</label>
+        <label><input type="radio" name="restart-seed" value="new"> Neuer Seed</label>
+      </fieldset>
+      <label class="restart-mode">Spielmodus<select id="restart-mode"><option value="split">Split</option><option value="shared">Shared</option></select></label>
       <div class="dialog-actions">
-        <button id="restart-same-seed" type="button" class="primary">Gleicher Seed</button>
-        <button id="restart-new-seed" type="button">Neuer Seed</button>
+        <button id="restart-confirm" type="button" class="primary">Neu starten</button>
         <button id="restart-cancel" type="button">Abbrechen</button>
       </div>
     </form>

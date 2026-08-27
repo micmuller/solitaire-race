@@ -26,7 +26,7 @@ export class ProtocolClient {
       const url = new URL(this.baseUrl);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       url.pathname = '/vnext';
-      url.search = new URLSearchParams({ matchId: this.matchId, clientId: this.clientId });
+      url.search = new URLSearchParams({ matchId: this.matchId, clientId: this.clientId, clientType: 'web' });
       const socket = new WebSocket(url);
       this.socket = socket;
       let ready = false;
@@ -62,8 +62,8 @@ export class ProtocolClient {
     if (!response || response.matchId !== this.matchId || response.protocolVersion !== PROTOCOL_VERSION) {
       throw new Error('Ungültige Serverantwort');
     }
-    if (response.kind === 'lobbyEnd') {
-      this.emit({ type: 'lobbyEnd', response });
+    if (['lobbyStart', 'lobbyWaiting', 'lobbyEnd', 'lobbyDelete'].includes(response.kind)) {
+      this.emit({ type: response.kind, response });
       this.emit({ type: 'response', response });
       return;
     }
@@ -165,6 +165,26 @@ export async function joinLobbyGame(baseUrl, gameId, { sessionId }) {
   return response.json();
 }
 
+export async function leaveLobbyGame(baseUrl, gameId, { sessionId }) {
+  const response = await fetch(`${baseUrl}/vnext/lobby/games/${encodeURIComponent(gameId)}/leave`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId })
+  });
+  if (!response.ok) throw new Error(`Lobby-Spiel konnte nicht verlassen werden (${response.status})`);
+  return response.json();
+}
+
+export async function deleteLobbyGame(baseUrl, gameId, { sessionId }) {
+  const response = await fetch(`${baseUrl}/vnext/lobby/games/${encodeURIComponent(gameId)}`, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId })
+  });
+  if (!response.ok) throw new Error(`Lobby-Spiel konnte nicht geloescht werden (${response.status})`);
+  return response.json();
+}
+
 export async function endLobbyMatch(baseUrl, matchId, { sessionId }) {
   const response = await fetch(`${baseUrl}/vnext/lobby/matches/${encodeURIComponent(matchId)}/end`, {
     method: 'POST',
@@ -175,11 +195,11 @@ export async function endLobbyMatch(baseUrl, matchId, { sessionId }) {
   return response.json();
 }
 
-export async function restartMatch(baseUrl, matchId, seed, mode) {
+export async function restartMatch(baseUrl, matchId, seed, mode, { sessionId } = {}) {
   const response = await fetch(`${baseUrl}/vnext/matches/${encodeURIComponent(matchId)}/restart`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ seed, mode })
+    body: JSON.stringify({ seed, mode, sessionId })
   });
   if (!response.ok) throw new Error(`Restart fehlgeschlagen (${response.status})`);
   return response.json();

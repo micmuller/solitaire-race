@@ -2,9 +2,11 @@ import {
   ProtocolClient,
   createLobbyGame,
   createLobbySession,
+  deleteLobbyGame,
   endLobbyMatch,
   createMatch,
   joinLobbyGame,
+  leaveLobbyGame,
   listLobbyGames,
   restartMatch,
   startBot,
@@ -31,6 +33,7 @@ const LOBBY_SESSION_STORAGE_KEY = 'solitaire-vnext:lobbySessionId';
 const LOBBY_NICKNAME_STORAGE_KEY = 'solitaire-vnext:nickname';
 const HUD_VISIBLE_STORAGE_KEY = 'solitaire-vnext:hudVisible';
 const SERVER_BASE_URL_STORAGE_KEY = 'solitaire-vnext:serverBaseUrl';
+const LOBBY_LOGIN_ENABLED = false;
 const defaultBaseUrl = window.location.origin;
 let baseUrl = normalizedServerBaseUrl(storageGet(SERVER_BASE_URL_STORAGE_KEY)) || defaultBaseUrl;
 let client = null;
@@ -52,6 +55,8 @@ let debugPendingStart = null;
 let lobbyPlayer = null;
 let lobbyGames = [];
 let activeLobbyGameId = null;
+let activeLobbyGameStatus = null;
+let isReturningToLobby = false;
 const debugHistory = [];
 
 const configReady = loadConfig();
@@ -113,7 +118,8 @@ async function applyServerBaseUrl(nextValue, { reset = false } = {}) {
 }
 
 function setVersionLabels() {
-  $('#version-badge').textContent = WEB_CLIENT_VERSION;
+  $('#version-badge').textContent = `Web ${WEB_CLIENT_VERSION}`;
+  $('#version-badge').setAttribute('aria-label', `Web Client Version ${WEB_CLIENT_VERSION}`);
   $('#server-version').textContent = serverVersion;
   $('#protocol-version').textContent = serverProtocolVersion;
   $('#web-version').textContent = WEB_CLIENT_VERSION;
@@ -127,8 +133,11 @@ function setVersionLabels() {
 function setAppMenuOpen(isOpen) {
   $('#app-menu').hidden = !isOpen;
   $('#app-menu-toggle').setAttribute('aria-expanded', String(isOpen));
-  if (isOpen) setProfileMenuOpen(false);
-  if (isOpen) updateMenuInfo();
+  if (isOpen) {
+    setMenuPanel('game');
+    setProfileMenuOpen(false);
+    updateMenuInfo();
+  }
 }
 
 function toggleAppMenu() {
@@ -179,7 +188,16 @@ function lobbyNickname() {
 function setLobbyNickname(value) {
   $('#lobby-nickname').value = value;
   $('#start-lobby-nickname').value = value;
+  updateLobbyRegistrationControls();
   updateProfileInfo();
+}
+
+function updateLobbyRegistrationControls() {
+  const nickname = lobbyNickname();
+  const isRegistered = Boolean(lobbyPlayer?.nickname && lobbyPlayer.nickname === nickname);
+  const disabled = !LOBBY_LOGIN_ENABLED || !nickname || isRegistered;
+  $('#lobby-save-name').disabled = disabled;
+  $('#start-lobby-save-name').disabled = disabled;
 }
 
 function syncLobbyGameName(value) {
@@ -233,14 +251,32 @@ function renderLobbyList(container, games) {
     const meta = document.createElement('span');
     meta.textContent = lobbyGameLine(game);
     details.append(title, meta);
-    const action = document.createElement('button');
-    action.type = 'button';
     const ownHost = lobbyPlayer?.sessionId && game.players.p1?.sessionId === lobbyPlayer.sessionId;
     const ownGuest = lobbyPlayer?.sessionId && game.players.p2?.sessionId === lobbyPlayer.sessionId;
+    const actions = document.createElement('div');
+    actions.className = 'lobby-game-actions';
+    const action = document.createElement('button');
+    action.type = 'button';
     action.textContent = ownHost ? 'Als P1 öffnen' : ownGuest ? 'Als P2 öffnen' : 'Als P2 beitreten';
     action.disabled = game.status === 'finished' || (game.players.p2 && !ownGuest && !ownHost);
     action.addEventListener('click', () => joinLobbyGameAndConnect(game));
-    item.append(details, action);
+    actions.append(action);
+    if (ownHost && game.status === 'waiting') {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'danger';
+      remove.textContent = 'Löschen';
+      remove.addEventListener('click', () => deleteLobbyHostGame(game));
+      actions.append(remove);
+    }
+    if (ownGuest && game.status === 'active') {
+      const leave = document.createElement('button');
+      leave.type = 'button';
+      leave.textContent = 'Verlassen';
+      leave.addEventListener('click', () => leaveLobbyGuestGame(game));
+      actions.append(leave);
+    }
+    item.append(details, actions);
     container.append(item);
   });
 }
@@ -251,6 +287,8 @@ async function refreshLobbyGames({ quiet = false } = {}) {
   lobbyGames = result.games || [];
   renderLobbyList($('#start-lobby-list'), lobbyGames);
   renderLobbyList($('#menu-lobby-list'), lobbyGames);
+  const activeGame = lobbyGames.find((game) => game.gameId === activeLobbyGameId);
+  if (activeGame && client) setLobbyMatchStatus(activeGame.status);
   if (!quiet) setMessage(`Lobby aktualisiert: ${lobbyGames.length} Spiel${lobbyGames.length === 1 ? '' : 'e'}.`, 'ok');
   return lobbyGames;
 }
@@ -262,6 +300,16 @@ function setMenuPanel(panelName) {
   document.querySelectorAll('.menu-panel').forEach((panel) => {
     panel.classList.toggle('active', panel.dataset.menuPanel === panelName);
   });
+}
+
+function setGameMode(mode) {
+  const selectedMode = mode === 'shared' ? 'shared' : 'split';
+  $('#mode').value = selectedMode;
+  document.querySelectorAll('[data-lobby-mode]').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.lobbyMode === selectedMode));
+  });
+  updateHeaderSummary();
+  updateActionControls();
 }
 
 function updateMenuInfo() {
@@ -402,7 +450,16 @@ function isMatchFinished() {
 }
 
 function canSendActions() {
-  return ACTION_PLAYER_IDS.has(client?.clientId) && !isMatchFinished();
+  const lobbyReady = !activeLobbyGameId || activeLobbyGameStatus === 'active';
+  return ACTION_PLAYER_IDS.has(client?.clientId) && lobbyReady && !isMatchFinished();
+}
+
+function setLobbyMatchStatus(status) {
+  activeLobbyGameStatus = status;
+  const waiting = Boolean(activeLobbyGameId && status === 'waiting');
+  $('#match-waiting').hidden = !waiting;
+  $('#game').classList.toggle('waiting-for-player', waiting);
+  updateActionControls();
 }
 
 function localDisplayId() {
@@ -428,9 +485,14 @@ function updateActionControls() {
   $('#random-seed').disabled = hostLocked;
   $('#seed').disabled = hostLocked;
   $('#mode').disabled = hostLocked;
+  document.querySelectorAll('[data-lobby-mode]').forEach((button) => {
+    button.disabled = hostLocked;
+  });
   $('#bot-speed').disabled = hostLocked;
-  $('#resign-match').disabled = !ACTION_PLAYER_IDS.has(client?.clientId) || isMatchFinished();
-  $('#end-lobby-game').disabled = client?.clientId !== 'p1' || !lobbyPlayer || !activeLobbyGameId;
+  $('#resign-match').disabled = !canSendActions();
+  $('#end-lobby-game').hidden = !(activeLobbyGameId && client?.clientId === 'p1' && activeLobbyGameStatus === 'active');
+  $('#leave-lobby-game').hidden = !(activeLobbyGameId && client?.clientId === 'p2' && activeLobbyGameStatus === 'active');
+  $('#delete-waiting-game').hidden = !(activeLobbyGameId && client?.clientId === 'p1' && activeLobbyGameStatus === 'waiting');
   updateRestartControl();
   updateBotControls();
 }
@@ -463,7 +525,7 @@ async function copyText(text, input) {
 
 function syncSetupFields(state) {
   if (state?.seed) $('#seed').value = state.seed;
-  if (state?.mode) $('#mode').value = state.mode;
+  if (state?.mode) setGameMode(state.mode);
   updateHeaderSummary();
 }
 
@@ -619,7 +681,10 @@ function tableauStackStep(cardCount, compact) {
 function render(current, { animate = false } = {}) {
   const previousRects = animate ? captureCardRects() : null;
   const { state, rev, stateHash } = current;
-  if (state.status === 'finished') selection = null;
+  if (state.status === 'finished') {
+    selection = null;
+    if (activeLobbyGameId) setLobbyMatchStatus('finished');
+  }
   const localId = localDisplayId();
   const opponentId = localId === 'p1' ? 'p2' : 'p1';
   const local = state.players[localId];
@@ -702,6 +767,19 @@ function showGameOverDialog(current, { preview = false } = {}) {
   }, GAME_OVER_DIALOG_DELAY_MS);
 }
 
+function openRestartDialog() {
+  if (!canRestartCurrentMatch()) {
+    updateRestartControl();
+    setMessage('Restart ist nur fuer P1 verfuegbar.', 'warn');
+    return;
+  }
+  const mode = client?.current?.state?.mode || $('#mode').value || 'split';
+  $('#restart-mode').value = mode;
+  const sameSeed = document.querySelector('input[name="restart-seed"][value="same"]');
+  if (sameSeed) sameSeed.checked = true;
+  $('#restart-dialog').showModal();
+}
+
 function renderGameOverDialog(state, { preview = false } = {}) {
   const winnerLabel = ROLE_LABELS[state.winner] || state.winner || '-';
   const endedByLabel = ROLE_LABELS[state.endedBy] || state.endedBy || '-';
@@ -771,7 +849,7 @@ async function startNextGame() {
     setMessage('Neues Spiel kann nur P1 starten.', 'warn');
     return;
   }
-  $('#restart-dialog').showModal();
+  openRestartDialog();
 }
 
 function animateAuthoritativeChanges(previousRects) {
@@ -1061,6 +1139,7 @@ async function connectToMatch({ matchId: requestedMatchId, clientId: requestedCl
   client.subscribe((event) => {
     if (event.type === 'response' && event.response.kind === 'snapshot' && event.response.reason === 'RESTART') {
       resetUiForRestart();
+      if (event.response.game) setLobbyMatchStatus(event.response.game.status);
     }
     if (event.type === 'state') {
       pushDebugEvent('state', `${event.source} ${debugStateLabel()}`);
@@ -1068,6 +1147,19 @@ async function connectToMatch({ matchId: requestedMatchId, clientId: requestedCl
     }
     if (event.type === 'lobbyEnd') {
       returnToLobby('Spiel wurde von P1 beendet.');
+    }
+    if (event.type === 'lobbyDelete') {
+      returnToLobby('Offenes Spiel wurde von P1 gelöscht.');
+    }
+    if (event.type === 'lobbyStart') {
+      setLobbyMatchStatus('active');
+      setMessage('P2 ist beigetreten. Spiel gestartet.', 'ok');
+      refreshLobbyGames({ quiet: true }).catch(() => {});
+    }
+    if (event.type === 'lobbyWaiting') {
+      setLobbyMatchStatus('waiting');
+      setMessage('P2 hat das Spiel vor dem ersten Zug verlassen.', 'warn');
+      refreshLobbyGames({ quiet: true }).catch(() => {});
     }
     if (event.type === 'disconnected') {
       $('#connection-dot').classList.remove('online');
@@ -1091,32 +1183,78 @@ async function connectToMatch({ matchId: requestedMatchId, clientId: requestedCl
 }
 
 async function returnToLobby(message = 'Zur Lobby zurueckgekehrt.') {
-  await stopActiveBot({ quiet: true });
-  client?.close();
-  client = null;
-  activeLobbyGameId = null;
-  selection = null;
-  interactionLocked = false;
-  clearDrag();
-  clearGameOverFlow();
-  $('#pending').hidden = true;
-  $('#game').hidden = true;
-  $('#lobby-overlay').hidden = false;
-  $('#connection-dot').classList.remove('online');
-  $('#connection-label').textContent = 'Lobby';
-  $('#revision').textContent = 'rev -';
-  $('#state-hash').textContent = 'hash -';
-  $('#match-id').value = '';
-  $('#client-id').value = 'p1';
-  setInvite('', false);
-  updateHeaderSummary();
-  updateActionControls();
-  updateMenuInfo();
-  setMenuPanel('lobby');
-  setAppMenuOpen(false);
-  window.history.replaceState({}, '', currentPath());
-  await refreshLobbyGames({ quiet: true }).catch((error) => setMessage(error.message, 'error'));
-  setMessage(message, 'ok');
+  if (isReturningToLobby) return;
+  isReturningToLobby = true;
+  try {
+    await stopActiveBot({ quiet: true });
+    client?.close();
+    client = null;
+    activeLobbyGameId = null;
+    activeLobbyGameStatus = null;
+    selection = null;
+    interactionLocked = false;
+    clearDrag();
+    clearGameOverFlow();
+    $('#pending').hidden = true;
+    $('#match-waiting').hidden = true;
+    $('#game').classList.remove('waiting-for-player');
+    $('#game').hidden = true;
+    $('#lobby-overlay').hidden = false;
+    $('#connection-dot').classList.remove('online');
+    $('#connection-label').textContent = 'Lobby';
+    $('#revision').textContent = 'rev -';
+    $('#state-hash').textContent = 'hash -';
+    $('#match-id').value = '';
+    $('#client-id').value = 'p1';
+    setInvite('', false);
+    updateHeaderSummary();
+    updateActionControls();
+    updateMenuInfo();
+    setMenuPanel('lobby');
+    setAppMenuOpen(false);
+    window.history.replaceState({}, '', currentPath());
+    await refreshLobbyGames({ quiet: true }).catch((error) => setMessage(error.message, 'error'));
+    setMessage(message, 'ok');
+  } finally {
+    isReturningToLobby = false;
+  }
+}
+
+async function deleteLobbyHostGame(game) {
+  if (!lobbyPlayer?.sessionId || game.players.p1?.sessionId !== lobbyPlayer.sessionId) {
+    setMessage('Nur P1 kann das offene Spiel löschen.', 'warn');
+    return;
+  }
+  if (!window.confirm(`Offenes Spiel „${game.name}“ löschen?`)) return;
+  try {
+    await deleteLobbyGame(baseUrl, game.gameId, { sessionId: lobbyPlayer.sessionId });
+    if (client?.matchId === game.matchId) await returnToLobby('Offenes Spiel gelöscht.');
+    else {
+      await refreshLobbyGames({ quiet: true });
+      setMessage('Offenes Spiel gelöscht.', 'ok');
+    }
+  } catch (error) {
+    setMessage(error.message, 'error');
+  }
+}
+
+function currentLobbyGame() {
+  return lobbyGames.find((game) => game.gameId === activeLobbyGameId) || null;
+}
+
+async function leaveLobbyGuestGame(game) {
+  if (!lobbyPlayer?.sessionId || game.players.p2?.sessionId !== lobbyPlayer.sessionId) {
+    setMessage('Nur P2 kann diesen Platz verlassen.', 'warn');
+    return;
+  }
+  if (!window.confirm(`Spiel „${game.name}“ vor dem ersten Zug verlassen?`)) return;
+  try {
+    await leaveLobbyGame(baseUrl, game.gameId, { sessionId: lobbyPlayer.sessionId });
+    if (client?.matchId === game.matchId) await returnToLobby('Spiel verlassen.');
+    else await refreshLobbyGames({ quiet: true });
+  } catch (error) {
+    setMessage(error.message, 'error');
+  }
 }
 
 async function endCurrentLobbyGame() {
@@ -1141,8 +1279,8 @@ async function createLobbyHostGame() {
   try {
     const player = await ensureLobbySession();
     await stopActiveBot({ quiet: true });
-    const seed = $('#seed').value.trim() || generateRandomSeed();
-    $('#seed').value = seed;
+    setRandomSeed();
+    const seed = $('#seed').value;
     const name = ($('#lobby-game-name').value || $('#start-lobby-game-name').value || `${player.nickname}s Spiel`).trim();
     syncLobbyGameName(name);
     const created = await createLobbyGame(baseUrl, {
@@ -1153,13 +1291,15 @@ async function createLobbyHostGame() {
     });
     currentMatchKind = 'human';
     activeLobbyGameId = created.game.gameId;
+    activeLobbyGameStatus = created.game.status;
     $('#match-id').value = created.matchId;
     $('#client-id').value = 'p1';
     setInvite(created.matchId, false);
     await connectToMatch({ matchId: created.matchId, clientId: 'p1' });
+    setLobbyMatchStatus(created.game.status);
     await refreshLobbyGames({ quiet: true });
     setAppMenuOpen(false);
-    setMessage(`Lobby-Spiel erstellt: ${created.game.name}`, 'ok');
+    setMessage(`Lobby-Spiel erstellt: ${created.game.name}. Warte auf P2.`, 'ok');
   } catch (error) {
     if (error.message !== 'Nickname fehlt') setMessage(error.message, 'error');
   }
@@ -1178,9 +1318,11 @@ async function joinLobbyGameAndConnect(game) {
     }
     currentMatchKind = 'human';
     activeLobbyGameId = joined.game.gameId;
+    activeLobbyGameStatus = joined.game.status;
     $('#match-id').value = joined.matchId;
     $('#client-id').value = joined.role;
     await connectToMatch({ matchId: joined.matchId, clientId: joined.role });
+    setLobbyMatchStatus(joined.game.status);
     await refreshLobbyGames({ quiet: true });
     setAppMenuOpen(false);
     setMessage(`${joined.game.name} als ${ROLE_LABELS[joined.role]} geöffnet.`, 'ok');
@@ -1204,6 +1346,7 @@ async function startHostMatch({ randomSeed = false, withBot = false } = {}) {
     const match = await createMatch(baseUrl, seed, $('#mode').value);
     currentMatchKind = withBot ? 'human-bot' : 'human';
     activeLobbyGameId = null;
+    activeLobbyGameStatus = null;
     $('#match-id').value = match.matchId;
     $('#client-id').value = 'p1';
     setRoute(match.matchId, 'p1');
@@ -1235,6 +1378,7 @@ async function startBotVersusMatch({ randomSeed = false } = {}) {
     const match = await createMatch(baseUrl, seed, $('#mode').value);
     currentMatchKind = 'bot-versus';
     activeLobbyGameId = null;
+    activeLobbyGameStatus = null;
     $('#match-id').value = match.matchId;
     $('#client-id').value = 'observer';
     setRoute(match.matchId, 'observer');
@@ -1252,7 +1396,7 @@ async function startBotVersusMatch({ randomSeed = false } = {}) {
   }
 }
 
-async function restartHostMatch({ randomSeed = false } = {}) {
+async function restartHostMatch({ randomSeed = false, mode } = {}) {
   if (!canRestartCurrentMatch()) {
     setMessage('Restart ist nur fuer P1 verfuegbar.', 'warn');
     return;
@@ -1262,12 +1406,18 @@ async function restartHostMatch({ randomSeed = false } = {}) {
     interactionLocked = true;
     $('#pending').hidden = false;
     clearGameOverFlow();
-    if (randomSeed) setRandomSeed();
-    const seed = $('#seed').value.trim() || generateRandomSeed();
+    const seed = randomSeed
+      ? generateRandomSeed()
+      : (client?.current?.state?.seed || $('#seed').value.trim() || generateRandomSeed());
+    const restartMode = mode || client?.current?.state?.mode || $('#mode').value;
     $('#seed').value = seed;
-    const response = await restartMatch(baseUrl, client.matchId, seed, $('#mode').value);
+    setGameMode(restartMode);
+    const response = await restartMatch(baseUrl, client.matchId, seed, restartMode, {
+      sessionId: activeLobbyGameId ? lobbyPlayer?.sessionId : undefined
+    });
     celebratedMatchKey = null;
     client.handle(response);
+    if (response.game) setLobbyMatchStatus(response.game.status);
     if (currentMatchKind === 'human-bot') {
       await startBot(baseUrl, client.matchId, { clientId: 'p2', speed: $('#bot-speed').value, maxActions: 1000 });
       activeBotMatchId = client.matchId;
@@ -1283,7 +1433,7 @@ async function restartHostMatch({ randomSeed = false } = {}) {
       setInvite(client.matchId, true);
     }
     updateBotControls();
-    setMessage(`Match neu gestartet: ${response.reason}`, 'ok');
+    setMessage(`Match neu gestartet: ${MODE_LABELS[restartMode]} · Seed ${seed}`, 'ok');
   } catch (error) {
     setMessage(error.message, 'error');
   } finally {
@@ -1297,6 +1447,10 @@ function resignMatch() {
     setMessage('Aufgeben ist nur fuer P1 oder P2 verfuegbar.', 'warn');
     return;
   }
+  if (!canSendActions()) {
+    setMessage(activeLobbyGameStatus === 'waiting' ? 'Das Spiel wartet noch auf P2.' : 'Keine Aktion moeglich.', 'warn');
+    return;
+  }
   if (isMatchFinished()) {
     setMessage('Match ist bereits beendet.', 'warn');
     return;
@@ -1307,9 +1461,9 @@ function resignMatch() {
 
 $('#random-seed').addEventListener('click', () => setRandomSeed());
 $('#seed').addEventListener('input', () => updateHeaderSummary());
-$('#mode').addEventListener('change', () => {
-  updateHeaderSummary();
-  updateActionControls();
+$('#mode').addEventListener('change', (event) => setGameMode(event.target.value));
+document.querySelectorAll('[data-lobby-mode]').forEach((button) => {
+  button.addEventListener('click', () => setGameMode(button.dataset.lobbyMode));
 });
 $('#client-id').addEventListener('change', () => {
   updateHeaderSummary();
@@ -1326,10 +1480,6 @@ $('#start-lobby-save-name').addEventListener('click', () => ensureLobbySession()
 }));
 $('#lobby-refresh').addEventListener('click', () => refreshLobbyGames().catch((error) => setMessage(error.message, 'error')));
 $('#lobby-overlay-refresh').addEventListener('click', () => refreshLobbyGames().catch((error) => setMessage(error.message, 'error')));
-$('#lobby-open-menu').addEventListener('click', () => {
-  setMenuPanel('lobby');
-  setAppMenuOpen(true);
-});
 $('#lobby-nickname').addEventListener('input', (event) => setLobbyNickname(event.target.value));
 $('#start-lobby-nickname').addEventListener('input', (event) => setLobbyNickname(event.target.value));
 $('#lobby-game-name').addEventListener('input', (event) => syncLobbyGameName(event.target.value));
@@ -1339,6 +1489,18 @@ $('#create-bot-versus-match').addEventListener('click', () => startBotVersusMatc
 $('#stop-bot-match').addEventListener('click', () => stopActiveBot());
 $('#resign-match').addEventListener('click', () => resignMatch());
 $('#end-lobby-game').addEventListener('click', () => endCurrentLobbyGame());
+$('#leave-lobby-game').addEventListener('click', () => {
+  const game = currentLobbyGame();
+  if (game) leaveLobbyGuestGame(game);
+});
+$('#delete-waiting-game').addEventListener('click', () => {
+  const game = currentLobbyGame();
+  if (game) deleteLobbyHostGame(game);
+});
+$('#waiting-delete-game').addEventListener('click', () => {
+  const game = currentLobbyGame();
+  if (game) deleteLobbyHostGame(game);
+});
 $('#preview-final-sequence').addEventListener('click', () => previewFinalSequence());
 $('#hud-toggle').addEventListener('change', (event) => setHudVisible(event.target.checked));
 $('#save-server-base-url').addEventListener('click', () => {
@@ -1368,7 +1530,10 @@ $('#debug-clear').addEventListener('click', () => {
   renderDebugOverlay();
 });
 document.querySelectorAll('.menu-tab').forEach((tab) => {
-  tab.addEventListener('click', () => setMenuPanel(tab.dataset.menuTab));
+  tab.addEventListener('click', () => {
+    if (tab.dataset.menuTab === 'match') setRandomSeed();
+    setMenuPanel(tab.dataset.menuTab);
+  });
 });
 $('#app-menu-close').addEventListener('click', () => setAppMenuOpen(false));
 $('#app-menu').addEventListener('click', (event) => {
@@ -1389,20 +1554,13 @@ $('#profile-toggle').addEventListener('click', (event) => {
   setProfileMenuOpen($('#profile-menu').hidden);
 });
 $('#restart-match').addEventListener('click', () => {
-  if (!canRestartCurrentMatch()) {
-    updateRestartControl();
-    setMessage('Restart ist nur fuer P1 verfuegbar.', 'warn');
-    return;
-  }
-  $('#restart-dialog').showModal();
+  openRestartDialog();
 });
-$('#restart-same-seed').addEventListener('click', () => {
+$('#restart-confirm').addEventListener('click', () => {
+  const seedChoice = document.querySelector('input[name="restart-seed"]:checked')?.value || 'same';
+  const mode = $('#restart-mode').value;
   $('#restart-dialog').close();
-  restartHostMatch();
-});
-$('#restart-new-seed').addEventListener('click', () => {
-  $('#restart-dialog').close();
-  restartHostMatch({ randomSeed: true });
+  restartHostMatch({ randomSeed: seedChoice === 'new', mode });
 });
 $('#restart-cancel').addEventListener('click', () => $('#restart-dialog').close());
 $('#game-over-new').addEventListener('click', () => startNextGame().catch((error) => setMessage(error.message, 'error')));
@@ -1422,6 +1580,19 @@ $('#version-badge').addEventListener('click', (event) => {
   toggleVersionMenu(menu, $('#version-badge'));
 });
 $('#copy-invite').addEventListener('click', async () => {
+  const input = $('#invite-link');
+  const link = input.value;
+  if (!link) return;
+  try {
+    const copied = await copyText(link, input);
+    setMessage(copied ? 'Invite-Link kopiert.' : 'Invite-Link ist markiert.', copied ? 'ok' : 'warn');
+  } catch {
+    input.focus();
+    input.select();
+    setMessage('Invite-Link ist markiert.', 'warn');
+  }
+});
+$('#waiting-copy-invite').addEventListener('click', async () => {
   const input = $('#invite-link');
   const link = input.value;
   if (!link) return;
