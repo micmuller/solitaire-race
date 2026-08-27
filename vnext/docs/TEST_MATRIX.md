@@ -43,6 +43,8 @@ Last-Updated: 2026-07-31
 - Stale same-revision race actions are rebased onto current authoritative state.
 - Independent simultaneous player actions are both accepted; genuine conflicts
   are rejected by normal Core validation without consuming the sequence.
+- Simultaneous equal-rank/equal-suit foundation moves from both deck copies are
+  rebased and accepted on separate valid suit lanes in either arrival order.
 - Player scores equal the summed rank points each actor moved to global
   foundations; combined score equals total foundation rank points.
 - Final accepted foundation move that leaves the actor with no remaining own

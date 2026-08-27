@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const { WebSocket } = require('ws');
-const { APP_VERSION, PROTOCOL_VERSION } = require('../core');
+const { APP_VERSION, PROTOCOL_VERSION, checkInvariants, stateHash } = require('../core');
 const { defaultExpectedConfig, replay } = require('../replay');
 const { createVNextServer } = require('../server');
 const { LobbyStore } = require('../server/lobbyStore');
@@ -66,6 +66,34 @@ function drawEnvelope(matchId, clientId, seq, baseRev) {
       target: { zone: 'waste', owner: clientId }
     }
   };
+}
+
+function foundationEnvelope(matchId, clientId, seq, baseRev) {
+  return {
+    matchId,
+    clientId,
+    seq,
+    baseRev,
+    protocolVersion: PROTOCOL_VERSION,
+    kind: 'foundationMove',
+    payload: {
+      source: { zone: 'waste', owner: clientId },
+      target: { zone: 'foundation', owner: 'global', index: 0 }
+    }
+  };
+}
+
+function takeCard(state, cardId) {
+  const zones = [];
+  for (const player of Object.values(state.players)) {
+    zones.push(player.stock, player.waste, ...player.tableau);
+  }
+  zones.push(...state.foundations.map((foundation) => foundation.cards));
+  for (const cards of zones) {
+    const index = cards.findIndex((card) => card.cardId === cardId);
+    if (index >= 0) return cards.splice(index, 1)[0];
+  }
+  throw new Error(`Card not found: ${cardId}`);
 }
 
 test('MatchSession produces a replayable authoritative ActionLog', () => {
@@ -130,6 +158,51 @@ test('independent simultaneous moves are rebased and both accepted', () => {
   assert.equal(session.lastAcceptedSeq.p1, 0);
   assert.equal(session.lastAcceptedSeq.p2, 0);
   assert.equal(replay(session.actionLog(), defaultExpectedConfig('RACE-SEED', 'shared')).status, 'SUCCESS');
+});
+
+test('simultaneous duplicate-rank foundation moves use separate lanes without blocking', () => {
+  for (const firstActor of ['p1', 'p2']) {
+    const secondActor = firstActor === 'p1' ? 'p2' : 'p1';
+    const session = new MatchSession({
+      matchId: `m-foundation-race-${firstActor}`,
+      seed: 'FOUNDATION-RACE-SEED',
+      mode: 'shared'
+    });
+    const state = structuredClone(session.current.state);
+    const cardsByActor = {
+      p1: { ...takeCard(state, 'd0:C:01'), faceDown: false },
+      p2: { ...takeCard(state, 'd1:C:01'), faceDown: false }
+    };
+    state.players.p1.waste.push(cardsByActor.p1);
+    state.players.p2.waste.push(cardsByActor.p2);
+    assert.deepEqual(checkInvariants(state), { ok: true, violations: [] });
+    session.current = { rev: 0, state, stateHash: stateHash(0, state) };
+
+    const first = session.process(
+      firstActor,
+      foundationEnvelope(session.matchId, firstActor, 0, 0)
+    );
+    const second = session.process(
+      secondActor,
+      foundationEnvelope(session.matchId, secondActor, 0, 0)
+    );
+
+    assert.equal(first.response.kind, 'ack');
+    assert.equal(first.response.rev, 1);
+    assert.equal(second.response.kind, 'ack');
+    assert.equal(second.response.rev, 2);
+    const foundationCardIds = session.current.state.foundations
+      .flatMap((foundation) => foundation.cards)
+      .map((card) => card.cardId);
+    assert.ok(foundationCardIds.includes(cardsByActor[firstActor].cardId));
+    assert.ok(foundationCardIds.includes(cardsByActor[secondActor].cardId));
+    assert.equal(session.current.state.players.p1.waste.length, 0);
+    assert.equal(session.current.state.players.p2.waste.length, 0);
+    assert.equal(session.lastAcceptedSeq[firstActor], 0);
+    assert.equal(session.lastAcceptedSeq[secondActor], 0);
+    assert.equal(session.current.rev, 2);
+    assert.equal(session.current.stateHash, stateHash(2, session.current.state));
+  }
 });
 
 test('future base revision still returns an unchanged recovery snapshot', () => {
