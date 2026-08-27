@@ -546,6 +546,9 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
   const p1 = await connect(`${wsBase}/vnext?matchId=${created.matchId}&clientId=p1&clientType=web`);
   sockets.push(p1.socket);
   await p1.next();
+  const iosObserver = await connect(`${wsBase}/vnext?matchId=${created.matchId}&clientId=observer&clientType=ios`);
+  sockets.push(iosObserver.socket);
+  await iosObserver.next();
   p1.socket.send(JSON.stringify(drawEnvelope(created.matchId, 'p1', 0, 0)));
   const waitingReject = await p1.next();
   assert.equal(waitingReject.kind, 'reject');
@@ -559,6 +562,7 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
   assert.equal(guestDelete.status, 403);
 
   const p1StartPromise = p1.next();
+  const iosStartPromise = iosObserver.next();
   const joined = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/join`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -566,6 +570,7 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
   }).then((response) => response.json());
   assert.equal(joined.game.status, 'active');
   assert.equal((await p1StartPromise).kind, 'lobbyStart');
+  assert.equal((await iosStartPromise).kind, 'lobbyStart');
 
   const p2 = await connect(`${wsBase}/vnext?matchId=${created.matchId}&clientId=p2&clientType=web`);
   sockets.push(p2.socket);
@@ -580,6 +585,7 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
 
   const p1RestartPromise = p1.next();
   const p2RestartPromise = p2.next();
+  const iosRestartPromise = iosObserver.next();
   const restarted = await fetch(`${httpBase}/vnext/matches/${created.matchId}/restart`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -588,14 +594,24 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
   assert.equal(restarted.state.seed, 'FLOW-RESTART');
   assert.equal(restarted.state.mode, 'shared');
   assert.equal(restarted.game.status, 'active');
-  for (const message of [await p1RestartPromise, await p2RestartPromise]) {
+  for (const message of [await p1RestartPromise, await p2RestartPromise, await iosRestartPromise]) {
     assert.equal(message.reason, 'RESTART');
     assert.equal(message.state.seed, 'FLOW-RESTART');
     assert.equal(message.state.mode, 'shared');
   }
 
+  const p1MovePromise = p1.next();
+  const p2MovePromise = p2.next();
+  const iosMovePromise = iosObserver.next();
+  p1.socket.send(JSON.stringify(drawEnvelope(created.matchId, 'p1', 0, 0)));
+  for (const message of [await p1MovePromise, await p2MovePromise, await iosMovePromise]) {
+    assert.equal(message.kind, 'ack');
+    assert.equal(message.rev, 1);
+  }
+
   const p1WaitingPromise = p1.next();
   const p2WaitingPromise = p2.next();
+  const iosWaitingPromise = iosObserver.next();
   const left = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/leave`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -604,8 +620,10 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
   assert.equal(left.game.status, 'waiting');
   assert.equal((await p1WaitingPromise).kind, 'lobbyWaiting');
   assert.equal((await p2WaitingPromise).kind, 'lobbyWaiting');
+  assert.equal((await iosWaitingPromise).kind, 'lobbyWaiting');
 
   const p1DeletePromise = p1.next();
+  const iosDeletePromise = iosObserver.next();
   const deleted = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}`, {
     method: 'DELETE',
     headers: { 'content-type': 'application/json' },
@@ -613,6 +631,7 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
   }).then((response) => response.json());
   assert.equal(deleted.kind, 'lobbyDelete');
   assert.equal((await p1DeletePromise).reason, 'HOST_DELETED');
+  assert.equal((await iosDeletePromise).reason, 'HOST_DELETED');
   assert.equal(app.sessions.has(created.matchId), false);
   const games = await fetch(`${httpBase}/vnext/lobby/games`).then((response) => response.json());
   assert.equal(games.games.length, 0);

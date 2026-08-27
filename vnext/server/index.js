@@ -128,6 +128,11 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     return sent;
   }
 
+  function broadcastLobbyLifecycle(matchId, payload) {
+    return broadcast(matchId, payload, { clientType: 'web' })
+      + broadcast(matchId, payload, { clientType: 'ios' });
+  }
+
   function botKey(matchId, clientId) {
     return `${matchId}:${clientId}`;
   }
@@ -257,13 +262,13 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
           role: joined.role,
           guest: joined.game.players.p2?.nickname
         });
-        broadcast(joined.matchId, {
+        broadcastLobbyLifecycle(joined.matchId, {
           kind: 'lobbyStart',
           matchId: joined.matchId,
           protocolVersion: PROTOCOL_VERSION,
           game: joined.game,
           reason: 'P2_JOINED'
-        }, { clientType: 'web' });
+        });
         sendJson(response, 200, joined);
       } catch (error) {
         if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
@@ -274,20 +279,14 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       try {
         const body = await readJson(request);
         const gameId = decodeURIComponent(lobbyPath[1]);
-        const existing = lobby.games.get(gameId);
-        const session = existing ? sessions.get(existing.matchId) : null;
-        if (session && session.current.rev > 0) {
-          sendJson(response, 409, { error: 'p2 can only leave before the first move' });
-          return;
-        }
         const game = lobby.leaveGame({ gameId, sessionId: body.sessionId });
-        broadcast(game.matchId, {
+        broadcastLobbyLifecycle(game.matchId, {
           kind: 'lobbyWaiting',
           matchId: game.matchId,
           protocolVersion: PROTOCOL_VERSION,
           game,
           reason: 'P2_LEFT'
-        }, { clientType: 'web' });
+        });
         disconnectPeer(game.matchId, 'p2', 'p2 left lobby game');
         log('LOBBY_GAME_LEFT', { gameId: game.gameId, matchId: game.matchId, status: game.status });
         sendJson(response, 200, { game });
@@ -307,7 +306,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
           game,
           reason: 'HOST_DELETED'
         };
-        const peersNotified = broadcast(game.matchId, deleted, { clientType: 'web' });
+        const peersNotified = broadcastLobbyLifecycle(game.matchId, deleted);
         disposeMatch(game.matchId, 'lobby game deleted');
         log('LOBBY_GAME_DELETED', { gameId: game.gameId, matchId: game.matchId, peers: peersNotified });
         sendJson(response, 200, deleted);
@@ -331,7 +330,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
           game,
           reason: 'HOST_ENDED'
         };
-        const peersNotified = broadcast(matchId, ended, { clientType: 'web' });
+        const peersNotified = broadcastLobbyLifecycle(matchId, ended);
         disposeMatch(matchId, 'lobby game ended');
         log('LOBBY_GAME_ENDED', { gameId: game.gameId, matchId, peers: peersNotified });
         sendJson(response, 200, ended);
@@ -593,7 +592,8 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
         return;
       }
       const outcome = sessions.get(matchId).process(clientId, envelope);
-      if (outcome.response.kind === 'ack' && outcome.response.state?.status === 'finished') {
+      const matchFinished = outcome.response.kind === 'ack' && outcome.response.state?.status === 'finished';
+      if (matchFinished) {
         lobby.markMatchFinished(matchId, outcome.response.state);
       }
       if (outcome.response.kind === 'ack') {
@@ -627,6 +627,10 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       }
       if (outcome.broadcast) broadcast(matchId, outcome.response);
       else socket.send(JSON.stringify(outcome.response));
+      if (matchFinished) {
+        stopBot(matchId, 'p1');
+        stopBot(matchId, 'p2');
+      }
     });
 
     socket.on('close', () => {

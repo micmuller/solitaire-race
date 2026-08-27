@@ -209,14 +209,14 @@ test('lobby urls encode host and invite identities', () => {
 });
 
 test('web client version is exposed for the header menu', () => {
-  assert.equal(version.WEB_CLIENT_VERSION, '1.0.6');
+  assert.equal(version.WEB_CLIENT_VERSION, '1.0.7');
   assert.deepEqual(version.labelsFromConfig({
     serverVersion: '1.1.0-alpha.16',
     protocolVersion: '2.5.2'
   }), {
     serverVersion: '1.1.0-alpha.16',
     protocolVersion: '2.5.2',
-    webClientVersion: '1.0.6'
+    webClientVersion: '1.0.7'
   });
   assert.equal(version.labelsFromConfig({ appVersion: '1.1.0-alpha.16' }).serverVersion, '1.1.0-alpha.16');
 });
@@ -248,6 +248,8 @@ test('random seed generator creates stable readable seed format', () => {
 test('web lobby exposes the approved menu defaults and synchronized mode controls', () => {
   const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
   const source = fs.readFileSync(path.join(__dirname, '../web/app.mjs'), 'utf8');
+  const matchPanel = html.match(/data-menu-panel="match"[\s\S]*?(?=<div class="menu-panel" data-menu-panel="bot")/)?.[0] || '';
+  const botPanel = html.match(/data-menu-panel="bot"[\s\S]*?(?=<div class="menu-panel" data-menu-panel="share")/)?.[0] || '';
 
   assert.doesNotMatch(html, /id="lobby-open-menu"/);
   assert.match(html, /class="menu-tab active"[^>]+data-menu-tab="game"/);
@@ -258,4 +260,6 @@ test('web lobby exposes the approved menu defaults and synchronized mode control
   assert.match(source, /if \(isOpen\) \{\s+setMenuPanel\('game'\)/);
   assert.match(source, /const LOBBY_LOGIN_ENABLED = false;/);
   assert.match(source, /async function createLobbyHostGame\(\)[\s\S]+setRandomSeed\(\);\s+const seed = \$\('#seed'\)\.value;/);
+  assert.doesNotMatch(matchPanel, /id="create-bot-(?:match|versus-match)"/);
+  assert.match(botPanel, /id="create-bot-match"[\s\S]+id="create-bot-versus-match"/);
 });

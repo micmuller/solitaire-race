@@ -182,6 +182,43 @@ test('server-managed bot can join a web-hosted match as p2', async (t) => {
   assert.equal(invalidSpeedResponse.status, 400);
 });
 
+test('human resign immediately stops the server-managed opponent bot', async (t) => {
+  const baseUrl = await withServer(t);
+  const wsBase = baseUrl.replace(/^http/, 'ws');
+  const match = await fetch(`${baseUrl}/vnext/matches`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed: 'BOT-HUMAN-RESIGN', mode: 'split' })
+  }).then((response) => response.json());
+  const human = await connectRaw(`${wsBase}/vnext?matchId=${encodeURIComponent(match.matchId)}&clientId=p1&clientType=ios`);
+  t.after(() => human.socket.close());
+  await human.next();
+
+  const started = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clientId: 'p2', speed: 'easy', maxActions: 1000 })
+  });
+  assert.equal(started.status, 202);
+
+  human.socket.send(JSON.stringify({
+    matchId: match.matchId,
+    clientId: 'p1',
+    seq: 0,
+    baseRev: 0,
+    protocolVersion: PROTOCOL_VERSION,
+    kind: 'resign',
+    payload: {}
+  }));
+  const finished = await human.next();
+  assert.equal(finished.kind, 'ack');
+  assert.equal(finished.state.status, 'finished');
+  assert.equal(finished.state.winner, 'p2');
+
+  const stopAfterResign = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot?clientId=p2`, { method: 'DELETE' });
+  assert.equal(stopAfterResign.status, 404);
+});
+
 test('server-managed bot-vs-bot can be observed over websocket', async (t) => {
   const baseUrl = await withServer(t);
   const wsBase = baseUrl.replace(/^http/, 'ws');
