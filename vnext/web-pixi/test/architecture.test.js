@@ -52,3 +52,12 @@ test('score names, board debug overlay and finale preview stay wired',()=>{
   assert.match(boardShell,/id="debug-hud"/);
   assert.match(source,/board\.celebrate\(\{force:true\}\)/);
 });
+
+test('retina resolution never shrinks the logical board layout',()=>{
+  const source=fs.readFileSync(path.join(root,'src/render/board-scene.js'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+
+  assert.doesNotMatch(source,/renderer\.(?:width|height)\s*\/\s*(?:this\.app\.)?renderer\.resolution/);
+  assert.match(source,/computeLayout\(this\.layout\.width, this\.layout\.height/);
+  assert.match(main,/new ResizeObserver/);
+});

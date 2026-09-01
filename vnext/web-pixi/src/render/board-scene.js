@@ -110,7 +110,7 @@ export class BoardScene {
     const localId = this.localId || 'p1';
     const opponentId = localId === 'p1' ? 'p2' : 'p1';
     this.local = state.players[localId]; this.opponent = state.players[opponentId];
-    const nextLayout = computeLayout(this.app.renderer.width / this.app.renderer.resolution, this.app.renderer.height / this.app.renderer.resolution, {
+    const nextLayout = computeLayout(this.layout.width, this.layout.height, {
       maxLocalCards: this.maxStack(this.local.tableau), maxOpponentCards: this.maxStack(this.opponent.tableau)
     });
     this.layout = nextLayout; this.drawBoard(); this.drawSlots();

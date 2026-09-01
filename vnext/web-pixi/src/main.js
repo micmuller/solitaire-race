@@ -11,7 +11,7 @@ import { generateRandomSeed } from '../../web/seed.mjs';
 import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, retryableSequenceReject, sameTableauSelection, waitingMatchMessage } from './bridge/match-context.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.1.4';
+export const WEB_PIXI_CLIENT_VERSION = '0.1.5';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
 const STORAGE = { nickname:'solitaire-vnext:nickname', session:'solitaire-vnext:lobbySessionId', server:'solitaire-vnext:serverBaseUrl', quality:'solitaire-pixi:quality', mute:'solitaire-pixi:mute' };
@@ -31,7 +31,11 @@ const board = new BoardScene(pixi, {
   canInteract: () => canSendActions(),
   onSource: (meta) => handleSource(meta), onStock: () => handleStock(), onTarget: (target) => handleTarget(target), onAutoFoundation: (meta, card) => handleAutoFoundation(meta, card)
 });
-board.resize($('#board-shell').clientWidth, $('#board-shell').clientHeight);
+const boardShell=$('#board-shell');
+function resizeBoard() { const width=boardShell.clientWidth,height=boardShell.clientHeight; if(!(width>0&&height>0))return; pixi.renderer.resize(width,height); board.resize(width,height); refreshDebugHud(); }
+resizeBoard();
+const boardResizeObserver=new ResizeObserver(()=>requestAnimationFrame(resizeBoard));
+boardResizeObserver.observe(boardShell);
 
 function showToast(text, type = '') { const toast=$('#toast'); toast.textContent=text; toast.className=`toast ${type}`; toast.hidden=false; clearTimeout(showToast.timer); showToast.timer=setTimeout(()=>toast.hidden=true,2600); status(text); }
 function status(text, title = 'Status') { $('#status-title').textContent=title; $('#status-detail').textContent=text; $('#accessible-state').textContent=text; }
@@ -167,6 +171,6 @@ $('#copy-invite').onclick=async()=>{if(!client)return;await navigator.clipboard.
 $('#quality').onchange=()=>{localStorage.setItem(STORAGE.quality,$('#quality').value);showToast('Grafikqualität wird beim Neuladen aktiviert');}; $('#mute').onchange=()=>localStorage.setItem(STORAGE.mute,$('#mute').checked?'1':'0'); $('#debug-toggle').onchange=refreshDebugHud;
 $('#preview-final-sequence').onclick=()=>{const names=participantNames(),p1=client?.current?.state.players?.p1?.score??0,p2=client?.current?.state.players?.p2?.score??0;overlayOpen($('#menu-overlay'),false);$('#game-over-title').textContent='Finale Vorschau';$('#game-over-text').textContent=`${names.p1} ${p1} · ${names.p2} ${p2}`;const animated=!reducedMotion&&board.celebrate({force:true});status(animated?'Konfetti und Feuerwerk werden getestet':'Finalanimation wegen reduzierter Bewegung ausgelassen','Finale');setTimeout(()=>{if(!$('#game-over').open)$('#game-over').showModal();},animated?1100:0);};
 window.addEventListener('keydown',(event)=>{if(event.key==='Escape'){selection=null;board.setSelection(null);all('.overlay:not([hidden])').filter(x=>x.id!=='start-overlay').forEach(x=>overlayOpen(x,false));}});
-window.addEventListener('resize',()=>{board.resize($('#board-shell').clientWidth,$('#board-shell').clientHeight);refreshDebugHud();});
+window.addEventListener('resize',resizeBoard);
 
 const launch=readLaunchParams(location.search); if(new URLSearchParams(location.search).get('demo')==='1')startDemo(); else if(launch)connect(launch.matchId,launch.role).catch(e=>showToast(e.message,'error')); else ensurePlayer().then(()=>refreshLobby()).catch(()=>refreshLobby().catch(()=>{}));
