@@ -41,3 +41,14 @@ test('server has disjoint legacy and Pixi static roots',()=>{
   const source=fs.readFileSync(path.resolve(root,'../server/index.js'),'utf8');
   assert.match(source,/PIXI_WEB_ROOT/); assert.match(source,/url\.pathname === '\/vnext\/pixi'/); assert.match(source,/url\.pathname\.startsWith\('\/vnext\/web'\)/);
 });
+
+test('score names, board debug overlay and finale preview stay wired',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const source=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const boardShell=html.match(/<section id="board-shell"[\s\S]*?<\/section>/)?.[0] ?? '';
+
+  assert.match(html,/id="p1-name"/); assert.match(html,/id="p2-name"/);
+  assert.doesNotMatch(html,/id="hud-toggle"/);
+  assert.match(boardShell,/id="debug-hud"/);
+  assert.match(source,/board\.celebrate\(\{force:true\}\)/);
+});
