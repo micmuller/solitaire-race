@@ -86,3 +86,13 @@ test('board zones omit the P1 divider and P2 outline',()=>{
   assert.match(source,/TOKENS\.colors\.woodLight, \.38, 0\)/);
   assert.match(source,/TOKENS\.colors\.woodLight, \.18, 0\)/);
 });
+
+test('Pixi bot menu uses the human-facing difficulty profiles',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const select=html.match(/<select id="bot-speed">[\s\S]*?<\/select>/)?.[0] ?? '';
+
+  assert.match(select,/value="easy">Easy/);
+  assert.match(select,/value="medium" selected>Mittel/);
+  assert.match(select,/value="hard">Schwer/);
+  assert.doesNotMatch(select,/value="(?:slow|normal|fast)"/);
+});

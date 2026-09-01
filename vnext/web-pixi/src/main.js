@@ -11,7 +11,7 @@ import { generateRandomSeed } from '../../web/seed.mjs';
 import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, retryableSequenceReject, sameTableauSelection, waitingMatchMessage } from './bridge/match-context.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.1.9';
+export const WEB_PIXI_CLIENT_VERSION = '0.1.10';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
 const STORAGE = { nickname:'solitaire-vnext:nickname', session:'solitaire-vnext:lobbySessionId', server:'solitaire-vnext:serverBaseUrl', quality:'solitaire-pixi:quality', mute:'solitaire-pixi:mute' };
