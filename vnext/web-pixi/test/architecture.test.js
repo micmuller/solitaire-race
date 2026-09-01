@@ -79,3 +79,10 @@ test('authoritative ack does not animate a locally dragged card twice',()=>{
   assert.equal(BoardScene.prototype.transitionDuration.call(scene,'ack',false,'clicked'),220);
   assert.equal(BoardScene.prototype.transitionDuration.call(scene,'snapshot',false,'clicked'),0);
 });
+
+test('board zones omit the P1 divider and P2 outline',()=>{
+  const source=fs.readFileSync(path.join(root,'src/render/board-scene.js'),'utf8');
+  assert.doesNotMatch(source,/moveTo\(pad \* 2, zones\.local\.y\)/);
+  assert.match(source,/TOKENS\.colors\.woodLight, \.38, 0\)/);
+  assert.match(source,/TOKENS\.colors\.woodLight, \.18, 0\)/);
+});
