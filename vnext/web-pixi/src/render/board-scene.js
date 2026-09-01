@@ -8,6 +8,7 @@ import { nearestDropTarget } from '../input/drop-target.js';
 const SUITS = { C: '♣', D: '♦', H: '♥', S: '♠' };
 const RANKS = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
 const redSuit = (suit) => suit === 'D' || suit === 'H';
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 function roundedPanel(graphics, x, y, width, height, fill, stroke = TOKENS.colors.brass, alpha = 1) {
   graphics.roundRect(x, y, width, height, 12).fill({ color: fill, alpha }).stroke({ color: stroke, alpha: .48, width: 1.5 });
@@ -99,12 +100,14 @@ export class BoardScene {
   }
 
   drawBoard() {
-    const { width, height, zones, pad } = this.layout;
+    const { width, height, zones, foundations, card, pad } = this.layout;
     this.background.clear().rect(0, 0, width, height).fill(TOKENS.colors.felt);
     for (let x = -height; x < width + height; x += 18) this.background.moveTo(x, 0).lineTo(x + height, height).stroke({ color: TOKENS.colors.feltLight, alpha: .08, width: 1 });
     this.zones.clear();
     roundedPanel(this.zones, pad * .35, pad * .28, width - pad * .7, zones.opponent.height - pad * .1, 0x071f18, TOKENS.colors.woodLight, .38);
-    roundedPanel(this.zones, pad * .4, zones.foundations.y + pad * .2, width - pad * .8, zones.foundations.height - pad * .4, TOKENS.colors.wood, TOKENS.colors.brass, .72);
+    const foundationInsetX=clamp(card.width*.14,8,15),foundationInsetY=clamp(card.height*.045,5,8);
+    const foundationLeft=foundations[0].x-foundationInsetX,foundationRight=foundations.at(-1).x+card.width+foundationInsetX;
+    roundedPanel(this.zones, foundationLeft, foundations[0].y-foundationInsetY, foundationRight-foundationLeft, card.height+foundationInsetY*2, TOKENS.colors.wood, TOKENS.colors.brass, .72);
     roundedPanel(this.zones, pad * .35, zones.local.y + pad * .15, width - pad * .7, zones.local.height - pad * .3, TOKENS.colors.feltLight, TOKENS.colors.woodLight, .18);
     this.zones.moveTo(pad * 2, zones.local.y).lineTo(width - pad * 2, zones.local.y).stroke({ color: TOKENS.colors.brass, alpha: .36, width: 1 });
   }

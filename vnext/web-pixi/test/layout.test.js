@@ -25,6 +25,14 @@ test('fan separates open cards more than hidden cards',()=>{
   assert.ok(fan.faceUp>fan.faceDown);
 });
 
+test('local tableau starts with breathing room below the foundation zone',()=>{
+  const layout=computeLayout(1024,664);
+  const foundationBottom=layout.zones.foundations.y+layout.zones.foundations.height;
+  assert.ok(layout.local.tableau[0].y-foundationBottom>=10);
+  assert.equal(layout.local.stock.y,layout.local.tableau[0].y);
+  assert.equal(layout.local.waste.y,layout.local.tableau[0].y);
+});
+
 for (const [width,height] of [[1024,664],[1366,820]]) {
   test(`tableau piles use foundation spacing at ${width}x${height}`,()=>{
     const layout=computeLayout(width,height);
