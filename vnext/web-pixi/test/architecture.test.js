@@ -7,6 +7,7 @@ import { RetainedCardStore } from '../src/render/retained-card-store.js';
 import { InputLock } from '../src/input/input-lock.js';
 import { resolveQuality } from '../src/theme/tokens.js';
 import { TransitionController } from '../src/animation/transition-controller.js';
+import { BoardScene } from '../src/render/board-scene.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
@@ -60,4 +61,14 @@ test('retina resolution never shrinks the logical board layout',()=>{
   assert.doesNotMatch(source,/renderer\.(?:width|height)\s*\/\s*(?:this\.app\.)?renderer\.resolution/);
   assert.match(source,/computeLayout\(this\.layout\.width, this\.layout\.height/);
   assert.match(main,/new ResizeObserver/);
+});
+
+test('drag handoff survives pending state until the authoritative ack',()=>{
+  let applies=0;
+  const card={alpha:1};
+  const scene={pending:false,dropHandoff:{ids:['card']},cards:new Map([['card',card]]),current:{},applyState:()=>applies++};
+  BoardScene.prototype.setPending.call(scene,true);
+  assert.equal(scene.pending,true);
+  assert.equal(card.alpha,.82);
+  assert.equal(applies,0);
 });

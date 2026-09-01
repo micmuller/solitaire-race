@@ -24,3 +24,16 @@ test('fan separates open cards more than hidden cards',()=>{
   const fan=fanStep({count:14,availableSpan:190,cardHeight:120,faceDownCount:5});
   assert.ok(fan.faceUp>fan.faceDown);
 });
+
+for (const [width,height] of [[1024,664],[1366,820]]) {
+  test(`tableau piles use foundation spacing at ${width}x${height}`,()=>{
+    const layout=computeLayout(width,height);
+    const foundationGap=layout.foundations[1].x-layout.foundations[0].x-layout.card.width;
+    const localGap=layout.local.tableau[1].x-layout.local.tableau[0].x-layout.card.width;
+    const opponentGap=layout.opponent.tableau[1].x-layout.opponent.tableau[0].x-layout.card.compactWidth;
+    assert.ok(Math.abs(localGap-foundationGap)<0.01);
+    assert.ok(Math.abs(opponentGap-foundationGap)<0.01);
+    assert.ok(layout.local.tableau[0].x>=layout.local.waste.x+layout.card.width);
+    assert.ok(layout.local.tableau.at(-1).x+layout.card.width<=width-layout.pad+0.01);
+  });
+}

@@ -14,9 +14,10 @@ export function fanStep({ count, availableSpan, cardHeight, compact = false, fac
   };
 }
 
-function columns(startX, width, count, cardWidth) {
-  if (count === 1) return [startX];
-  const gap = (width - cardWidth * count) / (count - 1);
+function packedColumns(width, count, cardWidth, gap, minX, pad) {
+  const totalWidth = cardWidth * count + gap * (count - 1);
+  const centeredX = (width - totalWidth) / 2;
+  const startX = clamp(Math.max(minX, centeredX), pad, width - pad - totalWidth);
   return Array.from({ length: count }, (_, index) => startX + index * (cardWidth + gap));
 }
 
@@ -27,18 +28,16 @@ export function computeLayout(width, height, { maxLocalCards = 14, maxOpponentCa
   const opponentH = height * 0.275;
   const foundationH = height * 0.19;
   const localH = height - opponentH - foundationH;
-  const cardW = clamp(Math.min(contentWidth / 10.25, localH / 3.25), 48, 104);
+  const cardW = clamp(Math.min(contentWidth / 10.75, localH / 3.25), 48, 104);
   const cardH = cardW * 1.42;
   const compactW = cardW * 0.7;
   const compactH = cardH * 0.7;
   const utilityWidth = cardW * 2.22;
   const tableauX = pad + utilityWidth + cardW * 0.28;
-  const tableauWidth = width - pad - tableauX;
-  const localColumns = columns(tableauX, tableauWidth, 7, cardW);
   const opponentTableauX = pad + compactW * 2.4 + cardW * 0.35;
-  const opponentTableauWidth = width - pad - opponentTableauX;
-  const opponentColumns = columns(opponentTableauX, opponentTableauWidth, 7, compactW);
   const foundationGap = clamp(cardW * 0.2, 7, 18);
+  const localColumns = packedColumns(width, 7, cardW, foundationGap, tableauX, pad);
+  const opponentColumns = packedColumns(width, 7, compactW, foundationGap, opponentTableauX, pad);
   const foundationTotal = cardW * 8 + foundationGap * 7;
   const foundationX = (width - foundationTotal) / 2;
   const foundationY = opponentH + (foundationH - cardH) / 2;

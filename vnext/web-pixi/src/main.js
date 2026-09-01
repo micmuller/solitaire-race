@@ -11,7 +11,7 @@ import { generateRandomSeed } from '../../web/seed.mjs';
 import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, retryableSequenceReject, sameTableauSelection, waitingMatchMessage } from './bridge/match-context.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.1.5';
+export const WEB_PIXI_CLIENT_VERSION = '0.1.6';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
 const STORAGE = { nickname:'solitaire-vnext:nickname', session:'solitaire-vnext:lobbySessionId', server:'solitaire-vnext:serverBaseUrl', quality:'solitaire-pixi:quality', mute:'solitaire-pixi:mute' };
@@ -113,7 +113,7 @@ function handleSource(meta) {
 }
 function clearSelection(){selection=null;board.cancelInteraction();}
 function handleStock() { const local=client?.current?.state.players?.[client.clientId]; if(!local)return; const kind=local.stock.length?'draw':'recycle'; const payload=kind==='draw'?{source:{zone:'stock',owner:client.clientId},target:{zone:'waste',owner:client.clientId}}:{source:{zone:'waste',owner:client.clientId},target:{zone:'stock',owner:client.clientId}}; sendIntent(kind,payload); }
-function handleTarget(target) { if(target.zone==='stock')return handleStock(); const intent=dropIntent(selection,client?.clientId,target); if(intent)sendIntent(intent.kind,intent.payload); }
+function handleTarget(target) { if(target.zone==='stock'){handleStock();return true;} const intent=dropIntent(selection,client?.clientId,target); if(!intent)return false;sendIntent(intent.kind,intent.payload);return true; }
 function handleAutoFoundation(meta,card) { const next=selectionForMeta(meta), intent=autoFoundationIntent(next,client.current.state.foundations,card); if(intent){sendIntent(intent.kind,intent.payload);return true;} clearSelection();showToast('Keine passende Foundation – Auswahl aufgehoben','error');return false; }
 
 async function sendIntent(kind,payload) {
