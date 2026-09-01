@@ -72,3 +72,10 @@ test('drag handoff survives pending state until the authoritative ack',()=>{
   assert.equal(card.alpha,.82);
   assert.equal(applies,0);
 });
+
+test('authoritative ack does not animate a locally dragged card twice',()=>{
+  const scene={dropHandoff:{ids:['dragged']},quality:{motionScale:1}};
+  assert.equal(BoardScene.prototype.transitionDuration.call(scene,'ack',false,'dragged'),0);
+  assert.equal(BoardScene.prototype.transitionDuration.call(scene,'ack',false,'clicked'),220);
+  assert.equal(BoardScene.prototype.transitionDuration.call(scene,'snapshot',false,'clicked'),0);
+});

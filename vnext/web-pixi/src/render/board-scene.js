@@ -93,6 +93,11 @@ export class BoardScene {
 
   maxStack(tableau) { return Math.max(1, ...(tableau || []).map((pile) => pile.length)); }
 
+  transitionDuration(source, force, cardId) {
+    if (source !== 'ack' || force || this.dropHandoff?.ids.includes(cardId)) return 0;
+    return 220 * this.quality.motionScale;
+  }
+
   drawBoard() {
     const { width, height, zones, pad } = this.layout;
     this.background.clear().rect(0, 0, width, height).fill(TOKENS.colors.felt);
@@ -132,7 +137,7 @@ export class BoardScene {
       view.meta = placement;
       view.update(placement.card, placement.width, placement.height, placement.compact, { selected: this.selection?.cardIds?.includes(placement.card.cardId), pending: this.pending && this.selection?.cardIds?.includes(placement.card.cardId) });
       const previous = this.positions.get(placement.card.cardId) || { x: placement.x, y: placement.y };
-      const duration = source === 'ack' && !force ? 220 * this.quality.motionScale : 0;
+      const duration = this.transitionDuration(source, force, placement.card.cardId);
       if (duration > 0 && (previous.x !== placement.x || previous.y !== placement.y)) {
         this.transitions.move(placement.card.cardId, { x: view.x, y: view.y }, placement, duration, (p) => view.position.set(p.x, p.y));
       } else view.position.set(placement.x, placement.y);
