@@ -3,6 +3,7 @@ import { computeLayout, pilePositions } from '../layout/layout-engine.js';
 import { TOKENS } from '../theme/tokens.js';
 import { TransitionController } from '../animation/transition-controller.js';
 import { RetainedCardStore } from './retained-card-store.js';
+import { nearestDropTarget } from '../input/drop-target.js';
 
 const SUITS = { C: '♣', D: '♦', H: '♥', S: '♠' };
 const RANKS = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
@@ -177,7 +178,12 @@ export class BoardScene {
   setSelection(selection) { this.selection = selection; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
   setPending(value) { this.pending = value; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
   clearTransient() { this.drag = null; this.selection = null; this.pending = false; this.lastTap = null; this.transitions.cancelAndSnap(() => { for (const [id,p] of this.positions) this.cards.get(id)?.position.set(p.x,p.y); }); }
-  cancelInteraction() { this.clearTransient(); if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
+  cancelInteraction() {
+    this.drag = null; this.selection = null; this.pending = false; this.lastTap = null;
+    for (const view of this.cards.values()) {
+      view.update(view.card, view.cardWidth, view.cardHeight, view.meta?.compact, { selected: false, pending: false });
+    }
+  }
   rejectToAuthority() { const dragged = this.drag?.ids || this.selection?.cardIds || []; for (const id of dragged) { const view=this.cards.get(id), target=this.positions.get(id); if(view&&target) this.transitions.move(`reject:${id}`,{x:view.x,y:view.y},target,160*this.quality.motionScale,(p)=>view.position.set(p.x,p.y)); } this.drag=null; }
 
   celebrate() {
@@ -217,8 +223,9 @@ export class BoardScene {
   pointerUp(event) {
     if (!this.drag || event.pointerId !== this.drag.pointerId) return;
     const drag=this.drag; this.drag=null; if (!drag.active) return;
-    const target=this.targets.find((item)=>event.global.x>=item.x&&event.global.x<=item.x+item.width&&event.global.y>=item.y&&event.global.y<=item.y+item.height&&(item.zone==='tableau'||item.zone==='foundation'));
-    if (target) this.callbacks.onTarget?.({ zone:target.zone,index:target.index }); else this.rejectToAuthority();
+    const target=nearestDropTarget(this.targets,event.global,this.layout.card);
+    const samePile=target?.zone==='tableau'&&drag.source.zone==='tableau'&&target.index===drag.source.pileIndex;
+    if (target&&!samePile) this.callbacks.onTarget?.({ zone:target.zone,index:target.index }); else this.rejectToAuthority();
   }
 
   destroy() { this.transitions.cancelAndSnap(); this.root.destroy({ children: true }); }
