@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#140d09" />
+    <title>Solitaire HighNoon · Pixi</title>
+    <script type="module" crossorigin src="/vnext/pixi/assets/index-Dfudzz6z.js"></script>
+    <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/Geometry-Pu7lKfrD.js">
+    <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/canvasUtils-CEgWESyi.js">
+    <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/getPo2TextureFromSource-DV_sHia8.js">
+    <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/RenderTargetSystem-KM50vtAE.js">
+    <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/getTextureBatchBindGroup-DLFcweVF.js">
+    <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/CanvasRenderer-DwmNLqIR.js">
+    <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/CanvasPool-B7rb4NCm.js">
+    <link rel="stylesheet" crossorigin href="/vnext/pixi/assets/index-CFJ62zN9.css">
+  </head>
+  <body>
+    <main id="app">
+      <header class="topbar">
+        <button id="menu-open" class="icon-button" aria-label="Menü öffnen" aria-expanded="false">☰</button>
+        <div class="brand"><span class="brand-rule"></span><strong>Solitaire <i>HighNoon</i></strong><span class="brand-rule"></span></div>
+        <div class="mode-pill" id="mode-label">SPLIT</div>
+        <button id="profile-open" class="profile-button" aria-label="Profil öffnen"><span id="player-label">Gast</span><b id="score-label">0</b></button>
+      </header>
+
+      <section id="board-shell" aria-label="Solitaire-Spielfeld">
+        <div id="pixi-stage"></div>
+        <div id="loading" class="loading" role="status">Tisch wird vorbereitet …</div>
+        <div id="board-lock" hidden></div>
+      </section>
+
+      <footer class="statusbar">
+        <span id="connection-dot" class="dot"></span>
+        <strong id="status-title">Bereit</strong>
+        <span id="status-detail">Lobby öffnen oder Demo starten</span>
+        <span class="status-meta"><span id="revision">rev –</span><span id="hash">hash –</span></span>
+      </footer>
+
+      <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+      <div id="accessible-state" class="sr-only" aria-live="polite"></div>
+
+      <div id="start-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="start-title">
+        <section class="panel start-panel">
+          <p class="eyebrow">PIXIJS 8 · CLIENT 0.1.0</p>
+          <h1 id="start-title">Willkommen am Tisch</h1>
+          <p>Lobby, Matchmaking und Diagnose bleiben zugänglich im DOM. Das Spielbrett wird vollständig durch PixiJS gerendert.</p>
+          <label>Nickname <input id="nickname" value="HighNoon" maxlength="30" /></label>
+          <label>Spielname <input id="game-name" value="Abendrunde" maxlength="50" /></label>
+          <div class="segmented" aria-label="Spielmodus">
+            <button data-mode="split" aria-pressed="true">Split</button>
+            <button data-mode="shared" aria-pressed="false">Shared</button>
+          </div>
+          <div class="button-row"><button id="host-game" class="primary">Als P1 hosten</button><button id="refresh-games">Lobby aktualisieren</button></div>
+          <div class="button-row"><button id="host-bot">Human vs Bot</button><button id="bot-versus">Bot vs Bot</button><button id="demo-game">Visuelle Demo</button></div>
+          <div id="lobby-games" class="lobby-list" aria-label="Offene Spiele"></div>
+          <details><summary>Technischer Match-Fallback</summary><div class="fallback"><input id="match-id" placeholder="Match-ID" /><select id="role"><option>p1</option><option>p2</option><option>observer</option></select><button id="connect-match">Verbinden</button></div></details>
+        </section>
+      </div>
+
+      <div id="menu-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="menu-title" hidden>
+        <section class="panel menu-panel">
+          <button class="close" data-close>×</button><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2>
+          <div class="menu-grid">
+            <button id="return-lobby">Lobby</button><button id="restart-same">Neu · gleicher Seed</button><button id="restart-new">Neu · neuer Seed</button>
+            <button id="resign">Aufgeben</button><button id="end-game">Spiel beenden</button><button id="leave-game">Sitz verlassen</button>
+            <button id="reconnect">Resync</button><button id="stop-bots">Bots stoppen</button><button id="copy-invite">Einladung kopieren</button>
+          </div>
+          <label>Server <span class="fallback"><input id="server-url" inputmode="url" /><button id="save-server-url">Speichern</button></span></label>
+          <label>Qualität <select id="quality"><option value="high">High</option><option value="balanced" selected>Balanced</option><option value="reduced">Reduced</option></select></label>
+          <label><input type="checkbox" id="mute" /> Audio stumm</label>
+          <label><input type="checkbox" id="debug-toggle" /> Debug-HUD</label>
+          <pre id="debug-hud" hidden></pre>
+        </section>
+      </div>
+
+      <div id="profile-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="profile-title" hidden>
+        <section class="panel compact-panel"><button class="close" data-close>×</button><p class="eyebrow">PROFIL</p><h2 id="profile-title">Spieler</h2><dl><dt>Rolle</dt><dd id="profile-role">–</dd><dt>Match</dt><dd id="profile-match">–</dd><dt>Version</dt><dd>Pixi Client 0.1.0</dd><dt>Protokoll</dt><dd>2.5.2</dd></dl></section>
+      </div>
+
+      <dialog id="game-over"><h2 id="game-over-title">Spiel beendet</h2><p id="game-over-text"></p><form method="dialog"><button>Schließen</button></form></dialog>
+    </main>
+  </body>
+</html>

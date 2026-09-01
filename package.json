@@ -13,7 +13,9 @@
     "smoke:vnext": "node vnext/smoke/serverSmoke.js",
     "simulate:vnext": "node vnext/simulator/twoPlayer.js",
     "bot:human": "node vnext/bot/humanVsBot.js",
-    "bot:versus": "node vnext/bot/botVsBot.js"
+    "bot:versus": "node vnext/bot/botVsBot.js",
+    "build:web-pixi": "npm --prefix vnext/web-pixi run build",
+    "test:web-pixi": "npm --prefix vnext/web-pixi test"
   },
   "repository": {
     "type": "git",

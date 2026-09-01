@@ -16,11 +16,16 @@ const { MatchSession } = require('./matchSession');
 const MAX_BODY_BYTES = 64 * 1024;
 const OBSERVER_ID = 'observer';
 const WEB_ROOT = path.join(__dirname, '..', 'web');
+const PIXI_WEB_ROOT = path.join(__dirname, '..', 'web-pixi', 'dist');
 const WEB_MIME = Object.freeze({
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8'
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml'
 });
 
 function localNetworkAddress() {
@@ -84,6 +89,24 @@ function serveWebAsset(urlPath, response) {
     : decodeURIComponent(urlPath.slice('/vnext/web/'.length));
   const filePath = path.resolve(WEB_ROOT, relative);
   if (!filePath.startsWith(`${WEB_ROOT}${path.sep}`) || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return false;
+  }
+  const body = fs.readFileSync(filePath);
+  response.writeHead(200, {
+    'content-type': WEB_MIME[path.extname(filePath)] || 'application/octet-stream',
+    'content-length': body.length,
+    'cache-control': 'no-store'
+  });
+  response.end(body);
+  return true;
+}
+
+function servePixiWebAsset(urlPath, response) {
+  const relative = urlPath === '/vnext/pixi' || urlPath === '/vnext/pixi/'
+    ? 'index.html'
+    : decodeURIComponent(urlPath.slice('/vnext/pixi/'.length));
+  const filePath = path.resolve(PIXI_WEB_ROOT, relative);
+  if (!filePath.startsWith(`${PIXI_WEB_ROOT}${path.sep}`) || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     return false;
   }
   const body = fs.readFileSync(filePath);
@@ -177,6 +200,10 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
 
   async function handleRequest(request, response) {
     const url = new URL(request.url, 'http://localhost');
+    if (request.method === 'GET' && (url.pathname === '/vnext/pixi' || url.pathname.startsWith('/vnext/pixi/'))) {
+      if (!servePixiWebAsset(url.pathname, response)) sendJson(response, 404, { error: 'pixi web asset not found' });
+      return;
+    }
     if (request.method === 'GET' && url.pathname.startsWith('/vnext/web')) {
       if (!serveWebAsset(url.pathname, response)) sendJson(response, 404, { error: 'web asset not found' });
       return;
