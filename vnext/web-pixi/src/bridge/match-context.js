@@ -12,6 +12,23 @@ export function interactionAllowed({ locked, current, role, lobbyStatus }) {
 
 export function waitingMatchMessage(role) {
   return role === 'p1'
-    ? 'Warte auf P2. Öffne den Einladungslink auf einem zweiten Gerät oder in einem getrennten Browserprofil.'
+    ? 'Warte auf P2. Öffne den Einladungslink als P2 auf einem zweiten Gerät oder in einem weiteren Tab.'
     : 'P2 muss dem Lobby-Spiel zuerst mit einer eigenen Lobby-Identität beitreten.';
+}
+
+export function sameTableauSelection(selection, meta) {
+  return selection?.source?.zone === 'tableau'
+    && meta?.zone === 'tableau'
+    && selection.source.index === meta.pileIndex;
+}
+
+export function guestSessionCandidate({ game, persistentSessionId, matchSessionId }) {
+  if (matchSessionId) return matchSessionId;
+  return game?.players?.p1?.sessionId === persistentSessionId ? null : persistentSessionId || null;
+}
+
+export function retryableSequenceReject(response) {
+  return response?.kind === 'reject'
+    && response.code === 'DUPLICATE_SEQ'
+    && Number.isSafeInteger(response.expectedSeq);
 }

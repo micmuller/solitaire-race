@@ -9,12 +9,13 @@ import { autoFoundationIntent, dropIntent, tableauSelection, wasteSelection } fr
 import { cueForIntentResult } from '../../web/effects.mjs';
 import { generateRandomSeed } from '../../web/seed.mjs';
 import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
-import { gameForMatch, interactionAllowed, waitingMatchMessage } from './bridge/match-context.js';
+import { gameForMatch, guestSessionCandidate, interactionAllowed, retryableSequenceReject, sameTableauSelection, waitingMatchMessage } from './bridge/match-context.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.1.1';
+export const WEB_PIXI_CLIENT_VERSION = '0.1.2';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
 const STORAGE = { nickname:'solitaire-vnext:nickname', session:'solitaire-vnext:lobbySessionId', server:'solitaire-vnext:serverBaseUrl', quality:'solitaire-pixi:quality', mute:'solitaire-pixi:mute' };
+const matchSessionKey = (matchId) => `solitaire-pixi:match-session:${matchId}`;
 let mode = 'split', baseUrl = storageGet(STORAGE.server) || window.location.origin, client = null, lobbyPlayer = null, activeGame = null, activeKind = 'human', selection = null, audioContext = null, celebrated = null;
 const inputLock = new InputLock();
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -47,9 +48,14 @@ async function prepareMatchContext(matchId, role) {
   if(!game){activeGame=null;return;}
   activeGame=game;
   if(role!=='p2'||game.status!=='waiting')return;
-  await ensurePlayer();
+  const sessionKey=matchSessionKey(matchId);
+  const sessionId=guestSessionCandidate({game,persistentSessionId:storageGet(STORAGE.session),matchSessionId:sessionStorage.getItem(sessionKey)});
+  const nickname=($('#nickname').value.trim()||'HighNoon')+(sessionId?'':' P2');
+  const result=await createLobbySession(baseUrl,{sessionId,nickname});
+  lobbyPlayer=result.player;
+  sessionStorage.setItem(sessionKey,lobbyPlayer.sessionId);
   const joined=await joinLobbyGame(baseUrl,game.gameId,{sessionId:lobbyPlayer.sessionId});
-  if(joined.role!=='p2')throw new Error('P2 benötigt ein zweites Gerät oder ein getrenntes Browserprofil mit eigener Lobby-Identität.');
+  if(joined.role!=='p2')throw new Error('P2 konnte keinen eigenen Lobby-Sitz erhalten. Bitte Lobby aktualisieren und erneut verbinden.');
   activeGame=joined.game;
 }
 
@@ -75,21 +81,23 @@ async function connect(matchId, role, { route=true }={}) {
 function selectionForMeta(meta) { if(meta.zone==='waste') return wasteSelection(client.clientId,meta.pileCards); if(meta.zone==='tableau') return tableauSelection(client.clientId,meta.pileIndex,meta.cardIndex,meta.pileCards); return null; }
 function handleSource(meta) {
   if(meta.zone==='stock') return handleStock();
+  if(sameTableauSelection(selection,meta))return;
   if(selection&&meta.zone==='tableau') return handleTarget({zone:'tableau',index:meta.pileIndex});
   if(meta.zone==='tableau'&&meta.card.faceDown&&meta.cardIndex===meta.pileCards.length-1) return sendIntent('flip',{source:{zone:'tableau',owner:client.clientId,index:meta.pileIndex}});
   selection=selectionForMeta(meta); board.setSelection(selection); if(selection) status(`${selection.count} Karte${selection.count===1?'':'n'} ausgewählt`,'Auswahl');
 }
+function clearSelection(){selection=null;board.cancelInteraction();}
 function handleStock() { const local=client?.current?.state.players?.[client.clientId]; if(!local)return; const kind=local.stock.length?'draw':'recycle'; const payload=kind==='draw'?{source:{zone:'stock',owner:client.clientId},target:{zone:'waste',owner:client.clientId}}:{source:{zone:'waste',owner:client.clientId},target:{zone:'stock',owner:client.clientId}}; sendIntent(kind,payload); }
 function handleTarget(target) { if(target.zone==='stock')return handleStock(); const intent=dropIntent(selection,client?.clientId,target); if(intent)sendIntent(intent.kind,intent.payload); }
-function handleAutoFoundation(meta,card) { const next=selectionForMeta(meta), intent=autoFoundationIntent(next,client.current.state.foundations,card); if(intent)sendIntent(intent.kind,intent.payload); else showToast('Keine passende Foundation','error'); }
+function handleAutoFoundation(meta,card) { const next=selectionForMeta(meta), intent=autoFoundationIntent(next,client.current.state.foundations,card); if(intent){sendIntent(intent.kind,intent.payload);return true;} clearSelection();showToast('Keine passende Foundation – Auswahl aufgehoben','error');return false; }
 
 async function sendIntent(kind,payload) {
   if(!client)return;
   if(!canSendActions()){if(activeGame?.status==='waiting')showToast(waitingMatchMessage(client.clientId),'error');return;}
   inputLock.lock('pending'); $('#board-lock').hidden=false; board.setPending(true); debug(`intent ${kind} seq=${client.nextSeq}`);
-  try { const response=await client.sendIntent(kind,payload); debug(`${response.kind} ${response.code||''} rev=${response.rev}`); playCue(cueForIntentResult(kind,response)); if(response.kind==='reject'){ board.rejectToAuthority(); showToast(`Abgelehnt: ${response.code}`,'error'); } else if(response.kind==='ack') showToast(`${kind} bestätigt`); selection=null; board.setSelection(null); }
+  try { let response=await client.sendIntent(kind,payload); if(retryableSequenceReject(response)){debug(`sequence recovery expected=${response.expectedSeq}`);response=await client.sendIntent(kind,payload);} debug(`${response.kind} ${response.code||''} rev=${response.rev}`); playCue(cueForIntentResult(kind,response)); if(response.kind==='reject'){ board.rejectToAuthority(); showToast(`Abgelehnt: ${response.code}`,'error'); } else if(response.kind==='ack') showToast(`${kind} bestätigt`); }
   catch(error){ board.rejectToAuthority(); showToast(error.message,'error'); }
-  finally { board.setPending(false); inputLock.unlock('pending'); $('#board-lock').hidden=!inputLock.locked; }
+  finally { selection=null; inputLock.unlock('pending'); board.cancelInteraction(); $('#board-lock').hidden=!inputLock.locked; }
 }
 
 async function ensurePlayer(){ const nickname=$('#nickname').value.trim()||'HighNoon'; const result=await createLobbySession(baseUrl,{sessionId:storageGet(STORAGE.session),nickname}); lobbyPlayer=result.player; localStorage.setItem(STORAGE.session,lobbyPlayer.sessionId); localStorage.setItem(STORAGE.nickname,lobbyPlayer.nickname); return lobbyPlayer; }

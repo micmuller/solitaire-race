@@ -176,7 +176,8 @@ export class BoardScene {
   setLocalId(id) { this.localId = id === 'observer' ? 'p1' : id; this.readOnly = id === 'observer'; }
   setSelection(selection) { this.selection = selection; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
   setPending(value) { this.pending = value; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
-  clearTransient() { this.drag = null; this.selection = null; this.pending = false; this.transitions.cancelAndSnap(() => { for (const [id,p] of this.positions) this.cards.get(id)?.position.set(p.x,p.y); }); }
+  clearTransient() { this.drag = null; this.selection = null; this.pending = false; this.lastTap = null; this.transitions.cancelAndSnap(() => { for (const [id,p] of this.positions) this.cards.get(id)?.position.set(p.x,p.y); }); }
+  cancelInteraction() { this.clearTransient(); if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
   rejectToAuthority() { const dragged = this.drag?.ids || this.selection?.cardIds || []; for (const id of dragged) { const view=this.cards.get(id), target=this.positions.get(id); if(view&&target) this.transitions.move(`reject:${id}`,{x:view.x,y:view.y},target,160*this.quality.motionScale,(p)=>view.position.set(p.x,p.y)); } this.drag=null; }
 
   celebrate() {
