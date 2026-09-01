@@ -15,6 +15,11 @@ The default address is `http://127.0.0.1:3011`. Use
 The first vNext Web adapter is available at `http://127.0.0.1:3011/vnext/web/`.
 It is separate from the frozen v1 Web client.
 
+The parallel PixiJS 8 client is built with `npm run build:web-pixi` and served
+from `http://127.0.0.1:3011/vnext/pixi/`. Its production assets live in
+`vnext/web-pixi/dist`; the `/vnext/web/` route and source remain available as
+the reference and fallback client.
+
 Run the first smoke test in a second terminal:
 
 ```sh
