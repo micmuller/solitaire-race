@@ -96,3 +96,14 @@ test('Pixi bot menu uses the human-facing difficulty profiles',()=>{
   assert.match(select,/value="hard">Schwer/);
   assert.doesNotMatch(select,/value="(?:slow|normal|fast)"/);
 });
+
+test('card artwork uses local original court art with a procedural fallback',()=>{
+  const source=fs.readFileSync(path.join(root,'src/render/board-scene.js'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  assert.match(source,/function drawSuit/);
+  assert.match(source,/function drawCardBack/);
+  assert.match(source,/PIP_LAYOUTS/);
+  assert.match(source,/createCourtTextures/);
+  assert.match(main,/court-figures-v1\.png\?url/);
+  assert.doesNotMatch(`${source}\n${main}`,/https?:\/\//);
+});

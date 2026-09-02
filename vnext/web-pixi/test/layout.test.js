@@ -25,6 +25,15 @@ test('fan separates open cards more than hidden cards',()=>{
   assert.ok(fan.faceUp>fan.faceDown);
 });
 
+test('known hidden cards leave more readable space for exposed ranks',()=>{
+  const conservative=computeLayout(1024,670,{maxLocalCards:14,localFaceDownCount:0});
+  const mixed=computeLayout(1024,670,{maxLocalCards:14,localFaceDownCount:3});
+  const cards=Array.from({length:14},(_,index)=>({faceDown:index<3}));
+  const positions=pilePositions(cards,mixed.local.tableau[0],mixed.local.fan);
+  assert.ok(mixed.local.fan.faceUp>conservative.local.fan.faceUp);
+  assert.ok(positions.at(-1).y+mixed.card.height<=670+0.01);
+});
+
 test('local tableau starts with breathing room below the foundation zone',()=>{
   const layout=computeLayout(1024,664);
   const foundationBottom=layout.zones.foundations.y+layout.zones.foundations.height;

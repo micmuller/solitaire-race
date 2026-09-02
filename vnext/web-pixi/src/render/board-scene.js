@@ -1,4 +1,4 @@
-import { Container, Graphics, Text } from 'pixi.js';
+import { Container, Graphics, Rectangle, Sprite, Text, Texture } from 'pixi.js';
 import { computeLayout, pilePositions } from '../layout/layout-engine.js';
 import { TOKENS } from '../theme/tokens.js';
 import { TransitionController } from '../animation/transition-controller.js';
@@ -16,38 +16,143 @@ function roundedPanel(graphics, x, y, width, height, fill, stroke = TOKENS.color
 
 function cardLabel(card) { return `${RANKS[card.rank] || card.rank}${SUITS[card.suit] || ''}`; }
 
+const PIP_LAYOUTS = Object.freeze({
+  1: [[.5,.5]],
+  2: [[.5,.25],[.5,.75]],
+  3: [[.5,.22],[.5,.5],[.5,.78]],
+  4: [[.31,.25],[.69,.25],[.31,.75],[.69,.75]],
+  5: [[.31,.23],[.69,.23],[.5,.5],[.31,.77],[.69,.77]],
+  6: [[.31,.22],[.69,.22],[.31,.5],[.69,.5],[.31,.78],[.69,.78]],
+  7: [[.31,.2],[.69,.2],[.5,.36],[.31,.5],[.69,.5],[.31,.8],[.69,.8]],
+  8: [[.31,.19],[.69,.19],[.5,.34],[.31,.5],[.69,.5],[.5,.66],[.31,.81],[.69,.81]],
+  9: [[.31,.18],[.69,.18],[.31,.39],[.69,.39],[.5,.5],[.31,.61],[.69,.61],[.31,.82],[.69,.82]],
+  10: [[.31,.16],[.69,.16],[.5,.28],[.31,.39],[.69,.39],[.31,.61],[.69,.61],[.5,.72],[.31,.84],[.69,.84]]
+});
+
+function drawSuit(graphics, suit, x, y, size, color, alpha = 1) {
+  const r=size*.24,stemW=size*.13,stemH=size*.32;
+  if (suit === 'D') {
+    graphics.poly([x,y-size*.5,x+size*.38,y,x,y+size*.5,x-size*.38,y]).fill({color,alpha});
+  } else if (suit === 'H') {
+    graphics.moveTo(x,y+size*.48).bezierCurveTo(x-size*.08,y+size*.28,x-size*.48,y+.02,x-size*.48,y-size*.2)
+      .bezierCurveTo(x-size*.48,y-size*.5,x-size*.1,y-size*.58,x,y-size*.3)
+      .bezierCurveTo(x+size*.1,y-size*.58,x+size*.48,y-size*.5,x+size*.48,y-size*.2)
+      .bezierCurveTo(x+size*.48,y+.02,x+size*.08,y+size*.28,x,y+size*.48).fill({color,alpha});
+  } else if (suit === 'C') {
+    graphics.circle(x,y-size*.23,r).circle(x-size*.24,y+.02,r).circle(x+size*.24,y+.02,r)
+      .rect(x-stemW/2,y,size*.13,size*.38).poly([x-size*.2,y+size*.38,x+size*.2,y+size*.38,x,y+size*.14]).fill({color,alpha});
+  } else {
+    graphics.moveTo(x,y-size*.5).bezierCurveTo(x-size*.08,y-size*.28,x-size*.46,y-.02,x-size*.46,y+size*.18)
+      .bezierCurveTo(x-size*.46,y+size*.43,x-size*.12,y+size*.45,x,y+size*.18)
+      .bezierCurveTo(x+size*.12,y+size*.45,x+size*.46,y+size*.43,x+size*.46,y+size*.18)
+      .bezierCurveTo(x+size*.46,y-.02,x+size*.08,y-size*.28,x,y-size*.5)
+      .rect(x-stemW/2,y+size*.13,stemW,stemH).poly([x-size*.2,y+size*.45,x+size*.2,y+size*.45,x,y+size*.23]).fill({color,alpha});
+  }
+}
+
+function drawCardBack(graphics, width, height, radius, selected) {
+  graphics.roundRect(2,3,width,height,radius).fill({color:0x050201,alpha:.34});
+  graphics.roundRect(0,0,width,height,radius).fill(TOKENS.colors.leatherDark)
+    .stroke({color:selected?TOKENS.colors.amber:TOKENS.colors.brassDark,width:selected?3:1.2});
+  graphics.roundRect(width*.035,height*.025,width*.93,height*.95,radius*.78).fill(TOKENS.colors.leather)
+    .stroke({color:TOKENS.colors.brassLight,alpha:.72,width:Math.max(1,width*.015)});
+  graphics.roundRect(width*.1,height*.07,width*.8,height*.86,radius*.55).fill({color:TOKENS.colors.leatherLight,alpha:.18})
+    .stroke({color:TOKENS.colors.brass,alpha:.62,width:Math.max(1,width*.012)});
+  const left=width*.16,right=width*.84,top=height*.13,bottom=height*.87,step=Math.max(7,width*.12);
+  for(let x=left;x<=right;x+=step) graphics.moveTo(x,top).lineTo(Math.min(right,x+(bottom-top)*.42),bottom);
+  for(let x=left;x<=right;x+=step) graphics.moveTo(x,bottom).lineTo(Math.min(right,x+(bottom-top)*.42),top);
+  graphics.stroke({color:TOKENS.colors.brassLight,alpha:.12,width:1});
+  graphics.circle(width*.5,height*.5,width*.235).fill({color:TOKENS.colors.leatherDark,alpha:.7})
+    .stroke({color:TOKENS.colors.brass,alpha:.82,width:Math.max(1.2,width*.018)});
+  graphics.circle(width*.5,height*.5,width*.175).stroke({color:TOKENS.colors.brassLight,alpha:.55,width:1});
+  const cx=width*.5,cy=height*.5,s=width*.22;
+  graphics.poly([cx,cy-s,cx+s*.38,cy-s*.38,cx+s,cy,cx+s*.38,cy+s*.38,cx,cy+s,cx-s*.38,cy+s*.38,cx-s,cy,cx-s*.38,cy-s*.38])
+    .fill({color:TOKENS.colors.brass,alpha:.72});
+  graphics.circle(cx,cy,s*.28).fill(TOKENS.colors.leatherDark).stroke({color:TOKENS.colors.brassLight,alpha:.7,width:1});
+}
+
+function drawCourtCard(graphics, suit, width, height, color, hasPortrait) {
+  if(hasPortrait)return;
+  const x=width*.19,y=height*.18,w=width*.62,h=height*.64;
+  graphics.roundRect(x,y,w,h,width*.055);
+  graphics.fill({color:TOKENS.colors.ivoryShade,alpha:.42});
+  graphics.stroke({color:0x9b7c52,alpha:.68,width:1});
+  graphics.rect(x+w*.08,y+h*.08,w*.84,h*.84).stroke({color,alpha:.22,width:1});
+  graphics.poly([width*.33,height*.39,width*.4,height*.27,width*.5,height*.37,width*.6,height*.27,width*.67,height*.39])
+    .fill({color:TOKENS.colors.brass,alpha:.72}).stroke({color,alpha:.48,width:1});
+  graphics.moveTo(width*.31,height*.55).lineTo(width*.69,height*.55).stroke({color:TOKENS.colors.brass,alpha:.36,width:1});
+  drawSuit(graphics,suit,width*.5,height*.69,width*.19,color,.92);
+}
+
+function createCourtTextures(atlas) {
+  if(!atlas?.source||!atlas.width||!atlas.height)return null;
+  const frameWidth=atlas.width/3;
+  return {
+    13:new Texture({source:atlas.source,frame:new Rectangle(0,0,frameWidth,atlas.height)}),
+    12:new Texture({source:atlas.source,frame:new Rectangle(frameWidth,0,frameWidth,atlas.height)}),
+    11:new Texture({source:atlas.source,frame:new Rectangle(frameWidth*2,0,frameWidth,atlas.height)})
+  };
+}
+
 class CardView extends Container {
-  constructor(card) {
+  constructor(card, courtTextures) {
     super();
     this.cardId = card.cardId;
+    this.shadow = new Graphics();
     this.surface = new Graphics();
-    this.corner = new Text({ text: '', style: { fontFamily: 'Georgia', fontWeight: '700', fill: TOKENS.colors.ink, align: 'center' } });
-    this.center = new Text({ text: '', style: { fontFamily: 'Georgia', fill: TOKENS.colors.ink, align: 'center' } });
-    this.addChild(this.surface, this.corner, this.center);
+    this.courtPortrait = new Sprite();
+    this.art = new Graphics();
+    this.rankTop = new Text({ text:'', style:{fontFamily:'Georgia',fontWeight:'700',fill:TOKENS.colors.ink,align:'center'} });
+    this.rankBottom = new Text({ text:'', style:{fontFamily:'Georgia',fontWeight:'700',fill:TOKENS.colors.ink,align:'center'} });
+    this.courtLabel = new Text({ text:'', style:{fontFamily:'Georgia',fontWeight:'700',fill:TOKENS.colors.ink,align:'center'} });
+    this.courtTextures=courtTextures;
+    this.addChild(this.shadow,this.surface,this.courtPortrait,this.art,this.rankTop,this.rankBottom,this.courtLabel);
     this.update(card, 80, 114, false);
   }
 
-  update(card, width, height, compact, { selected = false, pending = false } = {}) {
+  update(card, width, height, compact, { selected = false, pending = false, shadows = true } = {}) {
     this.card = card;
-    this.surface.clear();
+    this.shadow.clear(); this.surface.clear(); this.art.clear();
+    this.rankTop.text=''; this.rankBottom.text=''; this.courtLabel.text='';
+    this.courtPortrait.visible=false;
     const radius = Math.max(4, width * .075);
+    if(shadows) this.shadow.roundRect(width*.025,height*.035,width,height,radius).fill({color:0x000000,alpha:compact?.2:.3});
     if (card.faceDown) {
-      this.surface.roundRect(0, 0, width, height, radius).fill(TOKENS.colors.leather).stroke({ color: selected ? TOKENS.colors.amber : TOKENS.colors.brass, width: selected ? 3 : 1.4 });
-      this.surface.roundRect(width * .09, height * .065, width * .82, height * .87, radius * .6).stroke({ color: TOKENS.colors.brassLight, alpha: .68, width: 1.2 });
-      this.surface.moveTo(width * .16, height * .2).lineTo(width * .84, height * .8).moveTo(width * .84, height * .2).lineTo(width * .16, height * .8).stroke({ color: TOKENS.colors.brass, alpha: .26, width: 1 });
-      this.surface.circle(width / 2, height / 2, width * .19).stroke({ color: TOKENS.colors.brassLight, alpha: .62, width: 2 });
-      this.corner.text = ''; this.center.text = '✦'; this.center.style.fill = TOKENS.colors.brassLight;
-      this.center.style.fontSize = width * .25;
+      drawCardBack(this.surface,width,height,radius,selected);
     } else {
-      this.surface.roundRect(0, 0, width, height, radius).fill(TOKENS.colors.ivory).stroke({ color: selected ? TOKENS.colors.amber : 0x9b7c52, width: selected ? 3 : 1 });
-      this.surface.rect(width * .04, height * .04, width * .92, height * .92).stroke({ color: 0x8c7356, alpha: .18, width: 1 });
       const color = redSuit(card.suit) ? TOKENS.colors.red : TOKENS.colors.black;
-      this.corner.text = `${RANKS[card.rank] || card.rank}\n${SUITS[card.suit]}`;
-      this.corner.style.fill = color; this.corner.style.fontSize = compact ? width * .23 : width * .235; this.corner.style.lineHeight = compact ? width * .2 : width * .205;
-      this.corner.position.set(width * .08, height * .055);
-      this.center.text = SUITS[card.suit]; this.center.style.fill = color; this.center.style.fontSize = width * .43;
+      this.surface.roundRect(0,0,width,height,radius).fill(TOKENS.colors.ivoryShade)
+        .stroke({color:selected?TOKENS.colors.amber:0x8b6e49,width:selected?3:1});
+      this.surface.roundRect(width*.018,height*.012,width*.964,height*.965,radius*.88).fill(TOKENS.colors.ivory);
+      this.surface.roundRect(width*.045,height*.032,width*.91,height*.925,radius*.6).fill({color:TOKENS.colors.ivoryLight,alpha:.32})
+        .stroke({color:0x8c7356,alpha:.24,width:1});
+      for(let i=0;i<7;i++) this.surface.circle(width*(.14+((i*37)%71)/100),height*(.14+((i*53)%73)/100),Math.max(.35,width*.006)).fill({color:0x8b7358,alpha:.09});
+
+      const rank=RANKS[card.rank]||String(card.rank),fontSize=compact?width*.215:width*.205;
+      const cornerRankX=card.rank===10?width*.15:width*.105,cornerSuitX=card.rank===10?width*.315:width*.235;
+      this.rankTop.text=rank; this.rankTop.style.fill=color; this.rankTop.style.fontSize=fontSize;
+      this.rankTop.anchor.set(.5,0); this.rankTop.position.set(cornerRankX,height*.025);
+      this.rankBottom.text=rank; this.rankBottom.style.fill=color; this.rankBottom.style.fontSize=fontSize;
+      this.rankBottom.anchor.set(.5,0); this.rankBottom.position.set(width-cornerRankX,height*.975); this.rankBottom.rotation=Math.PI;
+      drawSuit(this.art,card.suit,cornerSuitX,height*.087,width*.12,color);
+      drawSuit(this.art,card.suit,width-cornerSuitX,height*.913,width*.12,color);
+
+      if(card.rank<=10){
+        const pipSize=width*(card.rank===1?.34:(compact?.15:.16));
+        for(const [px,py] of PIP_LAYOUTS[card.rank]) drawSuit(this.art,card.suit,width*px,height*(.13+py*.74),pipSize,color,.94);
+      }else{
+        const portrait=this.courtTextures?.[card.rank];
+        if(portrait){
+          this.courtPortrait.texture=portrait; this.courtPortrait.visible=true;
+          this.courtPortrait.position.set(width*.1,height*.085); this.courtPortrait.width=width*.8; this.courtPortrait.height=height*.83;
+        }
+        drawCourtCard(this.art,card.suit,width,height,color,Boolean(portrait));
+        if(!portrait){
+          this.courtLabel.text=rank; this.courtLabel.style.fill=color; this.courtLabel.style.fontSize=width*.31;
+          this.courtLabel.anchor.set(.5); this.courtLabel.position.set(width*.5,height*.47);
+        }
+      }
     }
-    this.center.anchor.set(.5); this.center.position.set(width / 2, height * .58);
     this.alpha = pending ? .82 : 1;
     this.hitArea = { contains: (x, y) => x >= 0 && y >= 0 && x <= width && y <= height };
     this.cardWidth = width; this.cardHeight = height;
@@ -55,10 +160,11 @@ class CardView extends Container {
 }
 
 export class BoardScene {
-  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality }) {
+  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, courtAtlas = null }) {
     this.app = app;
     this.callbacks = { onSource, onStock, onTarget, onAutoFoundation, canInteract };
     this.quality = quality;
+    this.courtTextures=createCourtTextures(courtAtlas);
     this.root = new Container();
     this.background = new Graphics();
     this.zones = new Graphics();
@@ -85,14 +191,25 @@ export class BoardScene {
   }
 
   resize(width, height) {
+    const localProfile=this.stackProfile(this.local?.tableau),opponentProfile=this.stackProfile(this.opponent?.tableau,true);
     this.layout = computeLayout(width, height, {
-      maxLocalCards: this.maxStack(this.local?.tableau), maxOpponentCards: this.maxStack(this.opponent?.tableau)
+      maxLocalCards:localProfile.count,maxOpponentCards:opponentProfile.count,
+      localFaceDownCount:localProfile.faceDownCount,opponentFaceDownCount:opponentProfile.faceDownCount
     });
     this.drawBoard();
     if (this.current) this.applyState(this.current, { source: 'snapshot', force: true });
   }
 
   maxStack(tableau) { return Math.max(1, ...(tableau || []).map((pile) => pile.length)); }
+
+  stackProfile(tableau, compact = false) {
+    const downWeight=compact?.075:.095,openWeight=compact?.17:.205;
+    return (tableau||[]).reduce((best,pile)=>{
+      const faceDownCount=pile.filter((card)=>card.faceDown).length;
+      const demand=faceDownCount*downWeight+Math.max(0,pile.length-1-faceDownCount)*openWeight;
+      return demand>best.demand?{count:Math.max(1,pile.length),faceDownCount,demand}:best;
+    },{count:1,faceDownCount:0,demand:-1});
+  }
 
   transitionDuration(source, force, cardId) {
     if (source !== 'ack' || force || this.dropHandoff?.ids.includes(cardId)) return 0;
@@ -117,8 +234,10 @@ export class BoardScene {
     const localId = this.localId || 'p1';
     const opponentId = localId === 'p1' ? 'p2' : 'p1';
     this.local = state.players[localId]; this.opponent = state.players[opponentId];
+    const localProfile=this.stackProfile(this.local.tableau),opponentProfile=this.stackProfile(this.opponent.tableau,true);
     const nextLayout = computeLayout(this.layout.width, this.layout.height, {
-      maxLocalCards: this.maxStack(this.local.tableau), maxOpponentCards: this.maxStack(this.opponent.tableau)
+      maxLocalCards:localProfile.count,maxOpponentCards:opponentProfile.count,
+      localFaceDownCount:localProfile.faceDownCount,opponentFaceDownCount:opponentProfile.faceDownCount
     });
     this.layout = nextLayout; this.drawBoard(); this.drawSlots();
     const placements = this.collectPlacements(state, localId, opponentId);
@@ -126,7 +245,7 @@ export class BoardScene {
     for (const placement of placements) {
       seen.add(placement.card.cardId);
       const isNew = !this.cards.has(placement.card.cardId);
-      const view = this.cardStore.getOrCreate(placement.card.cardId, () => new CardView(placement.card));
+      const view = this.cardStore.getOrCreate(placement.card.cardId, () => new CardView(placement.card,this.courtTextures));
       if (isNew) {
         this.cardLayer.addChild(view);
         view.on('pointerdown', (event) => this.pointerDown(event, placement.card.cardId));
@@ -137,7 +256,7 @@ export class BoardScene {
       view.zIndex = placement.z;
       view.eventMode = placement.interactive ? 'static' : 'none'; view.cursor = placement.interactive ? 'pointer' : 'default';
       view.meta = placement;
-      view.update(placement.card, placement.width, placement.height, placement.compact, { selected: this.selection?.cardIds?.includes(placement.card.cardId), pending: this.pending && this.selection?.cardIds?.includes(placement.card.cardId) });
+      view.update(placement.card, placement.width, placement.height, placement.compact, { selected: this.selection?.cardIds?.includes(placement.card.cardId), pending: this.pending && this.selection?.cardIds?.includes(placement.card.cardId), shadows:this.quality.shadows });
       const previous = this.positions.get(placement.card.cardId) || { x: placement.x, y: placement.y };
       const duration = this.transitionDuration(source, force, placement.card.cardId);
       if (duration > 0 && (previous.x !== placement.x || previous.y !== placement.y)) {
@@ -188,7 +307,7 @@ export class BoardScene {
   cancelInteraction() {
     this.drag = null; this.dropHandoff = null; this.selection = null; this.pending = false; this.lastTap = null;
     for (const view of this.cards.values()) {
-      view.update(view.card, view.cardWidth, view.cardHeight, view.meta?.compact, { selected: false, pending: false });
+      view.update(view.card, view.cardWidth, view.cardHeight, view.meta?.compact, { selected: false, pending: false, shadows:this.quality.shadows });
     }
   }
   rejectToAuthority() { const dragged = this.drag?.ids || this.dropHandoff?.ids || this.selection?.cardIds || []; for (const id of dragged) { const view=this.cards.get(id), target=this.positions.get(id); if(view&&target) this.transitions.move(`reject:${id}`,{x:view.x,y:view.y},target,160*this.quality.motionScale,(p)=>view.position.set(p.x,p.y)); } this.drag=null; this.dropHandoff=null; }

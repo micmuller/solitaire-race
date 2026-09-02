@@ -21,7 +21,7 @@ function packedColumns(width, count, cardWidth, gap, minX, pad) {
   return Array.from({ length: count }, (_, index) => startX + index * (cardWidth + gap));
 }
 
-export function computeLayout(width, height, { maxLocalCards = 14, maxOpponentCards = 14 } = {}) {
+export function computeLayout(width, height, { maxLocalCards = 14, maxOpponentCards = 14, localFaceDownCount = 0, opponentFaceDownCount = 0 } = {}) {
   if (!(width > 0 && height > 0)) throw new TypeError('viewport must be positive');
   const pad = clamp(Math.min(width, height) * 0.018, 8, 22);
   const contentWidth = width - pad * 2;
@@ -43,8 +43,8 @@ export function computeLayout(width, height, { maxLocalCards = 14, maxOpponentCa
   const foundationY = opponentH + (foundationH - cardH) / 2;
   const localY = opponentH + foundationH + clamp(cardH * 0.1, 10, 16);
   const opponentY = pad * 0.7;
-  const localFan = fanStep({ count: maxLocalCards, availableSpan: Math.max(cardH, height - localY - cardH - pad), cardHeight: cardH });
-  const opponentFan = fanStep({ count: maxOpponentCards, availableSpan: Math.max(compactH * .75, opponentH - opponentY - compactH * .75 - pad), cardHeight: compactH, compact: true });
+  const localFan = fanStep({ count: maxLocalCards, availableSpan: Math.max(cardH, height - localY - cardH - pad), cardHeight: cardH, faceDownCount: localFaceDownCount });
+  const opponentFan = fanStep({ count: maxOpponentCards, availableSpan: Math.max(compactH * .75, opponentH - opponentY - compactH * .75 - pad), cardHeight: compactH, compact: true, faceDownCount: opponentFaceDownCount });
   return {
     width, height, pad,
     zones: {
