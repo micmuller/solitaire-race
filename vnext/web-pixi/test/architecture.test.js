@@ -83,8 +83,22 @@ test('authoritative ack does not animate a locally dragged card twice',()=>{
 test('board zones omit the P1 divider and P2 outline',()=>{
   const source=fs.readFileSync(path.join(root,'src/render/board-scene.js'),'utf8');
   assert.doesNotMatch(source,/moveTo\(pad \* 2, zones\.local\.y\)/);
-  assert.match(source,/TOKENS\.colors\.woodLight, \.38, 0\)/);
-  assert.match(source,/TOKENS\.colors\.woodLight, \.18, 0\)/);
+  assert.match(source,/TOKENS\.colors\.woodLight, \.055, 0\)/);
+  assert.match(source,/TOKENS\.colors\.woodLight, \.1, 0\)/);
+});
+
+test('felt reaches the rounded brass board edge and vintage header ornaments stay present',()=>{
+  const css=fs.readFileSync(path.join(root,'src/styles.css'),'utf8');
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  assert.match(css,/#pixi-stage \{[^}]*overflow:hidden;[^}]*border-radius:48px/);
+  assert.match(css,/\.table-frame \{[^}]*padding:16px;[^}]*table-bronze-v1\.png/);
+  assert.match(css,/\.corner-hardware \{[^}]*width:46px;[^}]*height:46px/);
+  assert.match(css,/\.corner-hardware::after \{[^}]*width:11px;[^}]*radial-gradient/);
+  assert.equal((html.match(/class="corner-hardware /g)||[]).length,4);
+  assert.doesNotMatch(css,/#e4bd62|#e1b55f/);
+  assert.match(css,/\.topbar, \.statusbar \{[^}]*border: 0/);
+  assert.match(css,/\.topbar::after/);
+  assert.match(css,/\.brand strong::before/);
 });
 
 test('Pixi bot menu uses the human-facing difficulty profiles',()=>{
@@ -105,5 +119,15 @@ test('card artwork uses local original court art with a procedural fallback',()=
   assert.match(source,/PIP_LAYOUTS/);
   assert.match(source,/createCourtTextures/);
   assert.match(main,/court-figures-v1\.png\?url/);
+  assert.doesNotMatch(`${source}\n${main}`,/https?:\/\//);
+});
+
+test('table materials are local assets with procedural color fallbacks',()=>{
+  const source=fs.readFileSync(path.join(root,'src/render/board-scene.js'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  assert.match(main,/table-felt-v1\.png\?url/);
+  assert.match(main,/table-walnut-v1\.png\?url/);
+  assert.match(source,/this\.woodMaterial\.mask=this\.woodMask/);
+  assert.match(source,/TOKENS\.colors\.felt/);
   assert.doesNotMatch(`${source}\n${main}`,/https?:\/\//);
 });

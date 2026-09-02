@@ -2,6 +2,8 @@ import { Application, Assets } from 'pixi.js';
 import './styles.css';
 import { BoardScene } from './render/board-scene.js';
 import courtAtlasUrl from './assets/art/court-figures-v1.png?url';
+import tableFeltUrl from './assets/art/table-felt-v1.png?url';
+import tableWalnutUrl from './assets/art/table-walnut-v1.png?url';
 import { InputLock } from './input/input-lock.js';
 import { resolveQuality } from './theme/tokens.js';
 import { DEMO_CURRENT } from './assets/demo-state.js';
@@ -12,7 +14,7 @@ import { generateRandomSeed } from '../../web/seed.mjs';
 import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, retryableSequenceReject, sameTableauSelection, waitingMatchMessage } from './bridge/match-context.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.1.13';
+export const WEB_PIXI_CLIENT_VERSION = '0.1.19';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
 const STORAGE = { nickname:'solitaire-vnext:nickname', session:'solitaire-vnext:lobbySessionId', server:'solitaire-vnext:serverBaseUrl', quality:'solitaire-pixi:quality', mute:'solitaire-pixi:mute' };
@@ -25,12 +27,14 @@ let quality = resolveQuality(localStorage.getItem(STORAGE.quality) || 'balanced'
 
 const pixi = new Application();
 await pixi.init({ resizeTo: $('#board-shell'), background: '#082a20', antialias: true, autoDensity: true, resolution: Math.min(devicePixelRatio || 1, quality.resolutionCap), preference: 'webgl' });
-let courtAtlas=null;
-try { courtAtlas=await Assets.load(courtAtlasUrl); } catch { /* Procedural court art remains available as an offline fallback. */ }
+async function loadOptionalTexture(url) { try { return await Assets.load(url); } catch { return null; } }
+const [courtAtlas, feltTexture, woodTexture]=await Promise.all([
+  loadOptionalTexture(courtAtlasUrl), loadOptionalTexture(tableFeltUrl), loadOptionalTexture(tableWalnutUrl)
+]);
 $('#pixi-stage').appendChild(pixi.canvas); $('#loading').hidden = true;
 
 const board = new BoardScene(pixi, {
-  quality, courtAtlas,
+  quality, courtAtlas, materials:{felt:feltTexture,wood:woodTexture},
   canInteract: () => canSendActions(),
   onSource: (meta) => handleSource(meta), onStock: () => handleStock(), onTarget: (target) => handleTarget(target), onAutoFoundation: (meta, card) => handleAutoFoundation(meta, card)
 });

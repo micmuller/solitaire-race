@@ -18,6 +18,8 @@
 
       <section id="board-shell" aria-label="Solitaire-Spielfeld">
         <div id="pixi-stage"></div>
+        <div class="table-frame" aria-hidden="true"></div>
+        <i class="corner-hardware nw" aria-hidden="true"></i><i class="corner-hardware ne" aria-hidden="true"></i><i class="corner-hardware sw" aria-hidden="true"></i><i class="corner-hardware se" aria-hidden="true"></i>
         <div id="loading" class="loading" role="status">Tisch wird vorbereitet …</div>
         <div id="board-lock" hidden></div>
         <pre id="debug-hud" hidden></pre>
@@ -35,7 +37,7 @@
 
       <div id="start-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="start-title">
         <section class="panel start-panel">
-          <p class="eyebrow">PIXIJS 8 · CLIENT 0.1.13</p>
+          <p class="eyebrow">PIXIJS 8 · CLIENT 0.1.19</p>
           <h1 id="start-title">Willkommen am Tisch</h1>
           <p>Lobby, Matchmaking und Diagnose bleiben zugänglich im DOM. Das Spielbrett wird vollständig durch PixiJS gerendert.</p>
           <label>Nickname <input id="nickname" value="HighNoon" maxlength="30" /></label>
@@ -95,14 +97,14 @@
               <button id="menu-connect-match">Verbinden</button>
             </section>
             <section class="menu-pane" data-menu-panel="info" hidden>
-              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protocol</dt><dd>2.5.2</dd><dt>Web Client</dt><dd>PixiJS 8 · 0.1.13</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>Hash</dt><dd id="info-hash">–</dd></dl>
+              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protocol</dt><dd>2.5.2</dd><dt>Web Client</dt><dd>PixiJS 8 · 0.1.19</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>Hash</dt><dd id="info-hash">–</dd></dl>
             </section>
           </div>
         </section>
       </div>
 
       <div id="profile-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="profile-title" hidden>
-        <section class="panel compact-panel"><button class="close" data-close>×</button><p class="eyebrow">PROFIL</p><h2 id="profile-title">Spieler</h2><dl><dt>Rolle</dt><dd id="profile-role">–</dd><dt>Match</dt><dd id="profile-match">–</dd><dt>Version</dt><dd>Pixi Client 0.1.13</dd><dt>Protokoll</dt><dd>2.5.2</dd></dl></section>
+        <section class="panel compact-panel"><button class="close" data-close>×</button><p class="eyebrow">PROFIL</p><h2 id="profile-title">Spieler</h2><dl><dt>Rolle</dt><dd id="profile-role">–</dd><dt>Match</dt><dd id="profile-match">–</dd><dt>Version</dt><dd>Pixi Client 0.1.19</dd><dt>Protokoll</dt><dd>2.5.2</dd></dl></section>
       </div>
 
       <dialog id="restart-dialog"><h2>Neu starten</h2><p>Mit derselben Verteilung oder einem neuen Seed?</p><form method="dialog" class="button-row"><button id="restart-same" value="same">Gleicher Seed</button><button id="restart-new" value="new">Neuer Seed</button><button value="cancel">Abbrechen</button></form></dialog>

@@ -42,6 +42,13 @@ test('local tableau starts with breathing room below the foundation zone',()=>{
   assert.equal(layout.local.waste.y,layout.local.tableau[0].y);
 });
 
+test('opponent stock and waste leave room for the enlarged corner hardware',()=>{
+  const layout=computeLayout(1024,670);
+  assert.ok(layout.opponent.stock.x-layout.pad>=10);
+  assert.ok(layout.opponent.stock.y-layout.opponent.tableau[0].y>=10);
+  assert.equal(layout.opponent.stock.y,layout.opponent.waste.y);
+});
+
 for (const [width,height] of [[1024,664],[1366,820]]) {
   test(`tableau piles use foundation spacing at ${width}x${height}`,()=>{
     const layout=computeLayout(width,height);

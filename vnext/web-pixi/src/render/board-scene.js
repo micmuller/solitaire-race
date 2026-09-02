@@ -160,19 +160,28 @@ class CardView extends Container {
 }
 
 export class BoardScene {
-  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, courtAtlas = null }) {
+  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, courtAtlas = null, materials = {} }) {
     this.app = app;
     this.callbacks = { onSource, onStock, onTarget, onAutoFoundation, canInteract };
     this.quality = quality;
     this.courtTextures=createCourtTextures(courtAtlas);
     this.root = new Container();
     this.background = new Graphics();
+    this.feltMaterial = new Sprite();
+    this.woodMaterial = new Sprite();
+    this.woodMask = new Graphics();
     this.zones = new Graphics();
+    this.lighting = new Graphics();
+    if(materials.felt)this.feltMaterial.texture=materials.felt;
+    if(materials.wood)this.woodMaterial.texture=materials.wood;
+    this.feltMaterial.visible=Boolean(materials.felt);
+    this.woodMaterial.visible=Boolean(materials.wood);
+    this.woodMaterial.mask=this.woodMask;
     this.slotLayer = new Container();
     this.cardLayer = new Container();
     this.transient = new Container();
     this.effects = new Container();
-    this.root.addChild(this.background, this.zones, this.slotLayer, this.cardLayer, this.transient, this.effects);
+    this.root.addChild(this.background, this.feltMaterial, this.woodMaterial, this.woodMask, this.zones, this.lighting, this.slotLayer, this.cardLayer, this.transient, this.effects);
     this.app.stage.addChild(this.root);
     this.cardStore = new RetainedCardStore();
     this.cards = this.cardStore.items;
@@ -219,13 +228,30 @@ export class BoardScene {
   drawBoard() {
     const { width, height, zones, foundations, card, pad } = this.layout;
     this.background.clear().rect(0, 0, width, height).fill(TOKENS.colors.felt);
-    for (let x = -height; x < width + height; x += 18) this.background.moveTo(x, 0).lineTo(x + height, height).stroke({ color: TOKENS.colors.feltLight, alpha: .08, width: 1 });
-    this.zones.clear();
-    roundedPanel(this.zones, pad * .35, pad * .28, width - pad * .7, zones.opponent.height - pad * .1, 0x071f18, TOKENS.colors.woodLight, .38, 0);
+    for (let x = -height; x < width + height; x += 24) this.background.moveTo(x, 0).lineTo(x + height, height).stroke({ color: TOKENS.colors.feltLight, alpha: .022, width: 1 });
+    if(this.feltMaterial.visible){
+      this.feltMaterial.position.set(0,0); this.feltMaterial.width=width; this.feltMaterial.height=height; this.feltMaterial.alpha=.5;
+    }
     const foundationInsetX=clamp(card.width*.14,8,15),foundationInsetY=clamp(card.height*.045,5,8);
     const foundationLeft=foundations[0].x-foundationInsetX,foundationRight=foundations.at(-1).x+card.width+foundationInsetX;
-    roundedPanel(this.zones, foundationLeft, foundations[0].y-foundationInsetY, foundationRight-foundationLeft, card.height+foundationInsetY*2, TOKENS.colors.wood, TOKENS.colors.brass, .72);
-    roundedPanel(this.zones, pad * .35, zones.local.y + pad * .15, width - pad * .7, zones.local.height - pad * .3, TOKENS.colors.feltLight, TOKENS.colors.woodLight, .18, 0);
+    const foundationTop=foundations[0].y-foundationInsetY,foundationWidth=foundationRight-foundationLeft,foundationHeight=card.height+foundationInsetY*2;
+    this.woodMask.clear().roundRect(foundationLeft,foundationTop,foundationWidth,foundationHeight,12).fill(0xffffff);
+    if(this.woodMaterial.visible){
+      this.woodMaterial.position.set(foundationLeft,foundationTop); this.woodMaterial.width=foundationWidth; this.woodMaterial.height=foundationHeight; this.woodMaterial.alpha=.88;
+    }
+    this.zones.clear();
+    roundedPanel(this.zones, pad * .35, pad * .28, width - pad * .7, zones.opponent.height - pad * .1, TOKENS.colors.feltLight, TOKENS.colors.woodLight, .055, 0);
+    roundedPanel(this.zones, foundationLeft, foundationTop, foundationWidth, foundationHeight, TOKENS.colors.wood, TOKENS.colors.brass, this.woodMaterial.visible ? .18 : .72, .72);
+    this.zones.roundRect(foundationLeft+3,foundationTop+3,foundationWidth-6,foundationHeight-6,9).stroke({color:TOKENS.colors.brassLight,alpha:.28,width:1});
+    const rivetInset=clamp(card.width*.08,5,9),rivetRadius=clamp(card.width*.018,1.5,2.5);
+    for(const [x,y] of [[foundationLeft+rivetInset,foundationTop+rivetInset],[foundationRight-rivetInset,foundationTop+rivetInset],[foundationLeft+rivetInset,foundationTop+foundationHeight-rivetInset],[foundationRight-rivetInset,foundationTop+foundationHeight-rivetInset]]) {
+      this.zones.circle(x,y,rivetRadius).fill({color:TOKENS.colors.brassLight,alpha:.7}).stroke({color:TOKENS.colors.brassDark,alpha:.8,width:.8});
+    }
+    roundedPanel(this.zones, pad * .35, zones.local.y + pad * .15, width - pad * .7, zones.local.height - pad * .3, TOKENS.colors.feltLight, TOKENS.colors.woodLight, .1, 0);
+    this.lighting.clear();
+    this.lighting.ellipse(width*.5,foundationTop+foundationHeight*.45,width*.46,height*.24).fill({color:TOKENS.colors.amber,alpha:.018});
+    this.lighting.ellipse(width*.5,height*.58,width*.34,height*.38).fill({color:TOKENS.colors.ivoryLight,alpha:.012});
+    this.lighting.rect(0,0,width,height).stroke({color:0x020302,alpha:.08,width:clamp(Math.min(width,height)*.012,5,10)});
   }
 
   applyState(current, { source = 'snapshot', force = false } = {}) {

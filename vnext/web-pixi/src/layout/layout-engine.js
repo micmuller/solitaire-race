@@ -43,6 +43,7 @@ export function computeLayout(width, height, { maxLocalCards = 14, maxOpponentCa
   const foundationY = opponentH + (foundationH - cardH) / 2;
   const localY = opponentH + foundationH + clamp(cardH * 0.1, 10, 16);
   const opponentY = pad * 0.7;
+  const opponentUtilityInset = clamp(cardW * 0.15, 10, 16);
   const localFan = fanStep({ count: maxLocalCards, availableSpan: Math.max(cardH, height - localY - cardH - pad), cardHeight: cardH, faceDownCount: localFaceDownCount });
   const opponentFan = fanStep({ count: maxOpponentCards, availableSpan: Math.max(compactH * .75, opponentH - opponentY - compactH * .75 - pad), cardHeight: compactH, compact: true, faceDownCount: opponentFaceDownCount });
   return {
@@ -58,7 +59,7 @@ export function computeLayout(width, height, { maxLocalCards = 14, maxOpponentCa
       tableau: localColumns.map((x, index) => ({ x, y: localY, index })), fan: localFan
     },
     opponent: {
-      stock: { x: pad + compactW * .04, y: opponentY }, waste: { x: pad + compactW * 1.18, y: opponentY },
+      stock: { x: pad + compactW * .04 + opponentUtilityInset, y: opponentY + opponentUtilityInset }, waste: { x: pad + compactW * 1.18 + opponentUtilityInset, y: opponentY + opponentUtilityInset },
       tableau: opponentColumns.map((x, index) => ({ x, y: opponentY, index })), fan: opponentFan
     },
     foundations: FOUNDATION_SUITS.map((suit, index) => ({ x: foundationX + index * (cardW + foundationGap), y: foundationY, index, suit }))
