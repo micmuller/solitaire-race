@@ -67,16 +67,6 @@ export class ProtocolClient {
       this.emit({ type: 'response', response });
       return;
     }
-    if (response.kind === 'ack' || response.kind === 'snapshot') {
-      const isRestart = response.kind === 'snapshot' && response.reason === 'RESTART';
-      if (isRestart) this.nextSeq = 0;
-      if (!this.current || response.rev >= this.current.rev || isRestart) {
-        this.current = { rev: response.rev, stateHash: response.stateHash, state: response.state };
-        if (isRestart) this.emit({ type: 'response', response });
-        this.emit({ type: 'state', source: response.kind, current: this.current });
-        if (isRestart) return;
-      }
-    }
     if (this.pending) {
       const ownAck = response.kind === 'ack' && response.clientId === this.clientId && response.seq === this.pending.seq;
       const ownReject = response.kind === 'reject' && response.clientId === this.clientId;
@@ -89,6 +79,16 @@ export class ProtocolClient {
           this.nextSeq = response.expectedSeq;
         }
         pending.resolve(response);
+      }
+    }
+    if (response.kind === 'ack' || response.kind === 'snapshot') {
+      const isRestart = response.kind === 'snapshot' && response.reason === 'RESTART';
+      if (isRestart) this.nextSeq = 0;
+      if (!this.current || response.rev >= this.current.rev || isRestart) {
+        this.current = { rev: response.rev, stateHash: response.stateHash, state: response.state };
+        if (isRestart) this.emit({ type: 'response', response });
+        this.emit({ type: 'state', source: response.kind, current: this.current });
+        if (isRestart) return;
       }
     }
     this.emit({ type: 'response', response });

@@ -103,15 +103,6 @@ class ProtocolClient {
     const validationError = validateAuthoritativeResponse(response, this.matchId);
     if (validationError) throw new Error(`Invalid server response: ${validationError}`);
 
-    if (response.kind === 'ack' || response.kind === 'snapshot') {
-      const isRestart = response.kind === 'snapshot' && response.reason === 'RESTART';
-      if (isRestart) this.nextSeq = 0;
-      if (!this.current || response.rev >= this.current.rev || isRestart) {
-        this.current = { rev: response.rev, state: response.state, stateHash: response.stateHash };
-        this.emit({ type: 'state', source: response.kind, current: this.current });
-      }
-    }
-
     if (this.pending) {
       const ownAck = response.kind === 'ack'
         && response.clientId === this.clientId
@@ -126,6 +117,15 @@ class ProtocolClient {
           this.nextSeq = response.expectedSeq;
         }
         pending.resolve(response);
+      }
+    }
+
+    if (response.kind === 'ack' || response.kind === 'snapshot') {
+      const isRestart = response.kind === 'snapshot' && response.reason === 'RESTART';
+      if (isRestart) this.nextSeq = 0;
+      if (!this.current || response.rev >= this.current.rev || isRestart) {
+        this.current = { rev: response.rev, state: response.state, stateHash: response.stateHash };
+        this.emit({ type: 'state', source: response.kind, current: this.current });
       }
     }
 

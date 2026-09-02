@@ -162,6 +162,39 @@ test('browser protocol client emits restart response before restart state', () =
   assert.equal(client.current.rev, 0);
 });
 
+test('browser protocol client settles an own ack before rendering its state', () => {
+  const client = new protocolClient.ProtocolClient({
+    baseUrl: 'http://example.test',
+    matchId: 'm-render-guard',
+    clientId: 'p1'
+  });
+  let resolved = false;
+  client.current = { rev: 4, stateHash: 'old-hash', state: {} };
+  client.nextSeq = 7;
+  client.pending = { seq: 7, resolve: () => { resolved = true; }, reject() {} };
+  client.subscribe((event) => {
+    if (event.type !== 'state') return;
+    assert.equal(client.pending, null);
+    assert.equal(client.nextSeq, 8);
+    assert.equal(resolved, true);
+    throw new Error('simulated render failure');
+  });
+
+  assert.throws(() => client.handle({
+    kind: 'ack',
+    matchId: 'm-render-guard',
+    clientId: 'p1',
+    seq: 7,
+    protocolVersion: protocolClient.PROTOCOL_VERSION,
+    rev: 5,
+    stateHash: 'new-hash',
+    state: {}
+  }), /simulated render failure/);
+  assert.equal(client.pending, null);
+  assert.equal(client.nextSeq, 8);
+  assert.equal(resolved, true);
+});
+
 test('browser protocol client forwards lobby lifecycle events without changing game state', () => {
   const client = new protocolClient.ProtocolClient({
     baseUrl: 'http://example.test',
