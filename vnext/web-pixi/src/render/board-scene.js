@@ -10,6 +10,55 @@ const RANKS = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
 const redSuit = (suit) => suit === 'D' || suit === 'H';
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+export function motionProfileFor(placement = {}) {
+  if (placement.zone === 'foundation') return { duration: 270, lift: .075, scale: .035 };
+  if (placement.zone === 'waste') return { duration: 235, lift: .045, scale: .025 };
+  return { duration: TOKENS.motion.move, lift: .05, scale: .025 };
+}
+
+export function visiblePileCards(cards, limit = 3) {
+  const visible=cards.slice(Math.max(0,cards.length-limit));
+  return visible.map((card,index)=>({card,depth:visible.length-1-index,isTop:index===visible.length-1}));
+}
+
+export function shouldAnimateFlip({ wasFaceDown, faceDown, moving, source, force, motionScale }) {
+  return Boolean(wasFaceDown && !faceDown && !moving && source === 'ack' && !force && motionScale > 0);
+}
+
+export function placementMatchesHandoffTarget(placement, target) {
+  if (!placement || !target || placement.zone !== target.zone) return false;
+  if (target.zone === 'tableau') return placement.pileIndex === target.index;
+  return true;
+}
+
+export function handoffReachedTarget(handoff, placements) {
+  if (!handoff?.ids?.length || !handoff.target) return false;
+  const byId=new Map(placements.map((placement)=>[placement.card.cardId,placement]));
+  return handoff.ids.every((cardId)=>placementMatchesHandoffTarget(byId.get(cardId),handoff.target));
+}
+
+export function handoffReachedState(handoff, state, ownerId) {
+  if(!handoff?.ids?.length||!handoff.target||!state)return false;
+  const player=state.players?.[ownerId];
+  if(handoff.target.zone==='tableau'){
+    const ids=new Set((player?.tableau?.[handoff.target.index]||[]).map((card)=>card.cardId));
+    return handoff.ids.every((cardId)=>ids.has(cardId));
+  }
+  if(handoff.target.zone==='foundation'){
+    const ids=new Set((state.foundations||[]).flatMap((foundation)=>foundation.cards||[]).map((card)=>card.cardId));
+    return handoff.ids.every((cardId)=>ids.has(cardId));
+  }
+  return false;
+}
+
+export function shouldSuppressPostDragTap(now, suppressUntil) {
+  return Number.isFinite(suppressUntil) && now < suppressUntil;
+}
+
+export function shouldHoldActiveDrag(source, drag, cardId) {
+  return source==='ack'&&Boolean(drag?.active&&drag.ids?.includes(cardId));
+}
+
 function roundedPanel(graphics, x, y, width, height, fill, stroke = TOKENS.colors.brass, alpha = 1, strokeAlpha = .48) {
   graphics.roundRect(x, y, width, height, 12).fill({ color: fill, alpha }).stroke({ color: stroke, alpha: strokeAlpha, width: 1.5 });
 }
@@ -179,9 +228,12 @@ export class BoardScene {
     this.woodMaterial.mask=this.woodMask;
     this.slotLayer = new Container();
     this.cardLayer = new Container();
+    this.pileBadgeLayer = new Container();
     this.transient = new Container();
+    this.dropCue = new Graphics();
+    this.transient.addChild(this.dropCue);
     this.effects = new Container();
-    this.root.addChild(this.background, this.feltMaterial, this.woodMaterial, this.woodMask, this.zones, this.lighting, this.slotLayer, this.cardLayer, this.transient, this.effects);
+    this.root.addChild(this.background, this.feltMaterial, this.woodMaterial, this.woodMask, this.zones, this.lighting, this.slotLayer, this.cardLayer, this.pileBadgeLayer, this.transient, this.effects);
     this.app.stage.addChild(this.root);
     this.cardStore = new RetainedCardStore();
     this.cards = this.cardStore.items;
@@ -191,6 +243,7 @@ export class BoardScene {
     this.pending = false;
     this.drag = null;
     this.lastTap = null;
+    this.suppressTapUntil = 0;
     this.transitions = new TransitionController();
     this.app.ticker.add(() => this.transitions.tick());
     this.app.stage.eventMode = 'static';
@@ -220,9 +273,49 @@ export class BoardScene {
     },{count:1,faceDownCount:0,demand:-1});
   }
 
-  transitionDuration(source, force, cardId) {
-    if (source !== 'ack' || force || this.dropHandoff?.ids.includes(cardId)) return 0;
-    return 220 * this.quality.motionScale;
+  transitionDuration(source, force, cardId, placement, handoffAccepted = false) {
+    if (source !== 'ack' || force) return 0;
+    if (this.dropHandoff) return 0;
+    return motionProfileFor(placement).duration * this.quality.motionScale;
+  }
+
+  updateCard(view, placement, neutralInteraction = false) {
+    view.update(placement.card, placement.width, placement.height, placement.compact, {
+      selected: !neutralInteraction&&this.selection?.cardIds?.includes(placement.card.cardId),
+      pending: !neutralInteraction&&this.pending&&this.selection?.cardIds?.includes(placement.card.cardId),
+      shadows:this.quality.shadows
+    });
+  }
+
+  animateHover(view, active) {
+    const base=this.positions.get(view.cardId);
+    if(!base||this.drag||this.quality.motionScale===0)return;
+    const fromLift=view.hoverLift||0,toLift=active?4:0,fromScale=view.scale.x||1,toScale=active?1.018:1;
+    this.transitions.tween(`hover:${view.cardId}`,TOKENS.motion.hover*this.quality.motionScale,({eased})=>{
+      view.hoverLift=fromLift+(toLift-fromLift)*eased;
+      const scale=fromScale+(toScale-fromScale)*eased;
+      view.position.set(base.x,base.y-view.hoverLift); view.scale.set(scale);
+    },()=>{view.hoverLift=toLift;});
+  }
+
+  showDropCue(target, source) {
+    this.dropCue.clear();
+    const samePile=target?.zone==='tableau'&&source?.zone==='tableau'&&target.index===source.pileIndex;
+    if(!target||samePile)return;
+    const inset=3,radius=Math.max(7,this.layout.card.width*.08);
+    this.dropCue.roundRect(target.x-inset,target.y-inset,target.width+inset*2,target.height+inset*2,radius)
+      .fill({color:TOKENS.colors.amber,alpha:.045}).stroke({color:TOKENS.colors.brassLight,alpha:.72,width:2});
+  }
+
+  animateFlip(view, placement) {
+    const duration=TOKENS.motion.flip*this.quality.motionScale;
+    if(duration===0){this.updateCard(view,placement);return;}
+    let swapped=false;
+    this.transitions.tween(`flip:${view.cardId}`,duration,({progress})=>{
+      if(progress>=.5&&!swapped){swapped=true;this.updateCard(view,placement);}
+      const fold=Math.max(.08,Math.abs(1-progress*2));
+      view.scale.set(fold,1); view.position.set(placement.x+placement.width*(1-fold)*.5,placement.y);
+    },()=>{if(!swapped)this.updateCard(view,placement);view.scale.set(1);view.position.set(placement.x,placement.y);});
   }
 
   drawBoard() {
@@ -258,6 +351,8 @@ export class BoardScene {
     this.current = current;
     const state = current.state;
     const localId = this.localId || 'p1';
+    const deferAckRender=source==='ack'&&(this.drag?.active||(this.dropHandoff&&!handoffReachedState(this.dropHandoff,state,localId)));
+    if(deferAckRender)return;
     const opponentId = localId === 'p1' ? 'p2' : 'p1';
     this.local = state.players[localId]; this.opponent = state.players[opponentId];
     const localProfile=this.stackProfile(this.local.tableau),opponentProfile=this.stackProfile(this.opponent.tableau,true);
@@ -267,6 +362,7 @@ export class BoardScene {
     });
     this.layout = nextLayout; this.drawBoard(); this.drawSlots();
     const placements = this.collectPlacements(state, localId, opponentId);
+    const handoffAccepted=source==='ack'&&handoffReachedTarget(this.dropHandoff,placements);
     const seen = new Set();
     for (const placement of placements) {
       seen.add(placement.card.cardId);
@@ -276,17 +372,36 @@ export class BoardScene {
         this.cardLayer.addChild(view);
         view.on('pointerdown', (event) => this.pointerDown(event, placement.card.cardId));
         view.on('pointertap', (event) => this.pointerTap(event, placement.card.cardId));
-        view.on('pointerover', () => { if (view.meta?.interactive && !this.drag) { view.y -= 3; view.scale.set(1.015); } });
-        view.on('pointerout', () => { if (!this.drag) { const target=this.positions.get(view.cardId); if(target)view.position.set(target.x,target.y); view.scale.set(1); } });
+        view.on('pointerover', () => { if (view.meta?.interactive) this.animateHover(view,true); });
+        view.on('pointerout', () => this.animateHover(view,false));
       }
+      const previousCard=view.card;
       view.zIndex = placement.z;
       view.eventMode = placement.interactive ? 'static' : 'none'; view.cursor = placement.interactive ? 'pointer' : 'default';
       view.meta = placement;
-      view.update(placement.card, placement.width, placement.height, placement.compact, { selected: this.selection?.cardIds?.includes(placement.card.cardId), pending: this.pending && this.selection?.cardIds?.includes(placement.card.cardId), shadows:this.quality.shadows });
       const previous = this.positions.get(placement.card.cardId) || { x: placement.x, y: placement.y };
-      const duration = this.transitionDuration(source, force, placement.card.cardId);
-      if (duration > 0 && (previous.x !== placement.x || previous.y !== placement.y)) {
-        this.transitions.move(placement.card.cardId, { x: view.x, y: view.y }, placement, duration, (p) => view.position.set(p.x, p.y));
+      const holdingDrag=shouldHoldActiveDrag(source,this.drag,placement.card.cardId);
+      const holdingHandoff=source==='ack'&&this.dropHandoff?.ids.includes(placement.card.cardId)&&!handoffAccepted;
+      const duration = this.transitionDuration(source, force, placement.card.cardId, placement, handoffAccepted);
+      const localHandoff=handoffAccepted&&this.dropHandoff?.ids.includes(placement.card.cardId);
+      const turning = !isNew && previousCard?.faceDown && !placement.card.faceDown;
+      const moving = duration > 0 && (previous.x !== placement.x || previous.y !== placement.y);
+      const flipInPlace = shouldAnimateFlip({ wasFaceDown:previousCard?.faceDown, faceDown:placement.card.faceDown, moving, source, force, motionScale:this.quality.motionScale });
+      if(holdingDrag||holdingHandoff){
+        this.transitions.cancel(`hover:${placement.card.cardId}`); this.updateCard(view,placement); view.zIndex=999;
+        this.positions.set(placement.card.cardId,{x:placement.x,y:placement.y}); continue;
+      }
+      view.hoverLift=0; view.rotation=0; if(!localHandoff)view.scale.set(1);
+      this.transitions.cancel(`hover:${placement.card.cardId}`);
+      if(!flipInPlace)this.updateCard(view,placement,localHandoff);
+      if (moving) {
+        const profile=motionProfileFor(placement);
+        this.transitions.move(placement.card.cardId, { x: view.x, y: view.y }, placement, duration, (p) => {
+          const arc=Math.sin(Math.PI*p.progress),scale=1+arc*profile.scale;
+          view.position.set(p.x,p.y-placement.height*profile.lift*arc); view.scale.set(scale);
+        },()=>{view.alpha=1;view.scale.set(1);view.position.set(placement.x,placement.y);});
+      } else if(flipInPlace) {
+        view.position.set(placement.x,placement.y); this.animateFlip(view,placement);
       } else view.position.set(placement.x, placement.y);
       this.positions.set(placement.card.cardId, { x: placement.x, y: placement.y });
     }
@@ -299,8 +414,12 @@ export class BoardScene {
     const result = []; const { card, local, opponent, foundations } = this.layout;
     const add = (cardData, p, meta) => result.push({ card: cardData, x: p.x, y: p.y, width: meta.compact ? card.compactWidth : card.width, height: meta.compact ? card.compactHeight : card.height, ...meta });
     const player = (data, geometry, owner, compact, interactive) => {
-      if (data.stock.length) add(data.stock.at(-1), geometry.stock, { owner, zone: 'stock', compact, interactive, z: compact ? 100 : 400 });
-      if (data.waste.length) add(data.waste.at(-1), geometry.waste, { owner, zone: 'waste', compact, interactive, z: compact ? 110 : 410, cardIndex: data.waste.length - 1, pileCards: data.waste });
+      const piled=(cards,origin,zone,baseZ)=>visiblePileCards(cards).forEach(({card:cardData,depth,isTop})=>{
+        const offset=depth*(compact?1.25:2);
+        add(cardData,{x:origin.x+offset,y:origin.y+offset},{owner,zone,compact,interactive:interactive&&isTop,z:baseZ-depth,cardIndex:cards.length-1-depth,pileCards:cards});
+      });
+      piled(data.stock,geometry.stock,'stock',compact?100:400);
+      piled(data.waste,geometry.waste,'waste',compact?110:410);
       data.tableau.forEach((pile, index) => pilePositions(pile, geometry.tableau[index], geometry.fan).forEach((p, cardIndex) => add(pile[cardIndex], p, { owner, zone: 'tableau', pileIndex: index, cardIndex, pileCards: pile, compact, interactive, z: (compact ? 120 : 420) + index * 30 + cardIndex })));
     };
     player(state.players[opponentId], opponent, opponentId, true, false);
@@ -310,7 +429,7 @@ export class BoardScene {
   }
 
   drawSlots() {
-    this.slotLayer.removeChildren().forEach((child) => child.destroy()); this.targets = [];
+    this.slotLayer.removeChildren().forEach((child) => child.destroy()); this.pileBadgeLayer.removeChildren().forEach((child)=>child.destroy({children:true})); this.targets = [];
     const { card, foundations, local, opponent } = this.layout;
     const slot = (p, width, height, target, label, interactive = false) => {
       const container = new Container();
@@ -320,23 +439,36 @@ export class BoardScene {
       container.position.set(p.x, p.y); container.eventMode = interactive ? 'static' : 'none'; container.cursor = interactive ? 'pointer' : 'default'; container.hitArea={contains:(x,y)=>x>=0&&y>=0&&x<=width&&y<=height}; if (interactive) container.on('pointertap', () => this.callbacks.onTarget?.(target));
       this.slotLayer.addChild(container); this.targets.push({ ...target, x: p.x, y: p.y, width, height });
     };
+    const badge=(p,width,height,count,compact=false)=>{
+      const label=String(count),badgeHeight=compact?17:21,badgeWidth=Math.max(compact?19:23,label.length*(compact?7:8)+10);
+      const container=new Container(),surface=new Graphics().roundRect(0,0,badgeWidth,badgeHeight,badgeHeight/2).fill({color:0x160d08,alpha:.94}).stroke({color:TOKENS.colors.brass,alpha:.88,width:1.2});
+      const text=new Text({text:label,style:{fontFamily:'Georgia',fontWeight:'700',fontSize:compact?11:13,fill:TOKENS.colors.ivoryLight}}); text.anchor.set(.5); text.position.set(badgeWidth/2,badgeHeight/2-.5);
+      container.addChild(surface,text); container.position.set(p.x+width-badgeWidth*.72,p.y+5); container.eventMode='none'; this.pileBadgeLayer.addChild(container);
+    };
     slot(opponent.stock, card.compactWidth, card.compactHeight, {}, '✦'); slot(opponent.waste, card.compactWidth, card.compactHeight, {}, '');
+    badge(opponent.stock,card.compactWidth,card.compactHeight,this.opponent?.stock.length||0,true); badge(opponent.waste,card.compactWidth,card.compactHeight,this.opponent?.waste.length||0,true);
     foundations.forEach((p) => slot(p, card.width, card.height, { zone: 'foundation', index: p.index }, SUITS[p.suit], Boolean(this.selection)));
     slot(local.stock, card.width, card.height, { zone: 'stock' }, '✦', true); slot(local.waste, card.width, card.height, {}, '');
+    badge(local.stock,card.width,card.height,this.local?.stock.length||0); badge(local.waste,card.width,card.height,this.local?.waste.length||0);
     local.tableau.forEach((p) => slot(p, card.width, card.height, { zone: 'tableau', index: p.index }, '', Boolean(this.selection)));
   }
 
   setLocalId(id) { this.localId = id === 'observer' ? 'p1' : id; this.readOnly = id === 'observer'; }
   setSelection(selection) { this.selection = selection; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
-  setPending(value) { this.pending = value; if(value&&this.dropHandoff){for(const id of this.dropHandoff.ids){const view=this.cards.get(id);if(view)view.alpha=.82;}return;} if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
-  clearTransient() { this.drag = null; this.dropHandoff = null; this.selection = null; this.pending = false; this.lastTap = null; this.transitions.cancelAndSnap(() => { for (const [id,p] of this.positions) this.cards.get(id)?.position.set(p.x,p.y); }); }
+  setPending(value) { this.pending = value; if(value&&this.dropHandoff)return; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
+  clearTransient() { this.drag = null; this.dropHandoff = null; this.selection = null; this.pending = false; this.lastTap = null; this.dropCue.clear(); this.transitions.cancelAndSnap(() => { for (const [id,p] of this.positions) { const view=this.cards.get(id); if(view){view.position.set(p.x,p.y);view.scale.set(1);view.rotation=0;view.hoverLift=0;} } }); }
   cancelInteraction() {
-    this.drag = null; this.dropHandoff = null; this.selection = null; this.pending = false; this.lastTap = null;
+    const preserveActiveAlpha=this.dropHandoff?.source?.zone!=='waste';
+    this.drag = null; this.dropHandoff = null; this.selection = null; this.pending = false; this.lastTap = null; this.dropCue.clear();
     for (const view of this.cards.values()) {
+      const active=this.transitions.has(view.cardId)||this.transitions.has(`flip:${view.cardId}`)||this.transitions.has(`reject:${view.cardId}`);
+      const activeAlpha=view.alpha;
       view.update(view.card, view.cardWidth, view.cardHeight, view.meta?.compact, { selected: false, pending: false, shadows:this.quality.shadows });
+      if(active){if(preserveActiveAlpha)view.alpha=activeAlpha;}
+      else{view.scale.set(1);view.rotation=0;view.hoverLift=0;}
     }
   }
-  rejectToAuthority() { const dragged = this.drag?.ids || this.dropHandoff?.ids || this.selection?.cardIds || []; for (const id of dragged) { const view=this.cards.get(id), target=this.positions.get(id); if(view&&target) this.transitions.move(`reject:${id}`,{x:view.x,y:view.y},target,160*this.quality.motionScale,(p)=>view.position.set(p.x,p.y)); } this.drag=null; this.dropHandoff=null; }
+  rejectToAuthority() { const dragged = this.drag?.ids || this.dropHandoff?.ids || this.selection?.cardIds || []; this.dropCue.clear(); for (const id of dragged) { const view=this.cards.get(id), target=this.positions.get(id); if(view&&target) { const startScale=view.scale.x||1; this.transitions.move(`reject:${id}`,{x:view.x,y:view.y},target,TOKENS.motion.reject*this.quality.motionScale,(p)=>{view.position.set(p.x,p.y);view.scale.set(startScale+(1-startScale)*p.eased);},()=>view.scale.set(1)); } } this.drag=null; this.dropHandoff=null; }
 
   celebrate({ force = false } = {}) {
     if (!this.quality.particles && !force) return false;
@@ -371,6 +503,7 @@ export class BoardScene {
   }
 
   pointerTap(event, id) {
+    if(shouldSuppressPostDragTap(performance.now(),this.suppressTapUntil)){this.suppressTapUntil=0;return;}
     if (!this.callbacks.canInteract() || this.drag?.active) return;
     const view = this.cards.get(id); if (!view?.meta?.interactive) return;
     const now = performance.now(); const double = this.lastTap?.id === id && now - this.lastTap.time < 340;
@@ -391,15 +524,19 @@ export class BoardScene {
     if (!this.drag || event.pointerId !== this.drag.pointerId) return;
     const dx = event.global.x - this.drag.start.x, dy = event.global.y - this.drag.start.y;
     if (!this.drag.active && Math.hypot(dx,dy) > 7) { this.drag.active = true; this.callbacks.onSource?.(this.drag.source, this.drag.source.card); }
-    if (this.drag.active) for (const id of this.drag.ids) { const view=this.cards.get(id), origin=this.drag.offsets.get(id); if(view&&origin) { view.position.set(origin.x+dx,origin.y+dy); view.zIndex=999; } }
+    if (this.drag.active) {
+      for (const id of this.drag.ids) { const view=this.cards.get(id), origin=this.drag.offsets.get(id); if(view&&origin) { view.position.set(origin.x+dx,origin.y+dy); view.scale.set(this.quality.motionScale===0?1:1.025); view.zIndex=999; } }
+      this.showDropCue(nearestDropTarget(this.targets,event.global,this.layout.card),this.drag.source);
+    }
   }
 
   pointerUp(event) {
     if (!this.drag || event.pointerId !== this.drag.pointerId) return;
-    const drag=this.drag; this.drag=null; if (!drag.active) return;
+    const drag=this.drag; this.drag=null; this.dropCue.clear(); if (!drag.active) return;
+    this.suppressTapUntil=performance.now()+250;
     const target=nearestDropTarget(this.targets,event.global,this.layout.card);
     const samePile=target?.zone==='tableau'&&drag.source.zone==='tableau'&&target.index===drag.source.pileIndex;
-    if (target&&!samePile) { this.dropHandoff={ids:[...drag.ids]}; const sent=this.callbacks.onTarget?.({ zone:target.zone,index:target.index }); if(sent===false){this.dropHandoff=null;this.rejectToAuthority();} } else this.rejectToAuthority();
+    if (target&&!samePile) { this.dropHandoff={ids:[...drag.ids],source:drag.source,target:{zone:target.zone,index:target.index}}; const sent=this.callbacks.onTarget?.({ zone:target.zone,index:target.index }); if(sent===false){this.dropHandoff=null;this.rejectToAuthority();} } else this.rejectToAuthority();
   }
 
   destroy() { this.stopCelebration?.(); this.transitions.cancelAndSnap(); this.root.destroy({ children: true }); }
