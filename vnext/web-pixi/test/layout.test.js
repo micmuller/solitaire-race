@@ -61,3 +61,19 @@ for (const [width,height] of [[1024,664],[1366,820]]) {
     assert.ok(layout.local.tableau.at(-1).x+layout.card.width<=width-layout.pad+0.01);
   });
 }
+
+test('right-handed layout mirrors local stock and waste and shifts the tableau left',()=>{
+  const left=computeLayout(1024,664,{stockSide:'left'});
+  const right=computeLayout(1024,664,{stockSide:'right'});
+  assert.ok(right.local.stock.x>right.local.waste.x);
+  assert.ok(right.local.waste.x>right.local.tableau.at(-1).x+right.card.width);
+  assert.ok(right.local.tableau[0].x<left.local.tableau[0].x);
+  assert.equal(right.local.stock.y,right.local.tableau[0].y);
+  assert.ok(right.local.stock.x+right.card.width<=1024-right.pad+0.01);
+});
+
+test('right-handed compact layout stays clear of the visible table frame',()=>{
+  const layout=computeLayout(640,458,{stockSide:'right'});
+  assert.ok(layout.local.tableau[0].x>=16);
+  assert.ok(layout.local.stock.x+layout.card.width<=640-16+0.01);
+});

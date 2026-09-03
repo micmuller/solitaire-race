@@ -178,16 +178,16 @@ class CardView extends Container {
       for(let i=0;i<7;i++) this.surface.circle(width*(.14+((i*37)%71)/100),height*(.14+((i*53)%73)/100),Math.max(.35,width*.006)).fill({color:0x8b7358,alpha:.09});
 
       const rank=RANKS[card.rank]||String(card.rank),fontSize=compact?width*.215:width*.205;
-      const cornerRankX=card.rank===10?width*.15:width*.105,cornerSuitX=card.rank===10?width*.315:width*.235;
+      const cornerRankX=card.rank===10?width*.15:width*.105,cornerSuitX=card.rank===10?width*.33:width*.255;
       this.rankTop.text=rank; this.rankTop.style.fill=color; this.rankTop.style.fontSize=fontSize;
       this.rankTop.anchor.set(.5,0); this.rankTop.position.set(cornerRankX,height*.025);
       this.rankBottom.text=rank; this.rankBottom.style.fill=color; this.rankBottom.style.fontSize=fontSize;
       this.rankBottom.anchor.set(.5,0); this.rankBottom.position.set(width-cornerRankX,height*.975); this.rankBottom.rotation=Math.PI;
-      drawSuit(this.art,card.suit,cornerSuitX,height*.087,width*.12,color);
-      drawSuit(this.art,card.suit,width-cornerSuitX,height*.913,width*.12,color);
+      drawSuit(this.art,card.suit,cornerSuitX,height*.087,width*.15,color);
+      drawSuit(this.art,card.suit,width-cornerSuitX,height*.913,width*.15,color);
 
       if(card.rank<=10){
-        const pipSize=width*(card.rank===1?.34:(compact?.15:.16));
+        const pipSize=width*(card.rank===1?.38:(compact?.17:.18));
         for(const [px,py] of PIP_LAYOUTS[card.rank]) drawSuit(this.art,card.suit,width*px,height*(.13+py*.74),pipSize,color,.94);
       }else{
         const portrait=this.courtTextures?.[card.rank];
@@ -209,10 +209,11 @@ class CardView extends Container {
 }
 
 export class BoardScene {
-  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, courtAtlas = null, materials = {} }) {
+  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, stockSide = 'left', courtAtlas = null, materials = {} }) {
     this.app = app;
     this.callbacks = { onSource, onStock, onTarget, onAutoFoundation, canInteract };
     this.quality = quality;
+    this.stockSide = stockSide === 'right' ? 'right' : 'left';
     this.courtTextures=createCourtTextures(courtAtlas);
     this.root = new Container();
     this.background = new Graphics();
@@ -256,7 +257,8 @@ export class BoardScene {
     const localProfile=this.stackProfile(this.local?.tableau),opponentProfile=this.stackProfile(this.opponent?.tableau,true);
     this.layout = computeLayout(width, height, {
       maxLocalCards:localProfile.count,maxOpponentCards:opponentProfile.count,
-      localFaceDownCount:localProfile.faceDownCount,opponentFaceDownCount:opponentProfile.faceDownCount
+      localFaceDownCount:localProfile.faceDownCount,opponentFaceDownCount:opponentProfile.faceDownCount,
+      stockSide:this.stockSide
     });
     this.drawBoard();
     if (this.current) this.applyState(this.current, { source: 'snapshot', force: true });
@@ -358,7 +360,8 @@ export class BoardScene {
     const localProfile=this.stackProfile(this.local.tableau),opponentProfile=this.stackProfile(this.opponent.tableau,true);
     const nextLayout = computeLayout(this.layout.width, this.layout.height, {
       maxLocalCards:localProfile.count,maxOpponentCards:opponentProfile.count,
-      localFaceDownCount:localProfile.faceDownCount,opponentFaceDownCount:opponentProfile.faceDownCount
+      localFaceDownCount:localProfile.faceDownCount,opponentFaceDownCount:opponentProfile.faceDownCount,
+      stockSide:this.stockSide
     });
     this.layout = nextLayout; this.drawBoard(); this.drawSlots();
     const placements = this.collectPlacements(state, localId, opponentId);
@@ -454,6 +457,7 @@ export class BoardScene {
   }
 
   setLocalId(id) { this.localId = id === 'observer' ? 'p1' : id; this.readOnly = id === 'observer'; }
+  setStockSide(side) { this.stockSide=side==='right'?'right':'left'; if(this.current)this.applyState(this.current,{source:'snapshot',force:true}); else if(this.layout)this.resize(this.layout.width,this.layout.height); }
   setSelection(selection) { this.selection = selection; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
   setPending(value) { this.pending = value; if(value&&this.dropHandoff)return; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
   clearTransient() { this.drag = null; this.dropHandoff = null; this.selection = null; this.pending = false; this.lastTap = null; this.dropCue.clear(); this.transitions.cancelAndSnap(() => { for (const [id,p] of this.positions) { const view=this.cards.get(id); if(view){view.position.set(p.x,p.y);view.scale.set(1);view.rotation=0;view.hoverLift=0;} } }); }

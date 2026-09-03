@@ -8,6 +8,7 @@ import { InputLock } from '../src/input/input-lock.js';
 import { resolveQuality } from '../src/theme/tokens.js';
 import { TransitionController } from '../src/animation/transition-controller.js';
 import { BoardScene, handoffReachedState, handoffReachedTarget, motionProfileFor, placementMatchesHandoffTarget, shouldAnimateFlip, shouldHoldActiveDrag, shouldSuppressPostDragTap, visiblePileCards } from '../src/render/board-scene.js';
+import { buildErrorReport, describeOpponent } from '../src/diagnostics/error-report.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
@@ -217,6 +218,11 @@ test('felt reaches the rounded brass board edge and vintage header ornaments sta
   assert.match(css,/\.topbar, \.statusbar \{[^}]*border: 0/);
   assert.match(css,/\.topbar::after/);
   assert.match(css,/\.brand strong::before/);
+  assert.match(html,/class="icon-button vintage-hamburger"/);
+  assert.equal((html.match(/header-plaque/g)||[]).length,3);
+  assert.match(css,/\.vintage-hamburger/);
+  assert.match(css,/\.header-plaque/);
+  assert.match(css,/\.brand-rule::after/);
 });
 
 test('Pixi bot menu uses the human-facing difficulty profiles',()=>{
@@ -227,6 +233,39 @@ test('Pixi bot menu uses the human-facing difficulty profiles',()=>{
   assert.match(select,/value="medium" selected>Mittel/);
   assert.match(select,/value="hard">Schwer/);
   assert.doesNotMatch(select,/value="(?:slow|normal|fast)"/);
+});
+
+test('menu keeps seven ordered areas and exposes the diagnostic report action',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const tabs=[...html.matchAll(/data-menu-tab="([^"]+)"/g)].map((match)=>match[1]);
+  assert.deepEqual(tabs,['lobby','settings','game','new-game','bot','share','info']);
+  assert.match(html,/id="copy-error-report"/);
+  assert.match(html,/Info &amp; Diagnose/);
+  assert.match(html,/role="tablist"/);
+  assert.match(fs.readFileSync(path.join(root,'src/main.js'),'utf8'),/aria-selected/);
+});
+
+test('settings persist the local stock and waste side without changing game state',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  assert.equal((html.match(/data-stock-side=/g)||[]).length,2);
+  assert.match(html,/Position von Stock und Waste/);
+  assert.match(main,/solitaire-pixi:stockSide/);
+  assert.match(main,/board\.setStockSide\(stockSide\)/);
+});
+
+test('error report contains the complete match context and recent local events',()=>{
+  const client={clientId:'p1',matchId:'m-247',current:{rev:18,stateHash:'abc123',state:{mode:'shared',status:'active'}}};
+  const report=buildErrorReport({version:'0.1.36',protocolVersion:'2.5.2',client,activeKind:'bot',baseUrl:'https://example.test',debugLines:['20:15:01 ack rev=18'],timestamp:'2026-09-03T20:15:02Z',userAgent:'TestBrowser'});
+  assert.match(report,/Pixi Client: 0\.1\.36/);
+  assert.match(report,/Match-ID: m-247/);
+  assert.match(report,/Rolle: p1/);
+  assert.match(report,/Revision: 18/);
+  assert.match(report,/State-Hash: abc123/);
+  assert.match(report,/Modus: shared/);
+  assert.match(report,/Gegner\/Bot: Bot \(P2\)/);
+  assert.match(report,/20:15:01 ack rev=18/);
+  assert.equal(describeOpponent({activeKind:'human',activeGame:{players:{p2:{nickname:'Annie'}}},role:'p1'}),'Annie (P2)');
 });
 
 test('card artwork uses local original court art with a procedural fallback',()=>{

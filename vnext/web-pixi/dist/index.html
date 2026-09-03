@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#140d09" />
     <title>Solitaire HighNoon · Pixi</title>
-    <script type="module" crossorigin src="/vnext/pixi/assets/index-C0iGZ3oj.js"></script>
+    <script type="module" crossorigin src="/vnext/pixi/assets/index-CDaQemQE.js"></script>
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/Geometry-DoNiSHBh.js">
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/Filter-s671BCjm.js">
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/canvasUtils-C68kG0EC.js">
@@ -18,16 +18,16 @@
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/CanvasPool-C1CL5Xi5.js">
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/CanvasRenderer-Bar3pdmR.js">
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/BitmapFont-BJq_GyN3.js">
-    <link rel="stylesheet" crossorigin href="/vnext/pixi/assets/index-9n9Z2G0w.css">
+    <link rel="stylesheet" crossorigin href="/vnext/pixi/assets/index-B5TyhwCN.css">
   </head>
   <body>
     <main id="app">
       <header class="topbar">
-        <button id="menu-open" class="icon-button" aria-label="Menü öffnen" aria-expanded="false">☰</button>
-        <div class="brand"><span class="brand-rule"></span><strong>Solitaire <i>HighNoon</i></strong><span class="brand-rule"></span></div>
-        <div class="scoreboard" aria-label="Punktestand"><span id="p1-score"><em id="p1-name">Spieler 1</em> <b>0</b></span><i>·</i><span id="p2-score"><em id="p2-name">Spieler 2</em> <b>0</b></span></div>
-        <div class="mode-pill" id="mode-label">SPLIT</div>
-        <button id="profile-open" class="profile-button" aria-label="Profil öffnen"><span id="player-label">Gast</span><b id="score-label" class="sr-only">0</b></button>
+        <button id="menu-open" class="icon-button vintage-hamburger" aria-label="Menü öffnen" aria-expanded="false"><span aria-hidden="true"><i></i><i></i><i></i></span></button>
+        <div class="brand"><span class="brand-rule" aria-hidden="true"></span><strong>Solitaire <i>HighNoon</i></strong><span class="brand-rule" aria-hidden="true"></span></div>
+        <div class="scoreboard header-plaque" aria-label="Punktestand"><span id="p1-score"><em id="p1-name">Spieler 1</em> <b>0</b></span><i>·</i><span id="p2-score"><em id="p2-name">Spieler 2</em> <b>0</b></span></div>
+        <div class="mode-pill header-plaque" id="mode-label">SPLIT</div>
+        <button id="profile-open" class="profile-button header-plaque" aria-label="Profil öffnen"><span id="player-label">Gast</span><b id="score-label" class="sr-only">0</b></button>
       </header>
 
       <section id="board-shell" aria-label="Solitaire-Spielfeld">
@@ -51,7 +51,7 @@
 
       <div id="start-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="start-title">
         <section class="panel start-panel">
-          <p class="eyebrow">PIXIJS 8 · CLIENT 0.1.34</p>
+          <p class="eyebrow">PIXIJS 8 · CLIENT 0.1.36</p>
           <h1 id="start-title">Willkommen am Tisch</h1>
           <p>Lobby, Matchmaking und Diagnose bleiben zugänglich im DOM. Das Spielbrett wird vollständig durch PixiJS gerendert.</p>
           <label>Nickname <input id="nickname" value="HighNoon" maxlength="30" /></label>
@@ -69,18 +69,22 @@
 
       <div id="menu-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="menu-title" hidden>
         <section class="panel menu-panel">
-          <header class="menu-header"><div><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2></div><button class="close" data-close aria-label="Menü schließen">×</button></header>
-          <nav class="menu-tabs" aria-label="Menübereiche">
-            <button class="menu-tab" data-menu-tab="lobby">Lobby</button><button class="menu-tab" data-menu-tab="settings">Settings</button><button class="menu-tab active" data-menu-tab="game">Spiel</button><button class="menu-tab" data-menu-tab="new-game">Neues Spiel</button><button class="menu-tab" data-menu-tab="bot">Bot</button><button class="menu-tab" data-menu-tab="share">Teilen</button><button class="menu-tab" data-menu-tab="info">Info</button>
+          <header class="menu-header"><div><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2></div><div class="menu-header-meta"><span id="menu-context">Kein aktives Spiel</span><span class="version-chip">v0.1.36</span><button class="close" data-close aria-label="Menü schließen">×</button></div></header>
+          <nav class="menu-tabs" aria-label="Menübereiche" role="tablist">
+            <button class="menu-tab" role="tab" data-menu-tab="lobby"><span aria-hidden="true">⌂</span>Lobby</button><button class="menu-tab" role="tab" data-menu-tab="settings"><span aria-hidden="true">⚙</span>Einstellungen</button><button class="menu-tab active" role="tab" data-menu-tab="game"><span aria-hidden="true">♠</span>Spiel</button><button class="menu-tab" role="tab" data-menu-tab="new-game"><span aria-hidden="true">★</span>Neues Spiel</button><button class="menu-tab" role="tab" data-menu-tab="bot"><span aria-hidden="true">♟</span>Bot</button><button class="menu-tab" role="tab" data-menu-tab="share"><span aria-hidden="true">➶</span>Teilen</button><button class="menu-tab" role="tab" data-menu-tab="info"><span aria-hidden="true">i</span>Info &amp; Diagnose</button>
           </nav>
           <div class="menu-body">
             <section class="menu-pane" data-menu-panel="lobby" hidden>
+              <div class="pane-heading"><p class="eyebrow">MIT-SPIELER FINDEN</p><h3>Lobby</h3><p>Offene Tische aktualisieren oder deinen Namen für die nächste Runde festlegen.</p></div>
               <label>Nickname <input id="menu-nickname" maxlength="30" /></label>
               <div class="menu-actions"><button disabled>Anmelden</button><button id="menu-refresh-games">Aktualisieren</button></div>
               <div class="segmented" aria-label="Spielmodus"><button data-mode="split" aria-pressed="true">Split</button><button data-mode="shared" aria-pressed="false">Shared</button></div>
               <div id="menu-lobby-games" class="lobby-list" aria-label="Offene Spiele"></div>
             </section>
             <section class="menu-pane" data-menu-panel="settings" hidden>
+              <div class="pane-heading"><p class="eyebrow">DARSTELLUNG &amp; VERBINDUNG</p><h3>Einstellungen</h3><p>Lokale Anzeige, Audio und technische Verbindung dieses Geräts anpassen.</p></div>
+              <div class="preference-group"><span>Stock &amp; Waste</span><div class="segmented" aria-label="Position von Stock und Waste"><button type="button" data-stock-side="left" aria-pressed="true">Links</button><button type="button" data-stock-side="right" aria-pressed="false">Rechts</button></div></div>
+              <p class="field-note">Wählt die bevorzugte Handseite und verschiebt dein Tableau passend. Gilt nur auf diesem Gerät.</p>
               <label>Server-Pfad <span class="fallback"><input id="server-url" inputmode="url" /><button id="save-server-url">Speichern</button></span></label>
               <p class="field-note">Aktueller Host: <span id="current-host">–</span></p>
               <button id="preview-final-sequence">Finale testen</button>
@@ -91,9 +95,11 @@
               <button id="reconnect">Resync</button>
             </section>
             <section class="menu-pane active" data-menu-panel="game">
+              <div class="pane-heading"><p class="eyebrow">AKTUELLE RUNDE</p><h3>Spiel</h3><p>Verwalte das laufende Match. Kritische Aktionen sind deutlich hervorgehoben.</p></div>
               <div class="menu-actions vertical"><button id="restart-match">Neu starten</button><button id="resign" class="danger">Aufgeben</button><button id="end-game">Spiel beenden</button><button id="leave-game">Platz verlassen</button><button id="delete-game">Offenes Spiel löschen</button></div>
             </section>
             <section class="menu-pane" data-menu-panel="new-game" hidden>
+              <div class="pane-heading"><p class="eyebrow">NEUER TISCH</p><h3>Neues Spiel</h3><p>Eröffne eine Runde mit eigener Verteilung und Spielvariante.</p></div>
               <label>Spielname <input id="menu-game-name" value="Abendrunde" maxlength="50" /></label>
               <button id="menu-host-game" class="primary">Als P1 hosten</button>
               <label>Seed <span class="fallback"><input id="menu-seed" /><button id="random-seed">Zufall</button></span></label>
@@ -101,24 +107,28 @@
               <button id="technical-start">Technisch starten</button>
             </section>
             <section class="menu-pane" data-menu-panel="bot" hidden>
+              <div class="pane-heading"><p class="eyebrow">TRAINING</p><h3>Bot-Spiel</h3><p>Spiele gegen den Bot oder beobachte zwei Bots bei einer Testpartie.</p></div>
               <label>Geschwindigkeit <select id="bot-speed"><option value="easy">Easy</option><option value="medium" selected>Mittel</option><option value="hard">Schwer</option></select></label>
               <div class="menu-actions vertical"><button id="menu-host-bot">Match mit Bot</button><button id="menu-bot-versus">Bot vs Bot</button><button id="stop-bots">Bot stoppen</button></div>
             </section>
             <section class="menu-pane" data-menu-panel="share" hidden>
+              <div class="pane-heading"><p class="eyebrow">EINLADEN & VERBINDEN</p><h3>Teilen</h3><p>Gib den Einladungslink weiter oder verbinde dich direkt mit einer Match-ID.</p></div>
               <label>Einladungslink <span class="fallback"><input id="invite-link" readonly /><button id="copy-invite">Kopieren</button></span></label>
               <label>Match-ID <input id="menu-match-id" /></label>
               <label>Spieler <select id="menu-role"><option>p1</option><option>p2</option><option>observer</option></select></label>
               <button id="menu-connect-match">Verbinden</button>
             </section>
             <section class="menu-pane" data-menu-panel="info" hidden>
-              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protocol</dt><dd>2.5.2</dd><dt>Web Client</dt><dd>PixiJS 8 · 0.1.34</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>Hash</dt><dd id="info-hash">–</dd></dl>
+              <div class="pane-heading"><p class="eyebrow">SYSTEMSTATUS</p><h3>Info &amp; Diagnose</h3><p>Technische Daten für die Fehlersuche. Der Bericht enthält keine Spielzüge anderer Partien.</p></div>
+              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protokoll</dt><dd>2.5.2</dd><dt>Webclient</dt><dd>PixiJS 8 · 0.1.36</dd><dt>Match-ID</dt><dd id="info-match">–</dd><dt>Rolle</dt><dd id="info-role">–</dd><dt>Gegner/Bot</dt><dd id="info-opponent">–</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>State-Hash</dt><dd id="info-hash">–</dd></dl>
+              <div class="diagnostic-action"><div><strong>Fehlerbericht</strong><p>Version, Match-Kontext und letzte lokale Ereignisse in die Zwischenablage kopieren.</p></div><button id="copy-error-report" class="primary">Fehlerbericht kopieren</button></div>
             </section>
           </div>
         </section>
       </div>
 
       <div id="profile-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="profile-title" hidden>
-        <section class="panel compact-panel"><button class="close" data-close>×</button><p class="eyebrow">PROFIL</p><h2 id="profile-title">Spieler</h2><dl><dt>Rolle</dt><dd id="profile-role">–</dd><dt>Match</dt><dd id="profile-match">–</dd><dt>Version</dt><dd>Pixi Client 0.1.34</dd><dt>Protokoll</dt><dd>2.5.2</dd></dl></section>
+        <section class="panel compact-panel"><button class="close" data-close>×</button><p class="eyebrow">PROFIL</p><h2 id="profile-title">Spieler</h2><dl><dt>Rolle</dt><dd id="profile-role">–</dd><dt>Match</dt><dd id="profile-match">–</dd><dt>Version</dt><dd>Pixi Client 0.1.36</dd><dt>Protokoll</dt><dd>2.5.2</dd></dl></section>
       </div>
 
       <dialog id="restart-dialog"><h2>Neu starten</h2><p>Mit derselben Verteilung oder einem neuen Seed?</p><form method="dialog" class="button-row"><button id="restart-same" value="same">Gleicher Seed</button><button id="restart-new" value="new">Neuer Seed</button><button value="cancel">Abbrechen</button></form></dialog>

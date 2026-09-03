@@ -14,16 +14,16 @@ export function fanStep({ count, availableSpan, cardHeight, compact = false, fac
   };
 }
 
-function packedColumns(width, count, cardWidth, gap, minX, pad) {
+function packedColumns(width, count, cardWidth, gap, minX, pad, maxX = width - pad) {
   const totalWidth = cardWidth * count + gap * (count - 1);
   const centeredX = (width - totalWidth) / 2;
-  const startX = clamp(Math.max(minX, centeredX), pad, width - pad - totalWidth);
+  const startX = clamp(Math.max(minX, centeredX), pad, maxX - totalWidth);
   return Array.from({ length: count }, (_, index) => startX + index * (cardWidth + gap));
 }
 
-export function computeLayout(width, height, { maxLocalCards = 14, maxOpponentCards = 14, localFaceDownCount = 0, opponentFaceDownCount = 0 } = {}) {
+export function computeLayout(width, height, { maxLocalCards = 14, maxOpponentCards = 14, localFaceDownCount = 0, opponentFaceDownCount = 0, stockSide = 'left' } = {}) {
   if (!(width > 0 && height > 0)) throw new TypeError('viewport must be positive');
-  const pad = clamp(Math.min(width, height) * 0.018, 8, 22);
+  const pad = clamp(Math.min(width, height) * 0.018, 16, 22);
   const contentWidth = width - pad * 2;
   const opponentH = height * 0.275;
   const foundationH = height * 0.19;
@@ -36,7 +36,10 @@ export function computeLayout(width, height, { maxLocalCards = 14, maxOpponentCa
   const tableauX = pad + utilityWidth + cardW * 0.28;
   const opponentTableauX = pad + compactW * 2.4 + cardW * 0.35;
   const foundationGap = clamp(cardW * 0.2, 7, 18);
-  const localColumns = packedColumns(width, 7, cardW, foundationGap, tableauX, pad);
+  const localUtilityRight = width - pad - utilityWidth - cardW * 0.28;
+  const localColumns = stockSide === 'right'
+    ? packedColumns(width, 7, cardW, foundationGap, pad, pad, localUtilityRight)
+    : packedColumns(width, 7, cardW, foundationGap, tableauX, pad);
   const opponentColumns = packedColumns(width, 7, compactW, foundationGap, opponentTableauX, pad);
   const foundationTotal = cardW * 8 + foundationGap * 7;
   const foundationX = (width - foundationTotal) / 2;
@@ -55,7 +58,8 @@ export function computeLayout(width, height, { maxLocalCards = 14, maxOpponentCa
     },
     card: { width: cardW, height: cardH, compactWidth: compactW, compactHeight: compactH },
     local: {
-      stock: { x: pad + cardW * .04, y: localY }, waste: { x: pad + cardW * 1.16, y: localY },
+      stock: { x: stockSide === 'right' ? width - pad - cardW * 1.04 : pad + cardW * .04, y: localY },
+      waste: { x: stockSide === 'right' ? width - pad - cardW * 2.16 : pad + cardW * 1.16, y: localY },
       tableau: localColumns.map((x, index) => ({ x, y: localY, index })), fan: localFan
     },
     opponent: {
