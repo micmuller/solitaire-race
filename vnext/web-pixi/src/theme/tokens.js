@@ -4,6 +4,8 @@ export const TOKENS = Object.freeze({
     leather: 0x441913, leatherDark: 0x210b09, leatherLight: 0x6f2920,
     brass: 0xa77731, brassDark: 0x63421f, brassLight: 0xe4bd6d, amber: 0xffb44c,
     ivory: 0xf3ead6, ivoryLight: 0xfff9e9, ivoryShade: 0xd8c8aa,
+    cardPaper: 0xead8ae, cardPaperLight: 0xf5e7c7, cardPaperShade: 0xc9ad7b,
+    cardPaperEdge: 0x80603e, cardWear: 0x8d5e35,
     ink: 0x17120f, red: 0x9c281f, black: 0x17130f, slot: 0x142319
   },
   card: { aspect: 1.42, radius: 7 },

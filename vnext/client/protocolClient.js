@@ -3,11 +3,11 @@
 const { WebSocket } = require('ws');
 const { PLAYER_IDS, PROTOCOL_VERSION } = require('../core/constants');
 
-function websocketUrl(baseUrl, matchId, clientId) {
+function websocketUrl(baseUrl, matchId, clientId, { reconnect = false } = {}) {
   const url = new URL(baseUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.pathname = '/vnext';
-  url.search = new URLSearchParams({ matchId, clientId }).toString();
+  url.search = new URLSearchParams({ matchId, clientId, ...(reconnect ? { reconnect: '1' } : {}) }).toString();
   return url.toString();
 }
 
@@ -27,7 +27,7 @@ function validateAuthoritativeResponse(response, matchId) {
 }
 
 class ProtocolClient {
-  constructor({ baseUrl, matchId, clientId, WebSocketImpl = WebSocket }) {
+  constructor({ baseUrl, matchId, clientId, WebSocketImpl = WebSocket, actionTimeoutMs = 4000 }) {
     if (typeof baseUrl !== 'string' || baseUrl.length === 0) throw new TypeError('baseUrl is required');
     if (typeof matchId !== 'string' || matchId.length === 0) throw new TypeError('matchId is required');
     if (!PLAYER_IDS.includes(clientId)) throw new TypeError('clientId must be p1 or p2');
@@ -35,6 +35,7 @@ class ProtocolClient {
     this.matchId = matchId;
     this.clientId = clientId;
     this.WebSocketImpl = WebSocketImpl;
+    this.actionTimeoutMs = actionTimeoutMs;
     this.socket = null;
     this.current = null;
     this.nextSeq = 0;
@@ -53,10 +54,10 @@ class ProtocolClient {
     for (const listener of this.listeners) listener(event, this);
   }
 
-  connect() {
+  connect({ reconnect = false } = {}) {
     if (this.socket) return Promise.reject(new Error('client is already connected'));
     return new Promise((resolve, reject) => {
-      const socket = new this.WebSocketImpl(websocketUrl(this.baseUrl, this.matchId, this.clientId));
+      const socket = new this.WebSocketImpl(websocketUrl(this.baseUrl, this.matchId, this.clientId, { reconnect }));
       this.socket = socket;
       let settled = false;
 
@@ -90,7 +91,10 @@ class ProtocolClient {
           reject(new Error('connection closed before initial snapshot'));
         }
         if (this.pending) {
-          this.pending.reject(new Error('connection closed while action was pending'));
+          clearTimeout(this.pending.timer);
+          const error = new Error('connection closed while action was pending');
+          error.code = 'CONNECTION_CLOSED';
+          this.pending.reject(error);
           this.pending = null;
         }
         this.emit({ type: 'disconnected' });
@@ -112,6 +116,7 @@ class ProtocolClient {
       if (ownAck || ownReject || recoverySnapshot) {
         const pending = this.pending;
         this.pending = null;
+        clearTimeout(pending.timer);
         if (ownAck) this.nextSeq += 1;
         if (ownReject && response.code === 'DUPLICATE_SEQ' && Number.isSafeInteger(response.expectedSeq)) {
           this.nextSeq = response.expectedSeq;
@@ -152,10 +157,20 @@ class ProtocolClient {
       payload
     };
     return new Promise((resolve, reject) => {
-      this.pending = { seq: this.nextSeq, resolve, reject };
+      const seq = this.nextSeq;
+      const timer = setTimeout(() => {
+        if (this.pending?.seq !== seq) return;
+        this.pending = null;
+        const error = new Error('action response timed out');
+        error.code = 'ACTION_TIMEOUT';
+        reject(error);
+      }, this.actionTimeoutMs);
+      this.pending = { seq, resolve, reject, timer };
       this.socket.send(JSON.stringify(envelope), (error) => {
-        if (error && this.pending) {
+        if (error && this.pending?.seq === seq) {
+          clearTimeout(this.pending.timer);
           this.pending = null;
+          error.code ||= 'SEND_FAILED';
           reject(error);
         }
       });

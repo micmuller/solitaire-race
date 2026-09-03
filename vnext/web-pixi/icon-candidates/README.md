@@ -2,7 +2,7 @@
 
 The three source images are retained at their original 1254 × 1254 resolution.
 
-- `icon-a-sheriff-star.png` — selected as the canonical web app icon for Pixi Client 0.1.37.
+- `icon-a-sheriff-star.png` — selected as the canonical web app icon since Pixi Client 0.1.37.
 - `icon-b-high-noon-card.png` — retained as an alternative for possible iPad icon variants.
 - `icon-c-horseshoe-token.png` — retained as an alternative for possible iPad icon variants.
 

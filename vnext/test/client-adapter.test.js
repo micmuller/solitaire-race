@@ -40,6 +40,20 @@ function waitForRev(client, rev, timeoutMs = 2000) {
   });
 }
 
+test('node protocol client times out a lost action response and keeps its sequence', async () => {
+  class SilentWebSocket {
+    static OPEN = 1;
+    constructor() { this.readyState = SilentWebSocket.OPEN; }
+    send() {}
+  }
+  const client = new ProtocolClient({ baseUrl: 'http://example.test', matchId: 'm-timeout', clientId: 'p1', WebSocketImpl: SilentWebSocket, actionTimeoutMs: 5 });
+  client.socket = new SilentWebSocket();
+  client.current = { rev: 4, stateHash: 'hash', state: {} };
+  await assert.rejects(client.sendIntent('draw', { source: zone('stock', 'p1'), target: zone('waste', 'p1') }), (error) => error.code === 'ACTION_TIMEOUT');
+  assert.equal(client.pending, null);
+  assert.equal(client.nextSeq, 0);
+});
+
 test('two-player simulator converges both thin clients', async (t) => {
   const baseUrl = await withServer(t);
   const report = await runTwoPlayerSimulation(baseUrl);

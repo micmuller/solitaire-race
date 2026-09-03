@@ -1,6 +1,7 @@
 import { Application, Assets } from 'pixi.js';
 import './styles.css';
 import { BoardScene } from './render/board-scene.js';
+import { rendererPreferenceFor } from './render/renderer-profile.js';
 import courtAtlasUrl from './assets/art/court-figures-v1.png?url';
 import tableFeltUrl from './assets/art/table-felt-v1.png?url';
 import tableWalnutUrl from './assets/art/table-walnut-v1.png?url';
@@ -13,9 +14,9 @@ import { cueForIntentResult } from '../../web/effects.mjs';
 import { generateRandomSeed } from '../../web/seed.mjs';
 import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, retryableSequenceReject, sameTableauSelection, waitingMatchMessage } from './bridge/match-context.js';
-import { buildErrorReport, describeOpponent } from './diagnostics/error-report.js';
+import { buildErrorReport, copyDiagnosticText, describeOpponent } from './diagnostics/error-report.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.1.37';
+export const WEB_PIXI_CLIENT_VERSION = '0.1.45';
 const PROTOCOL_VERSION = '2.5.2';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
@@ -23,13 +24,15 @@ const STORAGE = { nickname:'solitaire-vnext:nickname', session:'solitaire-vnext:
 const matchSessionKey = (matchId) => `solitaire-pixi:match-session:${matchId}`;
 let mode = 'split', baseUrl = storageGet(STORAGE.server) || window.location.origin, client = null, lobbyPlayer = null, activeGame = null, activeKind = 'human', selection = null, audioContext = null, celebrated = null, gameOverQueued = null;
 const debugLines=[];
+let rendererContextLosses=0;
 const inputLock = new InputLock();
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let quality = resolveQuality(localStorage.getItem(STORAGE.quality) || 'balanced', reducedMotion);
 let stockSide = storageGet(STORAGE.stockSide)==='right'?'right':'left';
 
 const pixi = new Application();
-await pixi.init({ resizeTo: $('#board-shell'), background: '#082a20', antialias: true, autoDensity: true, resolution: Math.min(devicePixelRatio || 1, quality.resolutionCap), preference: 'webgl' });
+const rendererPreference=rendererPreferenceFor({userAgent:navigator.userAgent,maxTouchPoints:navigator.maxTouchPoints,renderer:new URLSearchParams(location.search).get('renderer')});
+await pixi.init({ resizeTo: $('#board-shell'), background: '#082a20', antialias: true, autoDensity: true, resolution: Math.min(devicePixelRatio || 1, quality.resolutionCap), preference: rendererPreference });
 async function loadOptionalTexture(url) { try { return await Assets.load(url); } catch { return null; } }
 const [courtAtlas, feltTexture, woodTexture]=await Promise.all([
   loadOptionalTexture(courtAtlasUrl), loadOptionalTexture(tableFeltUrl), loadOptionalTexture(tableWalnutUrl)
@@ -37,7 +40,7 @@ const [courtAtlas, feltTexture, woodTexture]=await Promise.all([
 $('#pixi-stage').appendChild(pixi.canvas); $('#loading').hidden = true;
 
 const board = new BoardScene(pixi, {
-  quality, stockSide, courtAtlas, materials:{felt:feltTexture,wood:woodTexture},
+  quality, stockSide, courtAtlas, materials:{felt:feltTexture,wood:woodTexture}, rendererPreference,
   canInteract: () => canSendActions(),
   onSource: (meta) => handleSource(meta), onStock: () => handleStock(), onTarget: (target) => handleTarget(target), onAutoFoundation: (meta, card) => handleAutoFoundation(meta, card)
 });
@@ -49,8 +52,10 @@ boardResizeObserver.observe(boardShell);
 
 function showToast(text, type = '') { const toast=$('#toast'); toast.textContent=text; toast.className=`toast ${type}`; toast.hidden=false; clearTimeout(showToast.timer); showToast.timer=setTimeout(()=>toast.hidden=true,2600); status(text); }
 function status(text, title = 'Status') { $('#status-title').textContent=title; $('#status-detail').textContent=text; $('#accessible-state').textContent=text; }
-function refreshDebugHud() { const hud=$('#debug-hud'); if(!$('#debug-toggle').checked){hud.hidden=true;return;} const d=board.diagnostics(); hud.hidden=false; hud.textContent=`role ${client?.clientId||'–'} · rev ${client?.current?.rev??'–'} · ${d.width}×${d.height}px · card ${d.cardWidth}×${d.cardHeight}px · DPR ${devicePixelRatio||1} · render ${d.resolution}\n${debugLines.join('\n')}`.slice(0,4000); }
+function refreshDebugHud() { const hud=$('#debug-hud'); if(!$('#debug-toggle').checked){hud.hidden=true;return;} const d=board.diagnostics(); hud.hidden=false; hud.textContent=`role ${client?.clientId||'–'} · rev ${client?.current?.rev??'–'} · ${d.width}×${d.height}px · card ${d.cardWidth}×${d.cardHeight}px · DPR ${devicePixelRatio||1} · ${d.rendererName} ${d.resolution} · ticker ${d.tickerStarted?'on':'off'} · redraw ${d.cardRedraws}/${d.slotRebuilds}\n${debugLines.join('\n')}`.slice(0,4000); }
 function debug(text) { debugLines.unshift(`${new Date().toLocaleTimeString()} ${text}`); debugLines.splice(28); if ($('#debug-toggle').checked) refreshDebugHud(); }
+pixi.canvas.addEventListener('webglcontextlost',(event)=>{event.preventDefault();rendererContextLosses+=1;debug(`renderer context lost (${rendererContextLosses})`);status('Grafik-Renderer wird wiederhergestellt …','Anzeige');});
+pixi.canvas.addEventListener('webglcontextrestored',()=>{debug('renderer context restored');pixi.ticker.start();if(client?.current)renderCurrent(client.current,'snapshot');status(client?.clientId==='observer'?'Beobachtermodus':'Dein Tisch ist bereit','Verbunden');});
 function storageGet(key) { try { return localStorage.getItem(key)||''; } catch { return ''; } }
 function overlayOpen(element, value) { element.hidden=!value; const reason=`overlay:${element.id}`; if(value) inputLock.lock(reason); else inputLock.unlock(reason); $('#board-lock').hidden=!inputLock.locked; $('#menu-open').setAttribute('aria-expanded',String(value&&element.id==='menu-overlay')); }
 function setMode(next) { mode=next==='shared'?'shared':'split'; all('[data-mode]').forEach((button)=>button.setAttribute('aria-pressed',String(button.dataset.mode===mode))); $('#mode-label').textContent=mode.toUpperCase(); }
@@ -84,7 +89,7 @@ async function prepareMatchContext(matchId, role) {
   const games=(await listLobbyGames(baseUrl)).games||[];
   const game=gameForMatch(games,matchId);
   if(!game){activeGame=null;return;}
-  activeGame=game;
+  activeGame=game; activeKind='human';
   if(role!=='p2'||game.status!=='waiting')return;
   const sessionKey=matchSessionKey(matchId);
   const sessionId=guestSessionCandidate({game,persistentSessionId:storageGet(STORAGE.session),matchSessionId:sessionStorage.getItem(sessionKey)});
@@ -97,7 +102,7 @@ async function prepareMatchContext(matchId, role) {
   activeGame=joined.game;
 }
 
-function renderCurrent(current, source='snapshot') { board.applyState(current,{source}); updateMeta(); if(source==='ack'){const score=$(`#${client?.clientId==='p2'?'p2':'p1'}-score`);score.classList.remove('pulse');requestAnimationFrame(()=>score.classList.add('pulse'));} const local=client?.clientId==='p2'?'p2':'p1', opponent=local==='p1'?'p2':'p1'; const state=current.state; $('#accessible-state').textContent=`Revision ${current.rev}. ${local.toUpperCase()} hat ${state.players[local].stock.length} Karten im Stock, ${state.players[local].waste.length} im Waste und ${state.players[local].score} Punkte. Gegner ${state.players[opponent].score} Punkte.`; if(state.status==='finished') { const key=`${client?.matchId}:${current.stateHash}`; let animated=false; if(celebrated!==key){celebrated=key;animated=board.celebrate();} const names=participantNames(); $('#game-over-title').textContent=`${state.winner?names[state.winner]:'Match'} gewinnt`; $('#game-over-text').textContent=`${names.p1} ${state.players.p1.score} · ${names.p2} ${state.players.p2.score} · ${state.endedReason}`; if(gameOverQueued!==key){gameOverQueued=key;setTimeout(()=>{if(!$('#game-over').open)$('#game-over').showModal();},animated?950:0);} } }
+function renderCurrent(current, source='snapshot') { board.applyState(current,{source}); pixi.render(); updateMeta(); if(source==='ack'){const score=$(`#${client?.clientId==='p2'?'p2':'p1'}-score`);score.classList.remove('pulse');requestAnimationFrame(()=>score.classList.add('pulse'));} const local=client?.clientId==='p2'?'p2':'p1', opponent=local==='p1'?'p2':'p1'; const state=current.state; $('#accessible-state').textContent=`Revision ${current.rev}. ${local.toUpperCase()} hat ${state.players[local].stock.length} Karten im Stock, ${state.players[local].waste.length} im Waste und ${state.players[local].score} Punkte. Gegner ${state.players[opponent].score} Punkte.`; if(state.status==='finished') { const key=`${client?.matchId}:${current.stateHash}`; let animated=false; if(celebrated!==key){celebrated=key;animated=board.celebrate();} const names=participantNames(); $('#game-over-title').textContent=`${state.winner?names[state.winner]:'Match'} gewinnt`; $('#game-over-text').textContent=`${names.p1} ${state.players.p1.score} · ${names.p2} ${state.players.p2.score} · ${state.endedReason}`; if(gameOverQueued!==key){gameOverQueued=key;setTimeout(()=>{if(!$('#game-over').open)$('#game-over').showModal();},animated?950:0);} } }
 
 async function connect(matchId, role, { route=true }={}) {
   client?.close(); selection=null; board.clearTransient();
@@ -126,7 +131,7 @@ function handleSource(meta) {
   selection=selectionForMeta(meta); board.setSelection(selection); if(selection) status(`${selection.count} Karte${selection.count===1?'':'n'} ausgewählt`,'Auswahl');
 }
 function clearSelection(){selection=null;board.cancelInteraction();}
-function handleStock() { const local=client?.current?.state.players?.[client.clientId]; if(!local)return; const kind=local.stock.length?'draw':'recycle'; const payload=kind==='draw'?{source:{zone:'stock',owner:client.clientId},target:{zone:'waste',owner:client.clientId}}:{source:{zone:'waste',owner:client.clientId},target:{zone:'stock',owner:client.clientId}}; sendIntent(kind,payload); }
+function handleStock() { const local=client?.current?.state.players?.[client.clientId]; if(!local)return; selection=null;board.cancelInteraction(); const kind=local.stock.length?'draw':'recycle'; const payload=kind==='draw'?{source:{zone:'stock',owner:client.clientId},target:{zone:'waste',owner:client.clientId}}:{source:{zone:'waste',owner:client.clientId},target:{zone:'stock',owner:client.clientId}}; sendIntent(kind,payload); }
 function handleTarget(target) { if(target.zone==='stock'){handleStock();return true;} const intent=dropIntent(selection,client?.clientId,target); if(!intent)return false;sendIntent(intent.kind,intent.payload);return true; }
 function handleAutoFoundation(meta,card) { const next=selectionForMeta(meta), intent=autoFoundationIntent(next,client.current.state.foundations,card); if(intent){sendIntent(intent.kind,intent.payload);return true;} clearSelection();showToast('Keine passende Foundation – Auswahl aufgehoben','error');return false; }
 
@@ -135,7 +140,7 @@ async function sendIntent(kind,payload) {
   if(!canSendActions()){if(activeGame?.status==='waiting')showToast(waitingMatchMessage(client.clientId),'error');return;}
   inputLock.lock('pending'); $('#board-lock').hidden=false; board.setPending(true); debug(`intent ${kind} seq=${client.nextSeq}`);
   try { let response=await client.sendIntent(kind,payload); if(retryableSequenceReject(response)){debug(`sequence recovery expected=${response.expectedSeq}`);response=await client.sendIntent(kind,payload);} debug(`${response.kind} ${response.code||''} rev=${response.rev}`); playCue(cueForIntentResult(kind,response)); if(response.kind==='reject'){ board.rejectToAuthority(); showToast(`Abgelehnt: ${response.code}`,'error'); } else if(response.kind==='ack') showToast(`${kind} bestätigt`); }
-  catch(error){ board.rejectToAuthority(); showToast(error.message,'error'); }
+  catch(error){ board.rejectToAuthority(); if(error.code==='ACTION_TIMEOUT'){debug('action timeout: reconnecting');showToast(error.message,'error');try{await reconnect();}catch(reconnectError){showToast(`Resync fehlgeschlagen: ${reconnectError.message}`,'error');}}else showToast(error.message,'error'); }
   finally { selection=null; inputLock.unlock('pending'); board.cancelInteraction(); $('#board-lock').hidden=!inputLock.locked; }
 }
 
@@ -144,11 +149,11 @@ function lobbyRow(game, sessionId) {
   const ownHost=game.players.p1?.sessionId===sessionId,ownGuest=game.players.p2?.sessionId===sessionId;
   const row=document.createElement('div'); row.className='lobby-game'; const label=document.createElement('span'); label.textContent=`${game.name} · ${game.players.p1?.nickname||'P1'} vs ${game.players.p2?.nickname||'offen'} · ${game.mode}`;
   const button=document.createElement('button'); button.textContent=ownHost?'Als P1 öffnen':ownGuest?'Als P2 öffnen':'Als P2 beitreten'; button.disabled=game.status==='finished'||Boolean(game.players.p2&&!ownGuest&&!ownHost);
-  button.onclick=async()=>{try{await ensurePlayer(); if(ownHost||ownGuest){activeGame=game;await connect(game.matchId,ownHost?'p1':'p2');return;} const joined=await joinLobbyGame(baseUrl,game.gameId,{sessionId:lobbyPlayer.sessionId}); activeGame=joined.game; await connect(joined.matchId,joined.role);}catch(e){showToast(e.message,'error')}};
+  button.onclick=async()=>{try{await ensurePlayer(); activeKind='human'; if(ownHost||ownGuest){activeGame=game;await connect(game.matchId,ownHost?'p1':'p2');return;} const joined=await joinLobbyGame(baseUrl,game.gameId,{sessionId:lobbyPlayer.sessionId}); activeGame=joined.game; await connect(joined.matchId,joined.role);}catch(e){showToast(e.message,'error')}};
   row.append(label,button); return row;
 }
 async function refreshLobby(){ const result=await listLobbyGames(baseUrl), sessionId=lobbyPlayer?.sessionId||storageGet(STORAGE.session); for(const list of [$('#lobby-games'),$('#menu-lobby-games')]){list.replaceChildren();for(const game of result.games||[])list.append(lobbyRow(game,sessionId));if(!list.children.length)list.textContent='Keine offenen Spiele.';} }
-async function hostLobby({ name=$('#game-name').value.trim(), seed=generateRandomSeed(), selectedMode=mode }={}){ try{await ensurePlayer(); const created=await createLobbyGame(baseUrl,{sessionId:lobbyPlayer.sessionId,name:name||'HighNoon',seed,mode:selectedMode}); activeGame=created.game; setMode(selectedMode); await connect(created.matchId,'p1'); status('Warte auf P2','Lobby');}catch(e){showToast(e.message,'error')} }
+async function hostLobby({ name=$('#game-name').value.trim(), seed=generateRandomSeed(), selectedMode=mode }={}){ try{await ensurePlayer(); const created=await createLobbyGame(baseUrl,{sessionId:lobbyPlayer.sessionId,name:name||'HighNoon',seed,mode:selectedMode}); activeGame=created.game; activeKind='human'; setMode(selectedMode); await connect(created.matchId,'p1'); status('Warte auf P2','Lobby');}catch(e){showToast(e.message,'error')} }
 async function hostBot(versus=false,speed='medium'){ try{activeGame=null; const match=await createMatch(baseUrl,generateRandomSeed(),mode); activeKind=versus?'bot-versus':'bot'; if(versus){await startBot(baseUrl,match.matchId,{clientId:'p1',speed});await startBot(baseUrl,match.matchId,{clientId:'p2',speed});await connect(match.matchId,'observer');}else{await connect(match.matchId,'p1');await startBot(baseUrl,match.matchId,{clientId:'p2',speed});}}catch(e){showToast(e.message,'error')} }
 function startDemo(){ client={clientId:'p1',matchId:'demo-4-2',current:structuredClone(DEMO_CURRENT)}; board.setLocalId('p1'); renderCurrent(client.current,'snapshot'); overlayOpen($('#start-overlay'),false); $('#connection-dot').classList.add('online'); status('Repräsentativer autoritativer Snapshot-Fixture','Demo'); }
 async function doRestart(newSeed){ if(!client||client.matchId.startsWith('demo'))return startDemo(); if(!lobbyPlayer){showToast('Restart benötigt ein gehostetes Lobby-Spiel','error');return;} try{await restartMatch(baseUrl,client.matchId,newSeed?generateRandomSeed():client.current.state.seed,client.current.state.mode,{sessionId:lobbyPlayer.sessionId});overlayOpen($('#menu-overlay'),false);}catch(e){showToast(e.message,'error')} }
@@ -182,8 +187,8 @@ $('#menu-host-game').onclick=()=>hostLobby({name:$('#menu-game-name').value.trim
 $('#menu-host-bot').onclick=()=>hostBot(false,$('#bot-speed').value); $('#menu-bot-versus').onclick=()=>hostBot(true,$('#bot-speed').value); $('#menu-connect-match').onclick=()=>connect($('#menu-match-id').value.trim(),$('#menu-role').value).catch(e=>showToast(e.message,'error'));
 $('#menu-nickname').oninput=()=>$('#nickname').value=$('#menu-nickname').value; $('#nickname').oninput=()=>$('#menu-nickname').value=$('#nickname').value; $('#menu-game-name').oninput=()=>$('#game-name').value=$('#menu-game-name').value;
 $('#save-server-url').onclick=()=>{try{const url=new URL($('#server-url').value.trim());if(!['http:','https:'].includes(url.protocol))throw new Error();baseUrl=url.toString().replace(/\/$/,'');localStorage.setItem(STORAGE.server,baseUrl);updateMeta();showToast('Server gespeichert');}catch{showToast('Ungültige Server-URL','error')}};
-$('#copy-invite').onclick=async()=>{if(!client)return;await navigator.clipboard.writeText(inviteUrl({origin:location.origin,pathname:'/vnext/pixi/',matchId:client.matchId}));showToast('Einladungslink kopiert');};
-$('#copy-error-report').onclick=async()=>{const report=buildErrorReport({version:WEB_PIXI_CLIENT_VERSION,protocolVersion:PROTOCOL_VERSION,client,activeKind,activeGame,baseUrl,debugLines,timestamp:new Date().toISOString(),userAgent:navigator.userAgent});try{await navigator.clipboard.writeText(report);showToast('Fehlerbericht kopiert');}catch{showToast('Fehlerbericht konnte nicht kopiert werden','error');}};
+$('#copy-invite').onclick=async()=>{if(!client)return;try{await copyDiagnosticText(inviteUrl({origin:location.origin,pathname:'/vnext/pixi/',matchId:client.matchId}));showToast('Einladungslink kopiert');}catch{showToast('Einladungslink konnte nicht kopiert werden','error');}};
+$('#copy-error-report').onclick=async()=>{const report=buildErrorReport({version:WEB_PIXI_CLIENT_VERSION,protocolVersion:PROTOCOL_VERSION,client,activeKind,activeGame,baseUrl,rendererDiagnostics:{...board.diagnostics(),contextLosses:rendererContextLosses},debugLines,timestamp:new Date().toISOString(),userAgent:navigator.userAgent}),output=$('#error-report-output');output.value=report;try{await copyDiagnosticText(report);output.hidden=true;showToast('Fehlerbericht kopiert');}catch{output.hidden=false;output.focus();output.select();output.setSelectionRange(0,report.length);showToast('Bericht angezeigt – lange drücken und kopieren','error');}};
 $('#quality').onchange=()=>{localStorage.setItem(STORAGE.quality,$('#quality').value);showToast('Grafikqualität wird beim Neuladen aktiviert');}; $('#mute').onchange=()=>localStorage.setItem(STORAGE.mute,$('#mute').checked?'1':'0'); $('#debug-toggle').onchange=refreshDebugHud;
 $('#preview-final-sequence').onclick=()=>{const names=participantNames(),p1=client?.current?.state.players?.p1?.score??0,p2=client?.current?.state.players?.p2?.score??0;overlayOpen($('#menu-overlay'),false);$('#game-over-title').textContent='Finale Vorschau';$('#game-over-text').textContent=`${names.p1} ${p1} · ${names.p2} ${p2}`;const animated=!reducedMotion&&board.celebrate({force:true});status(animated?'Konfetti und Feuerwerk werden getestet':'Finalanimation wegen reduzierter Bewegung ausgelassen','Finale');setTimeout(()=>{if(!$('#game-over').open)$('#game-over').showModal();},animated?1100:0);};
 window.addEventListener('keydown',(event)=>{if(event.key==='Escape'){selection=null;board.setSelection(null);all('.overlay:not([hidden])').filter(x=>x.id!=='start-overlay').forEach(x=>overlayOpen(x,false));}});

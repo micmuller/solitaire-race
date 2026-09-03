@@ -195,6 +195,20 @@ test('browser protocol client settles an own ack before rendering its state', ()
   assert.equal(resolved, true);
 });
 
+test('browser protocol client rejects a lost action response instead of staying pending forever', async () => {
+  const client = new protocolClient.ProtocolClient({
+    baseUrl: 'http://example.test',
+    matchId: 'm-timeout',
+    clientId: 'p1',
+    actionTimeoutMs: 5
+  });
+  client.current = { rev: 110, stateHash: 'current-hash', state: {} };
+  client.socket = { readyState: WebSocket.OPEN, send() {} };
+  await assert.rejects(client.sendIntent('draw', {}), (error) => error.code === 'ACTION_TIMEOUT');
+  assert.equal(client.pending, null);
+  assert.equal(client.nextSeq, 0);
+});
+
 test('browser protocol client forwards lobby lifecycle events without changing game state', () => {
   const client = new protocolClient.ProtocolClient({
     baseUrl: 'http://example.test',

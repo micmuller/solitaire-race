@@ -7,8 +7,9 @@ import { RetainedCardStore } from '../src/render/retained-card-store.js';
 import { InputLock } from '../src/input/input-lock.js';
 import { resolveQuality } from '../src/theme/tokens.js';
 import { TransitionController } from '../src/animation/transition-controller.js';
-import { BoardScene, handoffReachedState, handoffReachedTarget, motionProfileFor, placementMatchesHandoffTarget, shouldAnimateFlip, shouldHoldActiveDrag, shouldSuppressPostDragTap, visiblePileCards } from '../src/render/board-scene.js';
-import { buildErrorReport, describeOpponent } from '../src/diagnostics/error-report.js';
+import { BoardScene, cardVisualSignature, handoffReachedState, handoffReachedTarget, motionProfileFor, placementMatchesHandoffTarget, shouldAnimateFlip, shouldHoldActiveDrag, shouldSuppressPostDragTap, visiblePileCards } from '../src/render/board-scene.js';
+import { buildErrorReport, copyDiagnosticText, describeOpponent } from '../src/diagnostics/error-report.js';
+import { isAppleTouchDevice, rendererPreferenceFor } from '../src/render/renderer-profile.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
@@ -19,12 +20,29 @@ test('retained display store reuses stable card ids and prunes missing cards',()
   store.prune(new Set(),()=>removed++); assert.equal(store.items.size,0); assert.equal(removed,1);
 });
 
+test('card visuals are redrawn only when a visible property changes',()=>{
+  const card={cardId:'d0:C:7',suit:'C',rank:7,faceDown:false};
+  const stable=cardVisualSignature(card,80,114,false,{selected:false,pending:false,shadows:true});
+  assert.equal(cardVisualSignature({...card},80,114,false,{selected:false,pending:false,shadows:true}),stable);
+  assert.notEqual(cardVisualSignature({...card,faceDown:true},80,114,false,{selected:false,pending:false,shadows:true}),stable);
+  assert.notEqual(cardVisualSignature(card,80,114,false,{selected:true,pending:false,shadows:true}),stable);
+});
+
 test('overlay and pending reasons independently lock canvas input',()=>{
   const lock=new InputLock(); lock.lock('overlay'); lock.lock('pending'); lock.unlock('overlay'); assert.equal(lock.locked,true); lock.unlock('pending'); assert.equal(lock.locked,false);
 });
 
 test('quality profiles and reduced motion are deterministic',()=>{
   assert.equal(resolveQuality('high',false).resolutionCap,2); assert.equal(resolveQuality('high',true).name,'reduced'); assert.equal(resolveQuality('reduced',false).particles,0);
+});
+
+test('iPad and touch-mode iPadOS Safari use the canvas renderer fallback',()=>{
+  const iPad={userAgent:'Mozilla/5.0 (iPad) AppleWebKit/605.1.15 Safari/605.1.15',maxTouchPoints:5};
+  const desktopMode={userAgent:'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15',maxTouchPoints:5};
+  assert.equal(isAppleTouchDevice(iPad),true);
+  assert.equal(rendererPreferenceFor(desktopMode),'canvas');
+  assert.equal(rendererPreferenceFor({...desktopMode,maxTouchPoints:0}),'webgl');
+  assert.equal(rendererPreferenceFor({...desktopMode,maxTouchPoints:0,renderer:'canvas'}),'canvas');
 });
 
 test('snapshot cancellation clears transitions and snaps once',()=>{
@@ -155,6 +173,13 @@ test('finishing a pending drag keeps its alpha under transition control',()=>{
   assert.equal(view.alpha,.82);
 });
 
+test('interaction cleanup renders the newest authoritative state after a deferred ack',()=>{
+  const deferred={rev:206,state:{}}; let reconciled=null;
+  const scene={current:deferred,renderedCurrent:{rev:190},drag:{},dropHandoff:{ids:[],source:{zone:'tableau'}},selection:{},pending:true,lastTap:{},dropCue:{clear(){}},cards:new Map(),transitions:{has:()=>false},quality:{shadows:true},applyState:(current,options)=>{reconciled={current,options};}};
+  BoardScene.prototype.cancelInteraction.call(scene);
+  assert.deepEqual(reconciled,{current:deferred,options:{source:'snapshot',force:true}});
+});
+
 test('a waste drag restores full opacity without a second fade animation',()=>{
   const view={cardId:'dragged',alpha:.82,card:{},cardWidth:80,cardHeight:114,meta:{compact:false},hoverLift:0,
     update(){this.alpha=1;},scale:{set(){}},rotation:0};
@@ -190,6 +215,17 @@ test('reduced motion keeps ack and flip transitions instantaneous',()=>{
   const scene={dropHandoff:null,quality:{motionScale:0}};
   assert.equal(BoardScene.prototype.transitionDuration.call(scene,'ack',false,'card',{zone:'foundation'}),0);
   assert.equal(shouldAnimateFlip({wasFaceDown:true,faceDown:false,moving:false,source:'ack',force:false,motionScale:0}),false);
+});
+
+test('observer states snap without depending on the animation ticker',()=>{
+  const scene={dropHandoff:null,readOnly:true,quality:{motionScale:1}};
+  assert.equal(BoardScene.prototype.transitionDuration.call(scene,'ack',false,'card',{zone:'foundation'}),0);
+});
+
+test('canvas renderer snaps every player state without depending on the animation ticker',()=>{
+  const scene={dropHandoff:null,readOnly:false,rendererPreference:'canvas',quality:{motionScale:1},motionScale:BoardScene.prototype.motionScale};
+  assert.equal(BoardScene.prototype.motionScale.call(scene),0);
+  assert.equal(BoardScene.prototype.transitionDuration.call(scene,'ack',false,'card',{zone:'waste'}),0);
 });
 
 test('only an in-place authoritative reveal uses the flip animation',()=>{
@@ -240,6 +276,7 @@ test('menu keeps seven ordered areas and exposes the diagnostic report action',(
   const tabs=[...html.matchAll(/data-menu-tab="([^"]+)"/g)].map((match)=>match[1]);
   assert.deepEqual(tabs,['lobby','settings','game','new-game','bot','share','info']);
   assert.match(html,/id="copy-error-report"/);
+  assert.match(html,/id="error-report-output"/);
   assert.match(html,/Info &amp; Diagnose/);
   assert.match(html,/role="tablist"/);
   assert.match(fs.readFileSync(path.join(root,'src/main.js'),'utf8'),/aria-selected/);
@@ -266,22 +303,45 @@ test('production build is an installable web app scoped to the Pixi route',()=>{
   assert.equal(manifest.display,'standalone');
   assert.equal(manifest.icons.length,3);
   assert.match(main,/navigator\.serviceWorker\.register\('\/vnext\/pixi\/service-worker\.js'/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.1\.37/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.1\.45/);
   assert.match(server,/application\/manifest\+json/);
+});
+
+test('installed iOS app reserves the status bar and card wear stays stable',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const css=fs.readFileSync(path.join(root,'src/styles.css'),'utf8');
+  const source=fs.readFileSync(path.join(root,'src/render/board-scene.js'),'utf8');
+  assert.match(html,/apple-mobile-web-app-status-bar-style" content="black"/);
+  assert.doesNotMatch(html,/black-translucent/);
+  assert.match(css,/#app \{ padding-top: env\(safe-area-inset-top, 0px\); \}/);
+  assert.match(css,/env\(safe-area-inset-bottom,0px\)/);
+  assert.match(source,/export function cardWearUnit/);
+  assert.match(source,/drawCardWear\(this\.surface,card,width,height\)/);
+  assert.match(source,/TOKENS\.colors\.cardPaper/);
 });
 
 test('error report contains the complete match context and recent local events',()=>{
   const client={clientId:'p1',matchId:'m-247',current:{rev:18,stateHash:'abc123',state:{mode:'shared',status:'active'}}};
-  const report=buildErrorReport({version:'0.1.37',protocolVersion:'2.5.2',client,activeKind:'bot',baseUrl:'https://example.test',debugLines:['20:15:01 ack rev=18'],timestamp:'2026-09-03T20:15:02Z',userAgent:'TestBrowser'});
-  assert.match(report,/Pixi Client: 0\.1\.37/);
+  const report=buildErrorReport({version:'0.1.44',protocolVersion:'2.5.2',client,activeKind:'bot',baseUrl:'https://example.test',rendererDiagnostics:{rendererName:'CanvasRenderer',tickerStarted:true,cardRedraws:12,slotRebuilds:2,contextLosses:0},debugLines:['20:15:01 ack rev=18'],timestamp:'2026-09-03T20:15:02Z',userAgent:'TestBrowser'});
+  assert.match(report,/Pixi Client: 0\.1\.44/);
   assert.match(report,/Match-ID: m-247/);
   assert.match(report,/Rolle: p1/);
   assert.match(report,/Revision: 18/);
   assert.match(report,/State-Hash: abc123/);
   assert.match(report,/Modus: shared/);
   assert.match(report,/Gegner\/Bot: Bot \(P2\)/);
+  assert.match(report,/Renderer: CanvasRenderer · Ticker aktiv · Karten 12 · Slots 2 · Kontextverluste 0/);
   assert.match(report,/20:15:01 ack rev=18/);
   assert.equal(describeOpponent({activeKind:'human',activeGame:{players:{p2:{nickname:'Annie'}}},role:'p1'}),'Annie (P2)');
+  assert.equal(describeOpponent({activeKind:'bot',activeGame:{status:'active',players:{p2:{nickname:'Nathi'}}},role:'p1'}),'Nathi (P2)');
+});
+
+test('diagnostic copy has a synchronous textarea fallback for iOS and LAN installs',async()=>{
+  let command='',removed=false,selected=false,appended=null;
+  const field={style:{},setAttribute(){},focus(){},select(){selected=true;},setSelectionRange(){},remove(){removed=true;}};
+  const documentRef={body:{append(node){appended=node;}},createElement:(tag)=>{assert.equal(tag,'textarea');return field;},execCommand:(next)=>{command=next;return true;}};
+  const method=await copyDiagnosticText('report',{documentRef,clipboard:null});
+  assert.equal(method,'legacy'); assert.equal(field.value,'report'); assert.equal(appended,field); assert.equal(command,'copy'); assert.equal(selected,true); assert.equal(removed,true);
 });
 
 test('card artwork uses local original court art with a procedural fallback',()=>{

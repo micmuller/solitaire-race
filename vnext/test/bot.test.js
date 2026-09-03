@@ -11,6 +11,16 @@ const { createVNextServer } = require('../server');
 
 const silentLogger = { log() {}, error() {} };
 
+async function waitUntil(predicate, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = predicate();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('condition was not reached in time');
+}
+
 async function withServer(t) {
   const app = createVNextServer({ logger: silentLogger });
   const address = await app.start({ port: 0 });
@@ -180,6 +190,31 @@ test('server-managed bot can join a web-hosted match as p2', async (t) => {
     body: JSON.stringify({ clientId: 'p2', speed: 'turbo', maxActions: 5 })
   });
   assert.equal(invalidSpeedResponse.status, 400);
+});
+
+test('server-managed bot reconnects and continues after its websocket is interrupted', async (t) => {
+  const app = createVNextServer({ logger: silentLogger });
+  const address = await app.start({ port: 0 });
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  t.after(async () => app.close());
+  const match = await fetch(`${baseUrl}/vnext/matches`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed: 'BOT-RECONNECT', mode: 'split' })
+  }).then((response) => response.json());
+  const response = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clientId: 'p2', speed: 'normal', maxActions: 5 })
+  });
+  assert.equal(response.status, 202);
+  const managed = app.bots.get(`${match.matchId}:p2`);
+  await waitUntil(() => managed.report.status === 'running');
+  const firstSocket = await waitUntil(() => [...app.wss.clients].find((socket) => socket.matchId === match.matchId && socket.clientId === 'p2'));
+  firstSocket.terminate();
+  await managed.done;
+  assert.equal(managed.report.status, 'max-actions');
+  assert.equal(managed.report.actionCount, 5);
+  assert.ok(managed.report.reconnects >= 1);
+  assert.equal(managed.report.bot.noCandidate, false);
 });
 
 test('human resign immediately stops the server-managed opponent bot', async (t) => {

@@ -9,7 +9,7 @@ function sleep(ms) {
 
 function createManagedBot({ baseUrl, matchId, clientId = 'p2', speed = 'normal', maxActions = 1000, logger = console }) {
   const normalizedSpeed = normalizeSpeed(speed);
-  const client = new ProtocolClient({ baseUrl, matchId, clientId });
+  let client = new ProtocolClient({ baseUrl, matchId, clientId });
   const actor = new BotActor({ client });
   const startedAt = new Date().toISOString();
   const report = { matchId, clientId, speed: normalizedSpeed, maxActions, startedAt, status: 'starting', actionCount: 0 };
@@ -19,15 +19,32 @@ function createManagedBot({ baseUrl, matchId, clientId = 'p2', speed = 'normal',
     try {
       await client.connect();
       report.status = 'running';
-      for (let actionCount = 0; actionCount < maxActions && !stopped && !actor.noCandidate; actionCount += 1) {
+      let actionCount = 0;
+      let consecutiveFailures = 0;
+      while (actionCount < maxActions && !stopped && !actor.noCandidate) {
         const delay = speedDelay(normalizedSpeed, actionCount, clientId);
         if (delay > 0) await sleep(delay);
         if (stopped) break;
-        const result = await actor.step();
-        report.actionCount = actionCount + 1;
-        report.lastResult = result.status;
-        report.finalRev = client.current?.rev;
-        report.finalStateHash = client.current?.stateHash;
+        try {
+          const result = await actor.step();
+          actionCount += 1;
+          consecutiveFailures = 0;
+          report.actionCount = actionCount;
+          report.lastResult = result.status;
+          report.finalRev = client.current?.rev;
+          report.finalStateHash = client.current?.stateHash;
+        } catch (error) {
+          if (stopped) break;
+          consecutiveFailures += 1;
+          report.reconnects = (report.reconnects || 0) + 1;
+          report.lastError = error.message;
+          logger.warn?.(`[bot] reconnecting matchId=${matchId} clientId=${clientId} attempt=${consecutiveFailures}: ${error.message}`);
+          if (consecutiveFailures > 5) throw error;
+          client.close();
+          client = new ProtocolClient({ baseUrl, matchId, clientId });
+          actor.client = client;
+          await client.connect({ reconnect: true });
+        }
       }
       report.status = stopped ? 'stopped' : actor.noCandidate ? 'no-candidate' : 'max-actions';
     } catch (error) {

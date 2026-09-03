@@ -1,13 +1,14 @@
 export const PROTOCOL_VERSION = '2.5.2';
 
 export class ProtocolClient {
-  constructor({ baseUrl, matchId, clientId }) {
+  constructor({ baseUrl, matchId, clientId, actionTimeoutMs = 4000 }) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.matchId = matchId;
     this.clientId = clientId;
     this.current = null;
     this.nextSeq = 0;
     this.pending = null;
+    this.actionTimeoutMs = actionTimeoutMs;
     this.socket = null;
     this.listeners = new Set();
   }
@@ -50,6 +51,7 @@ export class ProtocolClient {
       socket.addEventListener('close', () => {
         this.socket = null;
         if (this.pending) {
+          clearTimeout(this.pending.timer);
           this.pending.reject(new Error('Verbindung während einer Action getrennt'));
           this.pending = null;
         }
@@ -74,6 +76,7 @@ export class ProtocolClient {
       if (ownAck || ownReject || recovery) {
         const pending = this.pending;
         this.pending = null;
+        clearTimeout(pending.timer);
         if (ownAck) this.nextSeq += 1;
         if (ownReject && response.code === 'DUPLICATE_SEQ' && Number.isSafeInteger(response.expectedSeq)) {
           this.nextSeq = response.expectedSeq;
@@ -109,7 +112,15 @@ export class ProtocolClient {
       payload
     };
     return new Promise((resolve, reject) => {
-      this.pending = { seq: this.nextSeq, resolve, reject };
+      const seq=this.nextSeq;
+      const timer=setTimeout(()=>{
+        if(this.pending?.seq!==seq)return;
+        this.pending=null;
+        const error=new Error('Serverantwort dauert zu lange – Verbindung wird synchronisiert');
+        error.code='ACTION_TIMEOUT';
+        reject(error);
+      },this.actionTimeoutMs);
+      this.pending = { seq, resolve, reject, timer };
       this.socket.send(JSON.stringify(envelope));
     });
   }

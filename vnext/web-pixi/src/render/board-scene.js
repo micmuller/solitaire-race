@@ -59,11 +59,40 @@ export function shouldHoldActiveDrag(source, drag, cardId) {
   return source==='ack'&&Boolean(drag?.active&&drag.ids?.includes(cardId));
 }
 
+export function cardVisualSignature(card, width, height, compact, { selected = false, pending = false, shadows = true } = {}) {
+  return [card?.cardId,card?.suit,card?.rank,Boolean(card?.faceDown),width,height,Boolean(compact),selected,pending,shadows].join('|');
+}
+
 function roundedPanel(graphics, x, y, width, height, fill, stroke = TOKENS.colors.brass, alpha = 1, strokeAlpha = .48) {
   graphics.roundRect(x, y, width, height, 12).fill({ color: fill, alpha }).stroke({ color: stroke, alpha: strokeAlpha, width: 1.5 });
 }
 
 function cardLabel(card) { return `${RANKS[card.rank] || card.rank}${SUITS[card.suit] || ''}`; }
+
+export function cardWearUnit(cardId, salt = 0) {
+  const value = `${cardId || 'card'}:${salt}`;
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967295;
+}
+
+function drawCardWear(graphics, card, width, height) {
+  const edge = TOKENS.colors.cardWear;
+  graphics.ellipse(width*.12,height*.1,width*.13,height*.07).fill({color:edge,alpha:.045});
+  graphics.ellipse(width*.87,height*.91,width*.16,height*.085).fill({color:edge,alpha:.055});
+  graphics.moveTo(width*.08,height*.24).bezierCurveTo(width*.035,height*.4,width*.065,height*.59,width*.045,height*.73)
+    .stroke({color:edge,alpha:.09,width:Math.max(.7,width*.012)});
+  for (let index = 0; index < 11; index += 1) {
+    const x = width * (.1 + cardWearUnit(card.cardId, index*4) * .8);
+    const y = height * (.09 + cardWearUnit(card.cardId, index*4+1) * .82);
+    const radius = width * (.004 + cardWearUnit(card.cardId, index*4+2) * .012);
+    const alpha = .035 + cardWearUnit(card.cardId, index*4+3) * .065;
+    graphics.circle(x,y,Math.max(.45,radius)).fill({color:edge,alpha});
+  }
+}
 
 const PIP_LAYOUTS = Object.freeze({
   1: [[.5,.5]],
@@ -161,6 +190,9 @@ class CardView extends Container {
 
   update(card, width, height, compact, { selected = false, pending = false, shadows = true } = {}) {
     this.card = card;
+    const renderSignature=cardVisualSignature(card,width,height,compact,{selected,pending,shadows});
+    if(this.renderSignature===renderSignature)return false;
+    this.renderSignature=renderSignature;
     this.shadow.clear(); this.surface.clear(); this.art.clear();
     this.rankTop.text=''; this.rankBottom.text=''; this.courtLabel.text='';
     this.courtPortrait.visible=false;
@@ -170,12 +202,12 @@ class CardView extends Container {
       drawCardBack(this.surface,width,height,radius,selected);
     } else {
       const color = redSuit(card.suit) ? TOKENS.colors.red : TOKENS.colors.black;
-      this.surface.roundRect(0,0,width,height,radius).fill(TOKENS.colors.ivoryShade)
-        .stroke({color:selected?TOKENS.colors.amber:0x8b6e49,width:selected?3:1});
-      this.surface.roundRect(width*.018,height*.012,width*.964,height*.965,radius*.88).fill(TOKENS.colors.ivory);
-      this.surface.roundRect(width*.045,height*.032,width*.91,height*.925,radius*.6).fill({color:TOKENS.colors.ivoryLight,alpha:.32})
-        .stroke({color:0x8c7356,alpha:.24,width:1});
-      for(let i=0;i<7;i++) this.surface.circle(width*(.14+((i*37)%71)/100),height*(.14+((i*53)%73)/100),Math.max(.35,width*.006)).fill({color:0x8b7358,alpha:.09});
+      this.surface.roundRect(0,0,width,height,radius).fill(TOKENS.colors.cardPaperShade)
+        .stroke({color:selected?TOKENS.colors.amber:TOKENS.colors.cardPaperEdge,width:selected?3:1});
+      this.surface.roundRect(width*.018,height*.012,width*.964,height*.965,radius*.88).fill(TOKENS.colors.cardPaper);
+      this.surface.roundRect(width*.045,height*.032,width*.91,height*.925,radius*.6).fill({color:TOKENS.colors.cardPaperLight,alpha:.38})
+        .stroke({color:TOKENS.colors.cardPaperEdge,alpha:.3,width:1});
+      drawCardWear(this.surface,card,width,height);
 
       const rank=RANKS[card.rank]||String(card.rank),fontSize=compact?width*.215:width*.205;
       const cornerRankX=card.rank===10?width*.15:width*.105,cornerSuitX=card.rank===10?width*.33:width*.255;
@@ -205,14 +237,16 @@ class CardView extends Container {
     this.alpha = pending ? .82 : 1;
     this.hitArea = { contains: (x, y) => x >= 0 && y >= 0 && x <= width && y <= height };
     this.cardWidth = width; this.cardHeight = height;
+    return true;
   }
 }
 
 export class BoardScene {
-  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, stockSide = 'left', courtAtlas = null, materials = {} }) {
+  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, stockSide = 'left', courtAtlas = null, materials = {}, rendererPreference = 'unknown' }) {
     this.app = app;
     this.callbacks = { onSource, onStock, onTarget, onAutoFoundation, canInteract };
     this.quality = quality;
+    this.rendererPreference = rendererPreference;
     this.stockSide = stockSide === 'right' ? 'right' : 'left';
     this.courtTextures=createCourtTextures(courtAtlas);
     this.root = new Container();
@@ -230,6 +264,7 @@ export class BoardScene {
     this.slotLayer = new Container();
     this.cardLayer = new Container();
     this.pileBadgeLayer = new Container();
+    this.pileBadges = new Map();
     this.transient = new Container();
     this.dropCue = new Graphics();
     this.transient.addChild(this.dropCue);
@@ -240,12 +275,16 @@ export class BoardScene {
     this.cards = this.cardStore.items;
     this.positions = new Map();
     this.targets = [];
+    this.current = null;
+    this.renderedCurrent = null;
     this.selection = null;
     this.pending = false;
     this.drag = null;
     this.lastTap = null;
     this.suppressTapUntil = 0;
     this.transitions = new TransitionController();
+    this.cardRedraws = 0;
+    this.slotRebuilds = 0;
     this.app.ticker.add(() => this.transitions.tick());
     this.app.stage.eventMode = 'static';
     this.app.stage.on('globalpointermove', (event) => this.pointerMove(event));
@@ -276,24 +315,27 @@ export class BoardScene {
   }
 
   transitionDuration(source, force, cardId, placement, handoffAccepted = false) {
-    if (source !== 'ack' || force) return 0;
+    if (source !== 'ack' || force || this.readOnly) return 0;
     if (this.dropHandoff) return 0;
-    return motionProfileFor(placement).duration * this.quality.motionScale;
+    return motionProfileFor(placement).duration * BoardScene.prototype.motionScale.call(this);
   }
 
+  motionScale() { return this.rendererPreference === 'canvas' ? 0 : this.quality.motionScale; }
+
   updateCard(view, placement, neutralInteraction = false) {
-    view.update(placement.card, placement.width, placement.height, placement.compact, {
+    const redrawn=view.update(placement.card, placement.width, placement.height, placement.compact, {
       selected: !neutralInteraction&&this.selection?.cardIds?.includes(placement.card.cardId),
       pending: !neutralInteraction&&this.pending&&this.selection?.cardIds?.includes(placement.card.cardId),
       shadows:this.quality.shadows
     });
+    if(redrawn)this.cardRedraws+=1;
   }
 
   animateHover(view, active) {
     const base=this.positions.get(view.cardId);
-    if(!base||this.drag||this.quality.motionScale===0)return;
+    if(!base||this.drag||this.motionScale()===0)return;
     const fromLift=view.hoverLift||0,toLift=active?4:0,fromScale=view.scale.x||1,toScale=active?1.018:1;
-    this.transitions.tween(`hover:${view.cardId}`,TOKENS.motion.hover*this.quality.motionScale,({eased})=>{
+    this.transitions.tween(`hover:${view.cardId}`,TOKENS.motion.hover*this.motionScale(),({eased})=>{
       view.hoverLift=fromLift+(toLift-fromLift)*eased;
       const scale=fromScale+(toScale-fromScale)*eased;
       view.position.set(base.x,base.y-view.hoverLift); view.scale.set(scale);
@@ -310,7 +352,7 @@ export class BoardScene {
   }
 
   animateFlip(view, placement) {
-    const duration=TOKENS.motion.flip*this.quality.motionScale;
+    const duration=TOKENS.motion.flip*this.motionScale();
     if(duration===0){this.updateCard(view,placement);return;}
     let swapped=false;
     this.transitions.tween(`flip:${view.cardId}`,duration,({progress})=>{
@@ -321,6 +363,9 @@ export class BoardScene {
   }
 
   drawBoard() {
+    const signature=JSON.stringify(this.layout);
+    if(this.boardSignature===signature)return;
+    this.boardSignature=signature;
     const { width, height, zones, foundations, card, pad } = this.layout;
     this.background.clear().rect(0, 0, width, height).fill(TOKENS.colors.felt);
     for (let x = -height; x < width + height; x += 24) this.background.moveTo(x, 0).lineTo(x + height, height).stroke({ color: TOKENS.colors.feltLight, alpha: .022, width: 1 });
@@ -389,7 +434,7 @@ export class BoardScene {
       const localHandoff=handoffAccepted&&this.dropHandoff?.ids.includes(placement.card.cardId);
       const turning = !isNew && previousCard?.faceDown && !placement.card.faceDown;
       const moving = duration > 0 && (previous.x !== placement.x || previous.y !== placement.y);
-      const flipInPlace = shouldAnimateFlip({ wasFaceDown:previousCard?.faceDown, faceDown:placement.card.faceDown, moving, source, force, motionScale:this.quality.motionScale });
+      const flipInPlace = shouldAnimateFlip({ wasFaceDown:previousCard?.faceDown, faceDown:placement.card.faceDown, moving, source, force, motionScale:this.readOnly?0:this.motionScale() });
       if(holdingDrag||holdingHandoff){
         this.transitions.cancel(`hover:${placement.card.cardId}`); this.updateCard(view,placement); view.zIndex=999;
         this.positions.set(placement.card.cardId,{x:placement.x,y:placement.y}); continue;
@@ -410,6 +455,7 @@ export class BoardScene {
     }
     this.cardStore.prune(seen, (view, id) => { view.destroy({ children: true }); this.positions.delete(id); });
     this.cardLayer.sortableChildren = true; this.cardLayer.sortChildren();
+    this.renderedCurrent = current;
     if (source === 'snapshot') this.transitions.cancelAndSnap(() => { for (const [id, p] of this.positions) this.cards.get(id)?.position.set(p.x, p.y); });
   }
 
@@ -432,8 +478,12 @@ export class BoardScene {
   }
 
   drawSlots() {
-    this.slotLayer.removeChildren().forEach((child) => child.destroy()); this.pileBadgeLayer.removeChildren().forEach((child)=>child.destroy({children:true})); this.targets = [];
     const { card, foundations, local, opponent } = this.layout;
+    const signature=`${JSON.stringify(this.layout)}|selected:${Boolean(this.selection)}`;
+    if(this.slotSignature!==signature){
+      this.slotSignature=signature;
+      this.slotRebuilds+=1;
+      this.slotLayer.removeChildren().forEach((child) => child.destroy()); this.targets = [];
     const slot = (p, width, height, target, label, interactive = false) => {
       const container = new Container();
       const surface = new Graphics().roundRect(0, 0, width, height, Math.max(5, width * .07)).fill({ color: TOKENS.colors.slot, alpha: .72 }).stroke({ color: this.selection && interactive ? TOKENS.colors.amber : TOKENS.colors.brass, alpha: this.selection && interactive ? .9 : .42, width: this.selection && interactive ? 2.5 : 1.2 });
@@ -442,18 +492,31 @@ export class BoardScene {
       container.position.set(p.x, p.y); container.eventMode = interactive ? 'static' : 'none'; container.cursor = interactive ? 'pointer' : 'default'; container.hitArea={contains:(x,y)=>x>=0&&y>=0&&x<=width&&y<=height}; if (interactive) container.on('pointertap', () => this.callbacks.onTarget?.(target));
       this.slotLayer.addChild(container); this.targets.push({ ...target, x: p.x, y: p.y, width, height });
     };
-    const badge=(p,width,height,count,compact=false)=>{
+      slot(opponent.stock, card.compactWidth, card.compactHeight, {}, '✦'); slot(opponent.waste, card.compactWidth, card.compactHeight, {}, '');
+      foundations.forEach((p) => slot(p, card.width, card.height, { zone: 'foundation', index: p.index }, SUITS[p.suit], Boolean(this.selection)));
+      slot(local.stock, card.width, card.height, { zone: 'stock' }, '✦', true); slot(local.waste, card.width, card.height, {}, '');
+      local.tableau.forEach((p) => slot(p, card.width, card.height, { zone: 'tableau', index: p.index }, '', Boolean(this.selection)));
+    }
+    const badge=(key,p,width,height,count,compact=false)=>{
       const label=String(count),badgeHeight=compact?17:21,badgeWidth=Math.max(compact?19:23,label.length*(compact?7:8)+10);
-      const container=new Container(),surface=new Graphics().roundRect(0,0,badgeWidth,badgeHeight,badgeHeight/2).fill({color:0x160d08,alpha:.94}).stroke({color:TOKENS.colors.brass,alpha:.88,width:1.2});
-      const text=new Text({text:label,style:{fontFamily:'Georgia',fontWeight:'700',fontSize:compact?11:13,fill:TOKENS.colors.ivoryLight}}); text.anchor.set(.5); text.position.set(badgeWidth/2,badgeHeight/2-.5);
-      container.addChild(surface,text); container.position.set(p.x+width-badgeWidth*.72,p.y+5); container.eventMode='none'; this.pileBadgeLayer.addChild(container);
+      let item=this.pileBadges.get(key);
+      if(!item){
+        const container=new Container(),surface=new Graphics(),text=new Text({text:'',style:{fontFamily:'Georgia',fontWeight:'700',fontSize:compact?11:13,fill:TOKENS.colors.ivoryLight}});
+        text.anchor.set(.5);container.addChild(surface,text);container.eventMode='none';this.pileBadgeLayer.addChild(container);
+        item={container,surface,text,shapeSignature:''};this.pileBadges.set(key,item);
+      }
+      const shapeSignature=`${badgeWidth}|${badgeHeight}`;
+      if(item.shapeSignature!==shapeSignature){
+        item.shapeSignature=shapeSignature;item.surface.clear().roundRect(0,0,badgeWidth,badgeHeight,badgeHeight/2).fill({color:0x160d08,alpha:.94}).stroke({color:TOKENS.colors.brass,alpha:.88,width:1.2});
+        item.text.position.set(badgeWidth/2,badgeHeight/2-.5);
+      }
+      if(item.text.text!==label)item.text.text=label;
+      item.container.position.set(p.x+width-badgeWidth*.72,p.y+5);
     };
-    slot(opponent.stock, card.compactWidth, card.compactHeight, {}, '✦'); slot(opponent.waste, card.compactWidth, card.compactHeight, {}, '');
-    badge(opponent.stock,card.compactWidth,card.compactHeight,this.opponent?.stock.length||0,true); badge(opponent.waste,card.compactWidth,card.compactHeight,this.opponent?.waste.length||0,true);
-    foundations.forEach((p) => slot(p, card.width, card.height, { zone: 'foundation', index: p.index }, SUITS[p.suit], Boolean(this.selection)));
-    slot(local.stock, card.width, card.height, { zone: 'stock' }, '✦', true); slot(local.waste, card.width, card.height, {}, '');
-    badge(local.stock,card.width,card.height,this.local?.stock.length||0); badge(local.waste,card.width,card.height,this.local?.waste.length||0);
-    local.tableau.forEach((p) => slot(p, card.width, card.height, { zone: 'tableau', index: p.index }, '', Boolean(this.selection)));
+    badge('opponent-stock',opponent.stock,card.compactWidth,card.compactHeight,this.opponent?.stock.length||0,true);
+    badge('opponent-waste',opponent.waste,card.compactWidth,card.compactHeight,this.opponent?.waste.length||0,true);
+    badge('local-stock',local.stock,card.width,card.height,this.local?.stock.length||0);
+    badge('local-waste',local.waste,card.width,card.height,this.local?.waste.length||0);
   }
 
   setLocalId(id) { this.localId = id === 'observer' ? 'p1' : id; this.readOnly = id === 'observer'; }
@@ -462,6 +525,7 @@ export class BoardScene {
   setPending(value) { this.pending = value; if(value&&this.dropHandoff)return; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
   clearTransient() { this.drag = null; this.dropHandoff = null; this.selection = null; this.pending = false; this.lastTap = null; this.dropCue.clear(); this.transitions.cancelAndSnap(() => { for (const [id,p] of this.positions) { const view=this.cards.get(id); if(view){view.position.set(p.x,p.y);view.scale.set(1);view.rotation=0;view.hoverLift=0;} } }); }
   cancelInteraction() {
+    const deferredCurrent=this.current!==this.renderedCurrent?this.current:null;
     const preserveActiveAlpha=this.dropHandoff?.source?.zone!=='waste';
     this.drag = null; this.dropHandoff = null; this.selection = null; this.pending = false; this.lastTap = null; this.dropCue.clear();
     for (const view of this.cards.values()) {
@@ -471,8 +535,9 @@ export class BoardScene {
       if(active){if(preserveActiveAlpha)view.alpha=activeAlpha;}
       else{view.scale.set(1);view.rotation=0;view.hoverLift=0;}
     }
+    if(deferredCurrent)this.applyState(deferredCurrent,{source:'snapshot',force:true});
   }
-  rejectToAuthority() { const dragged = this.drag?.ids || this.dropHandoff?.ids || this.selection?.cardIds || []; this.dropCue.clear(); for (const id of dragged) { const view=this.cards.get(id), target=this.positions.get(id); if(view&&target) { const startScale=view.scale.x||1; this.transitions.move(`reject:${id}`,{x:view.x,y:view.y},target,TOKENS.motion.reject*this.quality.motionScale,(p)=>{view.position.set(p.x,p.y);view.scale.set(startScale+(1-startScale)*p.eased);},()=>view.scale.set(1)); } } this.drag=null; this.dropHandoff=null; }
+  rejectToAuthority() { const dragged = this.drag?.ids || this.dropHandoff?.ids || this.selection?.cardIds || []; this.dropCue.clear(); for (const id of dragged) { const view=this.cards.get(id), target=this.positions.get(id); if(view&&target) { const duration=TOKENS.motion.reject*this.motionScale(); if(duration===0){view.position.set(target.x,target.y);view.scale.set(1);continue;} const startScale=view.scale.x||1; this.transitions.move(`reject:${id}`,{x:view.x,y:view.y},target,duration,(p)=>{view.position.set(p.x,p.y);view.scale.set(startScale+(1-startScale)*p.eased);},()=>view.scale.set(1)); } } this.drag=null; this.dropHandoff=null; }
 
   celebrate({ force = false } = {}) {
     if (!this.quality.particles && !force) return false;
@@ -503,7 +568,7 @@ export class BoardScene {
 
   diagnostics() {
     const renderer=this.app.renderer;
-    return { width:Math.round(this.layout?.width||0),height:Math.round(this.layout?.height||0),cardWidth:Math.round(this.layout?.card.width||0),cardHeight:Math.round(this.layout?.card.height||0),resolution:renderer.resolution };
+    return { width:Math.round(this.layout?.width||0),height:Math.round(this.layout?.height||0),cardWidth:Math.round(this.layout?.card.width||0),cardHeight:Math.round(this.layout?.card.height||0),resolution:renderer.resolution,rendererName:this.rendererPreference,tickerStarted:this.app.ticker.started,cardRedraws:this.cardRedraws,slotRebuilds:this.slotRebuilds };
   }
 
   pointerTap(event, id) {
@@ -529,7 +594,7 @@ export class BoardScene {
     const dx = event.global.x - this.drag.start.x, dy = event.global.y - this.drag.start.y;
     if (!this.drag.active && Math.hypot(dx,dy) > 7) { this.drag.active = true; this.callbacks.onSource?.(this.drag.source, this.drag.source.card); }
     if (this.drag.active) {
-      for (const id of this.drag.ids) { const view=this.cards.get(id), origin=this.drag.offsets.get(id); if(view&&origin) { view.position.set(origin.x+dx,origin.y+dy); view.scale.set(this.quality.motionScale===0?1:1.025); view.zIndex=999; } }
+      for (const id of this.drag.ids) { const view=this.cards.get(id), origin=this.drag.offsets.get(id); if(view&&origin) { view.position.set(origin.x+dx,origin.y+dy); view.scale.set(this.motionScale()===0?1:1.025); view.zIndex=999; } }
       this.showDropCue(nearestDropTarget(this.targets,event.global,this.layout.card),this.drag.source);
     }
   }
