@@ -254,10 +254,26 @@ test('settings persist the local stock and waste side without changing game stat
   assert.match(main,/board\.setStockSide\(stockSide\)/);
 });
 
+test('production build is an installable web app scoped to the Pixi route',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const manifest=JSON.parse(fs.readFileSync(path.join(root,'public/manifest.webmanifest'),'utf8'));
+  const worker=fs.readFileSync(path.join(root,'public/service-worker.js'),'utf8');
+  const server=fs.readFileSync(path.resolve(root,'../server/index.js'),'utf8');
+  assert.match(html,/rel="manifest" href="\/vnext\/pixi\/manifest\.webmanifest"/);
+  assert.match(html,/rel="apple-touch-icon"/);
+  assert.equal(manifest.scope,'/vnext/pixi/');
+  assert.equal(manifest.display,'standalone');
+  assert.equal(manifest.icons.length,3);
+  assert.match(main,/navigator\.serviceWorker\.register\('\/vnext\/pixi\/service-worker\.js'/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.1\.37/);
+  assert.match(server,/application\/manifest\+json/);
+});
+
 test('error report contains the complete match context and recent local events',()=>{
   const client={clientId:'p1',matchId:'m-247',current:{rev:18,stateHash:'abc123',state:{mode:'shared',status:'active'}}};
-  const report=buildErrorReport({version:'0.1.36',protocolVersion:'2.5.2',client,activeKind:'bot',baseUrl:'https://example.test',debugLines:['20:15:01 ack rev=18'],timestamp:'2026-09-03T20:15:02Z',userAgent:'TestBrowser'});
-  assert.match(report,/Pixi Client: 0\.1\.36/);
+  const report=buildErrorReport({version:'0.1.37',protocolVersion:'2.5.2',client,activeKind:'bot',baseUrl:'https://example.test',debugLines:['20:15:01 ack rev=18'],timestamp:'2026-09-03T20:15:02Z',userAgent:'TestBrowser'});
+  assert.match(report,/Pixi Client: 0\.1\.37/);
   assert.match(report,/Match-ID: m-247/);
   assert.match(report,/Rolle: p1/);
   assert.match(report,/Revision: 18/);

@@ -15,7 +15,7 @@ import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, retryableSequenceReject, sameTableauSelection, waitingMatchMessage } from './bridge/match-context.js';
 import { buildErrorReport, describeOpponent } from './diagnostics/error-report.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.1.36';
+export const WEB_PIXI_CLIENT_VERSION = '0.1.37';
 const PROTOCOL_VERSION = '2.5.2';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
@@ -188,5 +188,7 @@ $('#quality').onchange=()=>{localStorage.setItem(STORAGE.quality,$('#quality').v
 $('#preview-final-sequence').onclick=()=>{const names=participantNames(),p1=client?.current?.state.players?.p1?.score??0,p2=client?.current?.state.players?.p2?.score??0;overlayOpen($('#menu-overlay'),false);$('#game-over-title').textContent='Finale Vorschau';$('#game-over-text').textContent=`${names.p1} ${p1} · ${names.p2} ${p2}`;const animated=!reducedMotion&&board.celebrate({force:true});status(animated?'Konfetti und Feuerwerk werden getestet':'Finalanimation wegen reduzierter Bewegung ausgelassen','Finale');setTimeout(()=>{if(!$('#game-over').open)$('#game-over').showModal();},animated?1100:0);};
 window.addEventListener('keydown',(event)=>{if(event.key==='Escape'){selection=null;board.setSelection(null);all('.overlay:not([hidden])').filter(x=>x.id!=='start-overlay').forEach(x=>overlayOpen(x,false));}});
 window.addEventListener('resize',resizeBoard);
+
+if(import.meta.env.PROD&&'serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/vnext/pixi/service-worker.js',{scope:'/vnext/pixi/'}).catch((error)=>debug(`service worker ${error.message}`)));
 
 const launch=readLaunchParams(location.search); if(new URLSearchParams(location.search).get('demo')==='1')startDemo(); else if(launch)connect(launch.matchId,launch.role).catch(e=>showToast(e.message,'error')); else ensurePlayer().then(()=>refreshLobby()).catch(()=>refreshLobby().catch(()=>{}));
