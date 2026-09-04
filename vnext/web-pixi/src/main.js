@@ -16,7 +16,7 @@ import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, resignDecision, resignResultCopy, retryableSequenceReject, sameTableauSelection, seedForHostedGame, waitingMatchMessage } from './bridge/match-context.js';
 import { buildErrorReport, copyDiagnosticText, describeOpponent } from './diagnostics/error-report.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.1.46';
+export const WEB_PIXI_CLIENT_VERSION = '0.2.0';
 const PROTOCOL_VERSION = '2.5.2';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];

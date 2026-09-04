@@ -11,7 +11,7 @@
     <link rel="manifest" href="/vnext/pixi/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/vnext/pixi/icons/apple-touch-icon.png" />
     <title>Solitaire HighNoon · Pixi</title>
-    <script type="module" crossorigin src="/vnext/pixi/assets/index-RUuJcuCt.js"></script>
+    <script type="module" crossorigin src="/vnext/pixi/assets/index-gyMdy_x0.js"></script>
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/Geometry-DoNiSHBh.js">
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/Filter-s671BCjm.js">
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/canvasUtils-C68kG0EC.js">
@@ -57,7 +57,7 @@
 
       <div id="menu-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="menu-title">
         <section class="panel menu-panel">
-          <header class="menu-header"><div><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2></div><div class="menu-header-meta"><span id="menu-context">Kein aktives Spiel</span><span class="version-chip">v0.1.46</span><button class="close" data-close aria-label="Menü schließen">×</button></div></header>
+          <header class="menu-header"><div><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2></div><div class="menu-header-meta"><span id="menu-context">Kein aktives Spiel</span><span class="version-chip">v0.2.0</span><button class="close" data-close aria-label="Menü schließen">×</button></div></header>
           <nav class="menu-tabs" aria-label="Menübereiche" role="tablist">
             <button class="menu-tab active" role="tab" data-menu-tab="lobby"><span aria-hidden="true">⌂</span>Lobby</button><button class="menu-tab" role="tab" data-menu-tab="settings"><span aria-hidden="true"><i class="settings-gear">⚙︎</i></span>Einstellungen</button><button class="menu-tab" role="tab" data-menu-tab="game"><span aria-hidden="true">♠</span>Spiel</button><button class="menu-tab" role="tab" data-menu-tab="new-game"><span aria-hidden="true">★</span>Neues Spiel</button><button class="menu-tab" role="tab" data-menu-tab="bot"><span aria-hidden="true">♟</span>Bot</button><button class="menu-tab" role="tab" data-menu-tab="share"><span aria-hidden="true">➶</span>Teilen</button><button class="menu-tab" role="tab" data-menu-tab="info"><span aria-hidden="true">i</span>Info &amp; Diagnose</button>
           </nav>
@@ -110,7 +110,7 @@
             </section>
             <section class="menu-pane" data-menu-panel="info" hidden>
               <div class="pane-heading"><p class="eyebrow">SYSTEMSTATUS</p><h3>Info &amp; Diagnose</h3><p>Technische Daten für die Fehlersuche. Der Bericht enthält keine Spielzüge anderer Partien.</p></div>
-              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protokoll</dt><dd>2.5.2</dd><dt>Webclient</dt><dd>PixiJS 8 · 0.1.46</dd><dt>Match-ID</dt><dd id="info-match">–</dd><dt>Rolle</dt><dd id="info-role">–</dd><dt>Gegner/Bot</dt><dd id="info-opponent">–</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>State-Hash</dt><dd id="info-hash">–</dd></dl>
+              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protokoll</dt><dd>2.5.2</dd><dt>Webclient</dt><dd>PixiJS 8 · 0.2.0</dd><dt>Match-ID</dt><dd id="info-match">–</dd><dt>Rolle</dt><dd id="info-role">–</dd><dt>Gegner/Bot</dt><dd id="info-opponent">–</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>State-Hash</dt><dd id="info-hash">–</dd></dl>
               <div class="diagnostic-action"><div><strong>Fehlerbericht</strong><p>Version, Match-Kontext und letzte lokale Ereignisse in die Zwischenablage kopieren.</p></div><button id="copy-error-report" class="primary">Fehlerbericht kopieren</button></div>
               <textarea id="error-report-output" class="diagnostic-report" readonly hidden aria-label="Fehlerbericht zum manuellen Kopieren"></textarea>
             </section>
@@ -119,7 +119,7 @@
       </div>
 
       <div id="profile-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="profile-title" hidden>
-        <section class="panel compact-panel"><button class="close" data-close>×</button><p class="eyebrow">PROFIL</p><h2 id="profile-title">Spieler</h2><dl><dt>Rolle</dt><dd id="profile-role">–</dd><dt>Match</dt><dd id="profile-match">–</dd><dt>Version</dt><dd>Pixi Client 0.1.46</dd><dt>Protokoll</dt><dd>2.5.2</dd></dl></section>
+        <section class="panel compact-panel"><button class="close" data-close>×</button><p class="eyebrow">PROFIL</p><h2 id="profile-title">Spieler</h2><dl><dt>Rolle</dt><dd id="profile-role">–</dd><dt>Match</dt><dd id="profile-match">–</dd><dt>Version</dt><dd>Pixi Client 0.2.0</dd><dt>Protokoll</dt><dd>2.5.2</dd></dl></section>
       </div>
 
       <dialog id="restart-dialog"><h2>Neu starten</h2><p>Mit derselben Verteilung oder einem neuen Seed?</p><form method="dialog" class="button-row"><button id="restart-same" value="same">Gleicher Seed</button><button id="restart-new" value="new">Neuer Seed</button><button value="cancel">Abbrechen</button></form></dialog>
