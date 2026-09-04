@@ -9,7 +9,7 @@ import { resolveQuality } from '../src/theme/tokens.js';
 import { TransitionController } from '../src/animation/transition-controller.js';
 import { BoardScene, cardVisualSignature, handoffReachedState, handoffReachedTarget, motionProfileFor, placementMatchesHandoffTarget, shouldAnimateFlip, shouldHoldActiveDrag, shouldSuppressPostDragTap, visiblePileCards } from '../src/render/board-scene.js';
 import { buildErrorReport, copyDiagnosticText, describeOpponent } from '../src/diagnostics/error-report.js';
-import { isAppleTouchDevice, rendererPreferenceFor, tickerMaxFpsFor } from '../src/render/renderer-profile.js';
+import { celebrationProfileFor, isAppleTouchDevice, rendererPreferenceFor, tickerMaxFpsFor } from '../src/render/renderer-profile.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
@@ -52,6 +52,14 @@ test('only reduced-quality canvas rendering is capped at 30 FPS',()=>{
   assert.equal(tickerMaxFpsFor({rendererPreference:'webgl',qualityName:'reduced'}),0);
 });
 
+test('finale policy keeps canvas and reduced profiles lightweight',()=>{
+  assert.deepEqual(celebrationProfileFor({rendererPreference:'webgl',qualityName:'high'}),{mode:'full',dialogDelay:950});
+  assert.deepEqual(celebrationProfileFor({rendererPreference:'webgl',qualityName:'balanced'}),{mode:'full',dialogDelay:950});
+  assert.deepEqual(celebrationProfileFor({rendererPreference:'canvas',qualityName:'high'}),{mode:'lite',dialogDelay:650});
+  assert.deepEqual(celebrationProfileFor({rendererPreference:'webgl',qualityName:'reduced'}),{mode:'lite',dialogDelay:650});
+  assert.deepEqual(celebrationProfileFor({rendererPreference:'canvas',qualityName:'reduced',prefersReducedMotion:true}),{mode:'static',dialogDelay:0});
+});
+
 test('snapshot cancellation clears transitions and snaps once',()=>{
   let time=0,updates=0,snaps=0; const transitions=new TransitionController({now:()=>time});
   transitions.move('card',{x:0,y:0},{x:10,y:20},100,()=>updates++); time=40; transitions.tick(); assert.equal(updates,1);
@@ -84,6 +92,7 @@ test('score names, board debug overlay and finale preview stay wired',()=>{
   assert.doesNotMatch(html,/id="hud-toggle"/);
   assert.match(boardShell,/id="debug-hud"/);
   assert.match(source,/board\.celebrate\(\{force:true\}\)/);
+  assert.doesNotMatch(source,/!reducedMotion&&board\.celebrate/);
 });
 
 test('retina resolution never shrinks the logical board layout',()=>{

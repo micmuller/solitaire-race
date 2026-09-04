@@ -4,6 +4,7 @@ import { TOKENS } from '../theme/tokens.js';
 import { TransitionController } from '../animation/transition-controller.js';
 import { RetainedCardStore } from './retained-card-store.js';
 import { nearestDropTarget } from '../input/drop-target.js';
+import { celebrationProfileFor } from './renderer-profile.js';
 
 const SUITS = { C: '♣', D: '♦', H: '♥', S: '♠' };
 const RANKS = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
@@ -242,12 +243,13 @@ class CardView extends Container {
 }
 
 export class BoardScene {
-  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, stockSide = 'left', courtAtlas = null, materials = {}, rendererPreference = 'unknown', tickerMaxFps = 0 }) {
+  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, stockSide = 'left', courtAtlas = null, materials = {}, rendererPreference = 'unknown', tickerMaxFps = 0, prefersReducedMotion = false }) {
     this.app = app;
     this.callbacks = { onSource, onStock, onTarget, onAutoFoundation, canInteract };
     this.quality = quality;
     this.rendererPreference = rendererPreference;
     this.tickerMaxFps = tickerMaxFps;
+    this.prefersReducedMotion = prefersReducedMotion;
     this.stockSide = stockSide === 'right' ? 'right' : 'left';
     this.courtTextures=createCourtTextures(courtAtlas);
     this.root = new Container();
@@ -541,10 +543,41 @@ export class BoardScene {
   rejectToAuthority() { const dragged = this.drag?.ids || this.dropHandoff?.ids || this.selection?.cardIds || []; this.dropCue.clear(); for (const id of dragged) { const view=this.cards.get(id), target=this.positions.get(id); if(view&&target) { const duration=TOKENS.motion.reject*this.motionScale(); if(duration===0){view.position.set(target.x,target.y);view.scale.set(1);continue;} const startScale=view.scale.x||1; this.transitions.move(`reject:${id}`,{x:view.x,y:view.y},target,duration,(p)=>{view.position.set(p.x,p.y);view.scale.set(startScale+(1-startScale)*p.eased);},()=>view.scale.set(1)); } } this.drag=null; this.dropHandoff=null; }
 
   celebrate({ force = false } = {}) {
-    if (!this.quality.particles && !force) return false;
+    const profile=celebrationProfileFor({rendererPreference:this.rendererPreference,qualityName:this.quality.name,prefersReducedMotion:this.prefersReducedMotion});
     this.stopCelebration?.();
+    if(profile.mode!=='full'){
+      const accent=new Graphics();
+      const inset=Math.max(16,Math.min(this.layout.width,this.layout.height)*.045);
+      accent.roundRect(inset,inset,this.layout.width-inset*2,this.layout.height-inset*2,24)
+        .stroke({color:TOKENS.colors.brassLight,alpha:.9,width:4});
+      accent.circle(this.layout.width*.5,this.layout.height*.5,Math.min(this.layout.width,this.layout.height)*.12)
+        .stroke({color:TOKENS.colors.amber,alpha:.68,width:3});
+      for(let index=0;index<12;index++){
+        const angle=Math.PI*2*index/12,inner=Math.min(this.layout.width,this.layout.height)*.15,outer=inner+18;
+        accent.moveTo(this.layout.width*.5+Math.cos(angle)*inner,this.layout.height*.5+Math.sin(angle)*inner)
+          .lineTo(this.layout.width*.5+Math.cos(angle)*outer,this.layout.height*.5+Math.sin(angle)*outer);
+      }
+      accent.stroke({color:TOKENS.colors.brassLight,alpha:.7,width:2});
+      accent.alpha=profile.mode==='static'?1:0;
+      this.effects.addChild(accent);
+      const cleanup=()=>{if(!accent.destroyed)accent.destroy();this.stopCelebration=null;};
+      if(profile.mode==='static'){
+        this.stopCelebration=cleanup;
+        this.app.render();
+        return profile;
+      }
+      let elapsed=0;
+      const tick=(ticker)=>{
+        elapsed+=ticker.deltaMS;
+        accent.alpha=Math.sin(Math.PI*Math.min(1,elapsed/900));
+        if(elapsed>=900)this.stopCelebration?.();
+      };
+      this.stopCelebration=()=>{this.app.ticker.remove(tick);cleanup();};
+      this.app.ticker.add(tick);
+      return profile;
+    }
     const palette=[TOKENS.colors.brassLight,TOKENS.colors.amber,0xd95446,0x76c98b,0xf3ead6];
-    const confettiCount=Math.max(36,this.quality.particles*2,force?64:0);
+    const confettiCount=Math.max(36,this.quality.particles*2);
     const particles=[];
     for(let index=0;index<confettiCount;index++){
       const width=4+(index%4),height=7+(index%3)*2;
@@ -564,7 +597,7 @@ export class BoardScene {
       if(elapsed>2700)this.stopCelebration?.();
     };
     this.stopCelebration=()=>{this.app.ticker.remove(tick);particles.forEach((particle)=>particle.destroy());this.stopCelebration=null;};
-    this.app.ticker.add(tick); return true;
+    this.app.ticker.add(tick); return profile;
   }
 
   diagnostics() {

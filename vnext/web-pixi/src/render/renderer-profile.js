@@ -11,3 +11,9 @@ export function rendererPreferenceFor(device = {}) {
 export function tickerMaxFpsFor({ rendererPreference, qualityName } = {}) {
   return rendererPreference === 'canvas' && qualityName === 'reduced' ? 30 : 0;
 }
+
+export function celebrationProfileFor({ rendererPreference, qualityName, prefersReducedMotion = false } = {}) {
+  if (prefersReducedMotion) return { mode: 'static', dialogDelay: 0 };
+  if (rendererPreference === 'canvas' || qualityName === 'reduced') return { mode: 'lite', dialogDelay: 650 };
+  return { mode: 'full', dialogDelay: 950 };
+}
