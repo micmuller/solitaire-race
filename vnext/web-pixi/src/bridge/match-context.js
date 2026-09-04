@@ -38,6 +38,21 @@ export function resignDecision({ endedReason, role, hasLobbySession = false } = 
   return role === 'p1' ? 'host-choice' : role === 'p2' ? 'guest-wait' : 'generic';
 }
 
+export function resignResultCopy({ state, names, decision } = {}) {
+  const winnerName = names?.[state?.winner] || 'Gewinner';
+  const resignedName = names?.[state?.endedBy] || 'Ein Spieler';
+  const score = `${names?.p1 || 'Spieler 1'} ${state?.players?.p1?.score ?? 0} · ${names?.p2 || 'Spieler 2'} ${state?.players?.p2?.score ?? 0}`;
+  const followUp = decision === 'host-choice'
+    ? 'Mit neuem Seed weiterspielen?'
+    : decision === 'guest-wait'
+      ? 'P1 entscheidet über Neustart oder Lobby.'
+      : '';
+  return {
+    title: `${winnerName} gewinnt!`,
+    text: `${resignedName} hat aufgegeben. Spielstand: ${score}.${followUp ? ` ${followUp}` : ''}`,
+  };
+}
+
 export function seedForHostedGame({ requestedSeed = '', technical = false, generateSeed } = {}) {
   if (technical && typeof requestedSeed === 'string' && requestedSeed.trim()) return requestedSeed.trim();
   if (typeof generateSeed !== 'function') throw new TypeError('generateSeed is required');

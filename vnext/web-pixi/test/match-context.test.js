@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { gameForMatch, guestSessionCandidate, interactionAllowed, resignDecision, retryableSequenceReject, sameTableauSelection, seedForHostedGame, waitingMatchMessage } from '../src/bridge/match-context.js';
+import { gameForMatch, guestSessionCandidate, interactionAllowed, resignDecision, resignResultCopy, retryableSequenceReject, sameTableauSelection, seedForHostedGame, waitingMatchMessage } from '../src/bridge/match-context.js';
 
 const current={state:{status:'active'}};
 
@@ -49,6 +49,19 @@ test('resign finale assigns the server-authoritative decision only to lobby P1',
   assert.equal(resignDecision({endedReason:'resign',role:'p2',hasLobbySession:true}),'guest-wait');
   assert.equal(resignDecision({endedReason:'completed',role:'p1',hasLobbySession:true}),'generic');
   assert.equal(resignDecision({endedReason:'resign',role:'p1',hasLobbySession:false}),'generic');
+});
+
+test('resign finale names the authoritative winner for both follow-up roles',()=>{
+  const state={winner:'p2',endedBy:'p1',players:{p1:{score:41},p2:{score:56}}};
+  const names={p1:'Anna',p2:'Beat'};
+  assert.deepEqual(resignResultCopy({state,names,decision:'host-choice'}),{
+    title:'Beat gewinnt!',
+    text:'Anna hat aufgegeben. Spielstand: Anna 41 · Beat 56. Mit neuem Seed weiterspielen?',
+  });
+  assert.deepEqual(resignResultCopy({state,names,decision:'guest-wait'}),{
+    title:'Beat gewinnt!',
+    text:'Anna hat aufgegeben. Spielstand: Anna 41 · Beat 56. P1 entscheidet über Neustart oder Lobby.',
+  });
 });
 
 test('normal hosting always generates a fresh seed while technical hosting may preserve one',()=>{
