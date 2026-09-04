@@ -323,8 +323,17 @@ test('production build is an installable web app scoped to the Pixi route',()=>{
   assert.equal(manifest.display,'standalone');
   assert.equal(manifest.icons.length,3);
   assert.match(main,/navigator\.serviceWorker\.register\('\/vnext\/pixi\/service-worker\.js'/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.1\.45/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.1\.46/);
   assert.match(server,/application\/manifest\+json/);
+});
+
+test('ordinary lobby hosting cannot reuse the diagnostic seed field',()=>{
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const standardHandler=main.match(/\$\('#menu-host-game'\)\.onclick=([^;]+);/)?.[1]||'';
+  const technicalHandler=main.match(/\$\('#technical-start'\)\.onclick=([^;]+);/)?.[1]||'';
+  assert.doesNotMatch(standardHandler,/requestedSeed|menu-seed/);
+  assert.match(technicalHandler,/requestedSeed/);
+  assert.match(technicalHandler,/technicalSeed:true/);
 });
 
 test('installed iOS app reserves the status bar and card wear stays stable',()=>{

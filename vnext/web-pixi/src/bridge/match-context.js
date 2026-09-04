@@ -37,3 +37,9 @@ export function resignDecision({ endedReason, role, hasLobbySession = false } = 
   if (endedReason !== 'resign' || !hasLobbySession) return 'generic';
   return role === 'p1' ? 'host-choice' : role === 'p2' ? 'guest-wait' : 'generic';
 }
+
+export function seedForHostedGame({ requestedSeed = '', technical = false, generateSeed } = {}) {
+  if (technical && typeof requestedSeed === 'string' && requestedSeed.trim()) return requestedSeed.trim();
+  if (typeof generateSeed !== 'function') throw new TypeError('generateSeed is required');
+  return generateSeed();
+}

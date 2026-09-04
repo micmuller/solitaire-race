@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { gameForMatch, guestSessionCandidate, interactionAllowed, resignDecision, retryableSequenceReject, sameTableauSelection, waitingMatchMessage } from '../src/bridge/match-context.js';
+import { gameForMatch, guestSessionCandidate, interactionAllowed, resignDecision, retryableSequenceReject, sameTableauSelection, seedForHostedGame, waitingMatchMessage } from '../src/bridge/match-context.js';
 
 const current={state:{status:'active'}};
 
@@ -49,4 +49,13 @@ test('resign finale assigns the server-authoritative decision only to lobby P1',
   assert.equal(resignDecision({endedReason:'resign',role:'p2',hasLobbySession:true}),'guest-wait');
   assert.equal(resignDecision({endedReason:'completed',role:'p1',hasLobbySession:true}),'generic');
   assert.equal(resignDecision({endedReason:'resign',role:'p1',hasLobbySession:false}),'generic');
+});
+
+test('normal hosting always generates a fresh seed while technical hosting may preserve one',()=>{
+  let generated=0;
+  const generateSeed=()=>`FRESH-${++generated}`;
+  assert.equal(seedForHostedGame({requestedSeed:'STALE',generateSeed}),'FRESH-1');
+  assert.equal(seedForHostedGame({requestedSeed:'STALE',generateSeed}),'FRESH-2');
+  assert.equal(seedForHostedGame({requestedSeed:' TEST-SEED ',technical:true,generateSeed}),'TEST-SEED');
+  assert.equal(seedForHostedGame({requestedSeed:'',technical:true,generateSeed}),'FRESH-3');
 });
