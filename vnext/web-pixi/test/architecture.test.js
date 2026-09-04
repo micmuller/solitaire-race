@@ -301,6 +301,17 @@ test('Pixi bot menu uses the human-facing difficulty profiles',()=>{
   assert.doesNotMatch(select,/value="(?:slow|normal|fast)"/);
 });
 
+test('Pixi bot menu selects split or shared for both bot match types',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const select=html.match(/<select id="bot-mode">[\s\S]*?<\/select>/)?.[0] ?? '';
+  assert.match(select,/value="split">Split/);
+  assert.match(select,/value="shared">Shared/);
+  assert.match(main,/createMatch\(baseUrl,generateRandomSeed\(\),mode\)/);
+  assert.match(main,/hostBot\(false,\$\('#bot-speed'\)\.value,\$\('#bot-mode'\)\.value\)/);
+  assert.match(main,/hostBot\(true,\$\('#bot-speed'\)\.value,\$\('#bot-mode'\)\.value\)/);
+});
+
 test('menu keeps seven ordered areas and exposes the diagnostic report action',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const tabs=[...html.matchAll(/data-menu-tab="([^"]+)"/g)].map((match)=>match[1]);
