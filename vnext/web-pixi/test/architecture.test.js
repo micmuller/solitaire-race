@@ -312,6 +312,18 @@ test('menu keeps seven ordered areas and exposes the diagnostic report action',(
   assert.match(fs.readFileSync(path.join(root,'src/main.js'),'utf8'),/aria-selected/);
 });
 
+test('the menu lobby is the single lobby view at launch and after leaving a match',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  assert.doesNotMatch(html,/id="start-overlay"/);
+  assert.equal((html.match(/id="menu-lobby-games"/g)||[]).length,1);
+  assert.match(html,/id="menu-overlay" class="overlay"[^>]*>\s*<section/);
+  assert.match(html,/class="menu-tab active" role="tab" data-menu-tab="lobby"/);
+  assert.match(html,/class="menu-pane active" data-menu-panel="lobby"/);
+  assert.match(main,/openMenuTab\('lobby'\);overlayOpen\(\$\('#menu-overlay'\),true\)/);
+  assert.match(main,/openMenuTab\(client\?'game':'lobby'\)/);
+});
+
 test('settings persist the local stock and waste side without changing game state',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');

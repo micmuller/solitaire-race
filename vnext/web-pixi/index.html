@@ -41,36 +41,19 @@
       <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
       <div id="accessible-state" class="sr-only" aria-live="polite"></div>
 
-      <div id="start-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="start-title">
-        <section class="panel start-panel">
-          <p class="eyebrow">PIXIJS 8 · CLIENT 0.1.46</p>
-          <h1 id="start-title">Willkommen am Tisch</h1>
-          <p>Lobby, Matchmaking und Diagnose bleiben zugänglich im DOM. Das Spielbrett wird vollständig durch PixiJS gerendert.</p>
-          <label>Nickname <input id="nickname" value="HighNoon" maxlength="30" /></label>
-          <label>Spielname <input id="game-name" value="Abendrunde" maxlength="50" /></label>
-          <div class="segmented" aria-label="Spielmodus">
-            <button data-mode="split" aria-pressed="true">Split</button>
-            <button data-mode="shared" aria-pressed="false">Shared</button>
-          </div>
-          <div class="button-row"><button id="host-game" class="primary">Als P1 hosten</button><button id="refresh-games">Lobby aktualisieren</button></div>
-          <div class="button-row"><button id="host-bot">Human vs Bot</button><button id="bot-versus">Bot vs Bot</button><button id="demo-game">Visuelle Demo</button></div>
-          <div id="lobby-games" class="lobby-list" aria-label="Offene Spiele"></div>
-          <details><summary>Technischer Match-Fallback</summary><div class="fallback"><input id="match-id" placeholder="Match-ID" /><select id="role"><option>p1</option><option>p2</option><option>observer</option></select><button id="connect-match">Verbinden</button></div></details>
-        </section>
-      </div>
-
-      <div id="menu-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="menu-title" hidden>
+      <div id="menu-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="menu-title">
         <section class="panel menu-panel">
           <header class="menu-header"><div><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2></div><div class="menu-header-meta"><span id="menu-context">Kein aktives Spiel</span><span class="version-chip">v0.1.46</span><button class="close" data-close aria-label="Menü schließen">×</button></div></header>
           <nav class="menu-tabs" aria-label="Menübereiche" role="tablist">
-            <button class="menu-tab" role="tab" data-menu-tab="lobby"><span aria-hidden="true">⌂</span>Lobby</button><button class="menu-tab" role="tab" data-menu-tab="settings"><span aria-hidden="true">⚙</span>Einstellungen</button><button class="menu-tab active" role="tab" data-menu-tab="game"><span aria-hidden="true">♠</span>Spiel</button><button class="menu-tab" role="tab" data-menu-tab="new-game"><span aria-hidden="true">★</span>Neues Spiel</button><button class="menu-tab" role="tab" data-menu-tab="bot"><span aria-hidden="true">♟</span>Bot</button><button class="menu-tab" role="tab" data-menu-tab="share"><span aria-hidden="true">➶</span>Teilen</button><button class="menu-tab" role="tab" data-menu-tab="info"><span aria-hidden="true">i</span>Info &amp; Diagnose</button>
+            <button class="menu-tab active" role="tab" data-menu-tab="lobby"><span aria-hidden="true">⌂</span>Lobby</button><button class="menu-tab" role="tab" data-menu-tab="settings"><span aria-hidden="true">⚙</span>Einstellungen</button><button class="menu-tab" role="tab" data-menu-tab="game"><span aria-hidden="true">♠</span>Spiel</button><button class="menu-tab" role="tab" data-menu-tab="new-game"><span aria-hidden="true">★</span>Neues Spiel</button><button class="menu-tab" role="tab" data-menu-tab="bot"><span aria-hidden="true">♟</span>Bot</button><button class="menu-tab" role="tab" data-menu-tab="share"><span aria-hidden="true">➶</span>Teilen</button><button class="menu-tab" role="tab" data-menu-tab="info"><span aria-hidden="true">i</span>Info &amp; Diagnose</button>
           </nav>
           <div class="menu-body">
-            <section class="menu-pane" data-menu-panel="lobby" hidden>
+            <section class="menu-pane active" data-menu-panel="lobby">
               <div class="pane-heading"><p class="eyebrow">MIT-SPIELER FINDEN</p><h3>Lobby</h3><p>Offene Tische aktualisieren oder deinen Namen für die nächste Runde festlegen.</p></div>
               <label>Nickname <input id="menu-nickname" maxlength="30" /></label>
-              <div class="menu-actions"><button disabled>Anmelden</button><button id="menu-refresh-games">Aktualisieren</button></div>
+              <div class="menu-actions"><button id="menu-new-game" class="primary">Neuen Tisch eröffnen</button><button id="menu-refresh-games">Aktualisieren</button></div>
               <div class="segmented" aria-label="Spielmodus"><button data-mode="split" aria-pressed="true">Split</button><button data-mode="shared" aria-pressed="false">Shared</button></div>
+              <div class="menu-actions"><button id="menu-lobby-host-bot">Human vs Bot</button><button id="menu-lobby-bot-versus">Bot vs Bot</button><button id="demo-game">Visuelle Demo</button></div>
               <div id="menu-lobby-games" class="lobby-list" aria-label="Offene Spiele"></div>
             </section>
             <section class="menu-pane" data-menu-panel="settings" hidden>
@@ -86,7 +69,7 @@
               <label><input type="checkbox" id="mute" /> Audio stumm</label>
               <button id="reconnect">Resync</button>
             </section>
-            <section class="menu-pane active" data-menu-panel="game">
+            <section class="menu-pane" data-menu-panel="game" hidden>
               <div class="pane-heading"><p class="eyebrow">AKTUELLE RUNDE</p><h3>Spiel</h3><p>Verwalte das laufende Match. Kritische Aktionen sind deutlich hervorgehoben.</p></div>
               <div class="menu-actions vertical"><button id="restart-match">Neu starten</button><button id="resign" class="danger">Aufgeben</button><button id="end-game">Spiel beenden</button><button id="leave-game">Platz verlassen</button><button id="delete-game">Offenes Spiel löschen</button></div>
             </section>
