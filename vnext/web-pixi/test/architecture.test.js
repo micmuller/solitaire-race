@@ -321,7 +321,18 @@ test('the menu lobby is the single lobby view at launch and after leaving a matc
   assert.match(html,/class="menu-tab active" role="tab" data-menu-tab="lobby"/);
   assert.match(html,/class="menu-pane active" data-menu-panel="lobby"/);
   assert.match(main,/openMenuTab\('lobby'\);overlayOpen\(\$\('#menu-overlay'\),true\)/);
-  assert.match(main,/openMenuTab\(client\?'game':'lobby'\)/);
+  assert.match(main,/openMenuTab\(client&&!isVisualPreview\(\)\?'game':'lobby'\)/);
+});
+
+test('visual preview is local and cannot block a subsequent match connection',()=>{
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const preview=main.match(/function startDemo\(\)\{([^\n]+)\}/)?.[1]||'';
+  assert.match(main,/client\?\.close\?\.\(\); selection=null/);
+  assert.match(main,/return !isVisualPreview\(\)&&interactionAllowed/);
+  assert.match(preview,/activeKind='preview'/);
+  assert.match(preview,/close\(\)\{\}/);
+  assert.match(preview,/classList\.remove\('online'\)/);
+  assert.match(preview,/kein Match wurde eröffnet/);
 });
 
 test('settings persist the local stock and waste side without changing game state',()=>{
