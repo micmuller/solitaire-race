@@ -1,7 +1,7 @@
 import { Application, Assets } from 'pixi.js';
 import './styles.css';
 import { BoardScene } from './render/board-scene.js';
-import { rendererPreferenceFor } from './render/renderer-profile.js';
+import { rendererPreferenceFor, tickerMaxFpsFor } from './render/renderer-profile.js';
 import courtAtlasUrl from './assets/art/court-figures-v1.png?url';
 import tableFeltUrl from './assets/art/table-felt-v1.png?url';
 import tableWalnutUrl from './assets/art/table-walnut-v1.png?url';
@@ -33,6 +33,8 @@ let stockSide = storageGet(STORAGE.stockSide)==='right'?'right':'left';
 const pixi = new Application();
 const rendererPreference=rendererPreferenceFor({userAgent:navigator.userAgent,maxTouchPoints:navigator.maxTouchPoints,renderer:new URLSearchParams(location.search).get('renderer')});
 await pixi.init({ resizeTo: $('#board-shell'), background: '#082a20', antialias: true, autoDensity: true, resolution: Math.min(devicePixelRatio || 1, quality.resolutionCap), preference: rendererPreference });
+const tickerMaxFps=tickerMaxFpsFor({rendererPreference,qualityName:quality.name});
+pixi.ticker.maxFPS=tickerMaxFps;
 async function loadOptionalTexture(url) { try { return await Assets.load(url); } catch { return null; } }
 const [courtAtlas, feltTexture, woodTexture]=await Promise.all([
   loadOptionalTexture(courtAtlasUrl), loadOptionalTexture(tableFeltUrl), loadOptionalTexture(tableWalnutUrl)
@@ -40,7 +42,7 @@ const [courtAtlas, feltTexture, woodTexture]=await Promise.all([
 $('#pixi-stage').appendChild(pixi.canvas); $('#loading').hidden = true;
 
 const board = new BoardScene(pixi, {
-  quality, stockSide, courtAtlas, materials:{felt:feltTexture,wood:woodTexture}, rendererPreference,
+  quality, stockSide, courtAtlas, materials:{felt:feltTexture,wood:woodTexture}, rendererPreference, tickerMaxFps,
   canInteract: () => canSendActions(),
   onSource: (meta) => handleSource(meta), onStock: () => handleStock(), onTarget: (target) => handleTarget(target), onAutoFoundation: (meta, card) => handleAutoFoundation(meta, card)
 });
@@ -52,7 +54,7 @@ boardResizeObserver.observe(boardShell);
 
 function showToast(text, type = '') { const toast=$('#toast'); toast.textContent=text; toast.className=`toast ${type}`; toast.hidden=false; clearTimeout(showToast.timer); showToast.timer=setTimeout(()=>toast.hidden=true,2600); status(text); }
 function status(text, title = 'Status') { $('#status-title').textContent=title; $('#status-detail').textContent=text; $('#accessible-state').textContent=text; }
-function refreshDebugHud() { const hud=$('#debug-hud'); if(!$('#debug-toggle').checked){hud.hidden=true;return;} const d=board.diagnostics(); hud.hidden=false; hud.textContent=`role ${client?.clientId||'–'} · rev ${client?.current?.rev??'–'} · ${d.width}×${d.height}px · card ${d.cardWidth}×${d.cardHeight}px · DPR ${devicePixelRatio||1} · ${d.rendererName} ${d.resolution} · ticker ${d.tickerStarted?'on':'off'} · redraw ${d.cardRedraws}/${d.slotRebuilds}\n${debugLines.join('\n')}`.slice(0,4000); }
+function refreshDebugHud() { const hud=$('#debug-hud'); if(!$('#debug-toggle').checked){hud.hidden=true;return;} const d=board.diagnostics(); hud.hidden=false; hud.textContent=`role ${client?.clientId||'–'} · rev ${client?.current?.rev??'–'} · ${d.width}×${d.height}px · card ${d.cardWidth}×${d.cardHeight}px · DPR ${devicePixelRatio||1} · ${d.rendererName} ${d.resolution} · ticker ${d.tickerStarted?'on':'off'} ${d.tickerMaxFps?`≤${d.tickerMaxFps}fps`:'unlimited'} · redraw ${d.cardRedraws}/${d.slotRebuilds}\n${debugLines.join('\n')}`.slice(0,4000); }
 function debug(text) { debugLines.unshift(`${new Date().toLocaleTimeString()} ${text}`); debugLines.splice(28); if ($('#debug-toggle').checked) refreshDebugHud(); }
 pixi.canvas.addEventListener('webglcontextlost',(event)=>{event.preventDefault();rendererContextLosses+=1;debug(`renderer context lost (${rendererContextLosses})`);status('Grafik-Renderer wird wiederhergestellt …','Anzeige');});
 pixi.canvas.addEventListener('webglcontextrestored',()=>{debug('renderer context restored');pixi.ticker.start();if(client?.current)renderCurrent(client.current,'snapshot');status(client?.clientId==='observer'?'Beobachtermodus':'Dein Tisch ist bereit','Verbunden');});

@@ -9,7 +9,7 @@ import { resolveQuality } from '../src/theme/tokens.js';
 import { TransitionController } from '../src/animation/transition-controller.js';
 import { BoardScene, cardVisualSignature, handoffReachedState, handoffReachedTarget, motionProfileFor, placementMatchesHandoffTarget, shouldAnimateFlip, shouldHoldActiveDrag, shouldSuppressPostDragTap, visiblePileCards } from '../src/render/board-scene.js';
 import { buildErrorReport, copyDiagnosticText, describeOpponent } from '../src/diagnostics/error-report.js';
-import { isAppleTouchDevice, rendererPreferenceFor } from '../src/render/renderer-profile.js';
+import { isAppleTouchDevice, rendererPreferenceFor, tickerMaxFpsFor } from '../src/render/renderer-profile.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
@@ -43,6 +43,13 @@ test('iPad and touch-mode iPadOS Safari use the canvas renderer fallback',()=>{
   assert.equal(rendererPreferenceFor(desktopMode),'canvas');
   assert.equal(rendererPreferenceFor({...desktopMode,maxTouchPoints:0}),'webgl');
   assert.equal(rendererPreferenceFor({...desktopMode,maxTouchPoints:0,renderer:'canvas'}),'canvas');
+});
+
+test('only reduced-quality canvas rendering is capped at 30 FPS',()=>{
+  assert.equal(tickerMaxFpsFor({rendererPreference:'canvas',qualityName:'reduced'}),30);
+  assert.equal(tickerMaxFpsFor({rendererPreference:'canvas',qualityName:'balanced'}),0);
+  assert.equal(tickerMaxFpsFor({rendererPreference:'canvas',qualityName:'high'}),0);
+  assert.equal(tickerMaxFpsFor({rendererPreference:'webgl',qualityName:'reduced'}),0);
 });
 
 test('snapshot cancellation clears transitions and snaps once',()=>{
@@ -322,7 +329,7 @@ test('installed iOS app reserves the status bar and card wear stays stable',()=>
 
 test('error report contains the complete match context and recent local events',()=>{
   const client={clientId:'p1',matchId:'m-247',current:{rev:18,stateHash:'abc123',state:{mode:'shared',status:'active'}}};
-  const report=buildErrorReport({version:'0.1.44',protocolVersion:'2.5.2',client,activeKind:'bot',baseUrl:'https://example.test',rendererDiagnostics:{rendererName:'CanvasRenderer',tickerStarted:true,cardRedraws:12,slotRebuilds:2,contextLosses:0},debugLines:['20:15:01 ack rev=18'],timestamp:'2026-09-03T20:15:02Z',userAgent:'TestBrowser'});
+  const report=buildErrorReport({version:'0.1.44',protocolVersion:'2.5.2',client,activeKind:'bot',baseUrl:'https://example.test',rendererDiagnostics:{rendererName:'CanvasRenderer',tickerStarted:true,tickerMaxFps:30,cardRedraws:12,slotRebuilds:2,contextLosses:0},debugLines:['20:15:01 ack rev=18'],timestamp:'2026-09-03T20:15:02Z',userAgent:'TestBrowser'});
   assert.match(report,/Pixi Client: 0\.1\.44/);
   assert.match(report,/Match-ID: m-247/);
   assert.match(report,/Rolle: p1/);
@@ -330,7 +337,7 @@ test('error report contains the complete match context and recent local events',
   assert.match(report,/State-Hash: abc123/);
   assert.match(report,/Modus: shared/);
   assert.match(report,/Gegner\/Bot: Bot \(P2\)/);
-  assert.match(report,/Renderer: CanvasRenderer · Ticker aktiv · Karten 12 · Slots 2 · Kontextverluste 0/);
+  assert.match(report,/Renderer: CanvasRenderer · Ticker aktiv · FPS-Limit 30 · Karten 12 · Slots 2 · Kontextverluste 0/);
   assert.match(report,/20:15:01 ack rev=18/);
   assert.equal(describeOpponent({activeKind:'human',activeGame:{players:{p2:{nickname:'Annie'}}},role:'p1'}),'Annie (P2)');
   assert.equal(describeOpponent({activeKind:'bot',activeGame:{status:'active',players:{p2:{nickname:'Nathi'}}},role:'p1'}),'Nathi (P2)');

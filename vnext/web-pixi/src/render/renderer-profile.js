@@ -7,3 +7,7 @@ export function rendererPreferenceFor(device = {}) {
   if(device.renderer === 'webgl')return 'webgl';
   return isAppleTouchDevice(device) ? 'canvas' : 'webgl';
 }
+
+export function tickerMaxFpsFor({ rendererPreference, qualityName } = {}) {
+  return rendererPreference === 'canvas' && qualityName === 'reduced' ? 30 : 0;
+}

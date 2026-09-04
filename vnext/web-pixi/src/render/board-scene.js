@@ -242,11 +242,12 @@ class CardView extends Container {
 }
 
 export class BoardScene {
-  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, stockSide = 'left', courtAtlas = null, materials = {}, rendererPreference = 'unknown' }) {
+  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, stockSide = 'left', courtAtlas = null, materials = {}, rendererPreference = 'unknown', tickerMaxFps = 0 }) {
     this.app = app;
     this.callbacks = { onSource, onStock, onTarget, onAutoFoundation, canInteract };
     this.quality = quality;
     this.rendererPreference = rendererPreference;
+    this.tickerMaxFps = tickerMaxFps;
     this.stockSide = stockSide === 'right' ? 'right' : 'left';
     this.courtTextures=createCourtTextures(courtAtlas);
     this.root = new Container();
@@ -568,7 +569,7 @@ export class BoardScene {
 
   diagnostics() {
     const renderer=this.app.renderer;
-    return { width:Math.round(this.layout?.width||0),height:Math.round(this.layout?.height||0),cardWidth:Math.round(this.layout?.card.width||0),cardHeight:Math.round(this.layout?.card.height||0),resolution:renderer.resolution,rendererName:this.rendererPreference,tickerStarted:this.app.ticker.started,cardRedraws:this.cardRedraws,slotRebuilds:this.slotRebuilds };
+    return { width:Math.round(this.layout?.width||0),height:Math.round(this.layout?.height||0),cardWidth:Math.round(this.layout?.card.width||0),cardHeight:Math.round(this.layout?.card.height||0),resolution:renderer.resolution,rendererName:this.rendererPreference,tickerStarted:this.app.ticker.started,tickerMaxFps:this.tickerMaxFps,cardRedraws:this.cardRedraws,slotRebuilds:this.slotRebuilds };
   }
 
   pointerTap(event, id) {

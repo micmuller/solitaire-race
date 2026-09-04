@@ -41,7 +41,7 @@ export function buildErrorReport({
     `Modus: ${printable(state?.mode)}`,
     `Match-Status: ${printable(state?.status ?? activeGame?.status)}`,
     `Gegner/Bot: ${describeOpponent({ activeKind, activeGame, role })}`,
-    `Renderer: ${rendererDiagnostics ? `${printable(rendererDiagnostics.rendererName)} · Ticker ${rendererDiagnostics.tickerStarted?'aktiv':'gestoppt'} · Karten ${printable(rendererDiagnostics.cardRedraws)} · Slots ${printable(rendererDiagnostics.slotRebuilds)} · Kontextverluste ${printable(rendererDiagnostics.contextLosses,0)}` : '–'}`,
+    `Renderer: ${rendererDiagnostics ? `${printable(rendererDiagnostics.rendererName)} · Ticker ${rendererDiagnostics.tickerStarted?'aktiv':'gestoppt'} · FPS-Limit ${rendererDiagnostics.tickerMaxFps||'aus'} · Karten ${printable(rendererDiagnostics.cardRedraws)} · Slots ${printable(rendererDiagnostics.slotRebuilds)} · Kontextverluste ${printable(rendererDiagnostics.contextLosses,0)}` : '–'}`,
     `Browser: ${printable(userAgent)}`,
     '',
     'Letzte lokale Ereignisse:'
