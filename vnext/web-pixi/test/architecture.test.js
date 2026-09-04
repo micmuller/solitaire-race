@@ -93,6 +93,10 @@ test('score names, board debug overlay and finale preview stay wired',()=>{
   assert.match(boardShell,/id="debug-hud"/);
   assert.match(source,/board\.celebrate\(\{force:true\}\)/);
   assert.doesNotMatch(source,/!reducedMotion&&board\.celebrate/);
+  assert.match(html,/id="game-over-new"/);
+  assert.match(html,/id="game-over-lobby"/);
+  assert.match(source,/restartAfterResign/);
+  assert.match(source,/returnAfterResign/);
 });
 
 test('retina resolution never shrinks the logical board layout',()=>{

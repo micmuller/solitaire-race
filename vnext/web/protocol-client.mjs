@@ -22,12 +22,12 @@ export class ProtocolClient {
     for (const listener of this.listeners) listener(event, this);
   }
 
-  connect() {
+  connect({ reconnect = false } = {}) {
     return new Promise((resolve, reject) => {
       const url = new URL(this.baseUrl);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       url.pathname = '/vnext';
-      url.search = new URLSearchParams({ matchId: this.matchId, clientId: this.clientId, clientType: 'web' });
+      url.search = new URLSearchParams({ matchId: this.matchId, clientId: this.clientId, clientType: 'web', ...(reconnect ? { reconnect: '1' } : {}) });
       const socket = new WebSocket(url);
       this.socket = socket;
       let ready = false;

@@ -231,6 +231,28 @@ test('browser protocol client forwards lobby lifecycle events without changing g
   assert.equal(client.current.stateHash, 'same-hash');
 });
 
+test('browser protocol client marks only explicit reconnect sockets for takeover', async () => {
+  const OriginalWebSocket=global.WebSocket;
+  const urls=[];
+  class SocketStub {
+    static OPEN=1;
+    constructor(url){this.url=String(url);this.listeners=new Map();urls.push(this.url);}
+    addEventListener(type,listener){this.listeners.set(type,listener);}
+  }
+  global.WebSocket=SocketStub;
+  try {
+    const regular=new protocolClient.ProtocolClient({baseUrl:'http://example.test',matchId:'m-regular',clientId:'p1'});
+    regular.connect();
+    const replacement=new protocolClient.ProtocolClient({baseUrl:'http://example.test',matchId:'m-reconnect',clientId:'p2'});
+    replacement.connect({reconnect:true});
+    assert.doesNotMatch(urls[0],/reconnect=1/);
+    assert.match(urls[1],/reconnect=1/);
+    assert.match(urls[1],/clientType=web/);
+  } finally {
+    global.WebSocket=OriginalWebSocket;
+  }
+});
+
 test('lobby urls encode host and invite identities', () => {
   assert.deepEqual(lobby.readLaunchParams('?matchId=m-123&role=p2'), { matchId: 'm-123', role: 'p2' });
   assert.deepEqual(lobby.readLaunchParams('?matchId=m-123&role=observer'), { matchId: 'm-123', role: 'observer' });

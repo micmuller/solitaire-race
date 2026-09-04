@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { gameForMatch, guestSessionCandidate, interactionAllowed, retryableSequenceReject, sameTableauSelection, waitingMatchMessage } from '../src/bridge/match-context.js';
+import { gameForMatch, guestSessionCandidate, interactionAllowed, resignDecision, retryableSequenceReject, sameTableauSelection, waitingMatchMessage } from '../src/bridge/match-context.js';
 
 const current={state:{status:'active'}};
 
@@ -42,4 +42,11 @@ test('only duplicate sequence rejects with an expected sequence are retried',()=
   assert.equal(retryableSequenceReject({kind:'reject',code:'DUPLICATE_SEQ',expectedSeq:11}),true);
   assert.equal(retryableSequenceReject({kind:'reject',code:'RULE_VIOLATION'}),false);
   assert.equal(retryableSequenceReject({kind:'ack',expectedSeq:11}),false);
+});
+
+test('resign finale assigns the server-authoritative decision only to lobby P1',()=>{
+  assert.equal(resignDecision({endedReason:'resign',role:'p1',hasLobbySession:true}),'host-choice');
+  assert.equal(resignDecision({endedReason:'resign',role:'p2',hasLobbySession:true}),'guest-wait');
+  assert.equal(resignDecision({endedReason:'completed',role:'p1',hasLobbySession:true}),'generic');
+  assert.equal(resignDecision({endedReason:'resign',role:'p1',hasLobbySession:false}),'generic');
 });

@@ -32,3 +32,8 @@ export function retryableSequenceReject(response) {
     && response.code === 'DUPLICATE_SEQ'
     && Number.isSafeInteger(response.expectedSeq);
 }
+
+export function resignDecision({ endedReason, role, hasLobbySession = false } = {}) {
+  if (endedReason !== 'resign' || !hasLobbySession) return 'generic';
+  return role === 'p1' ? 'host-choice' : role === 'p2' ? 'guest-wait' : 'generic';
+}
