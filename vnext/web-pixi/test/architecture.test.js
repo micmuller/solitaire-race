@@ -323,6 +323,15 @@ test('menu keeps seven ordered areas and exposes the diagnostic report action',(
   assert.match(fs.readFileSync(path.join(root,'src/main.js'),'utf8'),/aria-selected/);
 });
 
+test('settings gear forces a text glyph with an embossed brass treatment',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const css=fs.readFileSync(path.join(root,'src/styles.css'),'utf8');
+  assert.match(html,/class="settings-gear">⚙︎<\/i>/);
+  assert.match(css,/\.settings-gear \{[^}]*color:#c49343/);
+  assert.match(css,/\.settings-gear \{[^}]*'Times New Roman'/);
+  assert.match(css,/\.menu-tab\.active \.settings-gear \{[^}]*color:#edc66f/);
+});
+
 test('the menu lobby is the single lobby view at launch and after leaving a match',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
