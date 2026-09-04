@@ -542,25 +542,22 @@ export class BoardScene {
   }
   rejectToAuthority() { const dragged = this.drag?.ids || this.dropHandoff?.ids || this.selection?.cardIds || []; this.dropCue.clear(); for (const id of dragged) { const view=this.cards.get(id), target=this.positions.get(id); if(view&&target) { const duration=TOKENS.motion.reject*this.motionScale(); if(duration===0){view.position.set(target.x,target.y);view.scale.set(1);continue;} const startScale=view.scale.x||1; this.transitions.move(`reject:${id}`,{x:view.x,y:view.y},target,duration,(p)=>{view.position.set(p.x,p.y);view.scale.set(startScale+(1-startScale)*p.eased);},()=>view.scale.set(1)); } } this.drag=null; this.dropHandoff=null; }
 
-  celebrate({ force = false } = {}) {
+  celebrate() {
     const profile=celebrationProfileFor({rendererPreference:this.rendererPreference,qualityName:this.quality.name,prefersReducedMotion:this.prefersReducedMotion});
     this.stopCelebration?.();
     if(profile.mode!=='full'){
-      const accent=new Graphics();
-      const inset=Math.max(16,Math.min(this.layout.width,this.layout.height)*.045);
-      accent.roundRect(inset,inset,this.layout.width-inset*2,this.layout.height-inset*2,24)
-        .stroke({color:TOKENS.colors.brassLight,alpha:.9,width:4});
-      accent.circle(this.layout.width*.5,this.layout.height*.5,Math.min(this.layout.width,this.layout.height)*.12)
-        .stroke({color:TOKENS.colors.amber,alpha:.68,width:3});
-      for(let index=0;index<12;index++){
-        const angle=Math.PI*2*index/12,inner=Math.min(this.layout.width,this.layout.height)*.15,outer=inner+18;
-        accent.moveTo(this.layout.width*.5+Math.cos(angle)*inner,this.layout.height*.5+Math.sin(angle)*inner)
-          .lineTo(this.layout.width*.5+Math.cos(angle)*outer,this.layout.height*.5+Math.sin(angle)*outer);
+      const accent=new Graphics(),label=new Text({text:'FINALE!',style:{fontFamily:'Georgia',fontWeight:'700',fontSize:Math.max(34,Math.min(72,this.layout.width*.07)),fill:TOKENS.colors.ivoryLight,stroke:{color:TOKENS.colors.leatherDark,width:7},dropShadow:{color:0x000000,alpha:.65,blur:5,distance:3}}});
+      const width=Math.min(520,this.layout.width*.72),height=Math.min(128,this.layout.height*.2),x=(this.layout.width-width)/2,y=this.layout.height*.3;
+      accent.roundRect(x,y,width,height,18).fill({color:TOKENS.colors.leatherDark,alpha:.92}).stroke({color:TOKENS.colors.brassLight,alpha:.95,width:4});
+      for(let index=0;index<18;index++){
+        const px=x+24+(index*73)%(width-48),py=y-18-(index%4)*12,size=5+(index%3)*2;
+        accent.poly([px,py-size,px+size*.65,py,px,py+size,px-size*.65,py]).fill({color:index%3===0?TOKENS.colors.amber:TOKENS.colors.brassLight,alpha:.92});
       }
-      accent.stroke({color:TOKENS.colors.brassLight,alpha:.7,width:2});
+      label.anchor.set(.5);label.position.set(this.layout.width*.5,y+height*.52);
       accent.alpha=profile.mode==='static'?1:0;
-      this.effects.addChild(accent);
-      const cleanup=()=>{if(!accent.destroyed)accent.destroy();this.stopCelebration=null;};
+      label.alpha=accent.alpha;
+      this.effects.addChild(accent,label);
+      const cleanup=()=>{if(!accent.destroyed)accent.destroy();if(!label.destroyed)label.destroy();this.stopCelebration=null;};
       if(profile.mode==='static'){
         this.stopCelebration=cleanup;
         this.app.render();
@@ -569,34 +566,41 @@ export class BoardScene {
       let elapsed=0;
       const tick=(ticker)=>{
         elapsed+=ticker.deltaMS;
-        accent.alpha=Math.sin(Math.PI*Math.min(1,elapsed/900));
-        if(elapsed>=900)this.stopCelebration?.();
+        const progress=Math.min(1,elapsed/1200),pulse=Math.sin(Math.PI*progress);
+        accent.alpha=pulse;label.alpha=pulse;label.scale.set(.94+pulse*.08);label.y=y+height*.52-8*pulse;
+        if(elapsed>=1200)this.stopCelebration?.();
       };
       this.stopCelebration=()=>{this.app.ticker.remove(tick);cleanup();};
       this.app.ticker.add(tick);
       return profile;
     }
     const palette=[TOKENS.colors.brassLight,TOKENS.colors.amber,0xd95446,0x76c98b,0xf3ead6];
-    const confettiCount=Math.max(36,this.quality.particles*2);
-    const particles=[];
+    const confettiCount=this.rendererPreference==='canvas'?36:Math.max(36,this.quality.particles*2);
+    const particles=[],effect=new Graphics();
     for(let index=0;index<confettiCount;index++){
       const width=4+(index%4),height=7+(index%3)*2;
-      const g=new Graphics().rect(-width/2,-height/2,width,height).fill(palette[index%palette.length]);
-      g.position.set((index*83)%this.layout.width,-12-(index%9)*16); g.vx=((index%11)-5)*.025; g.vy=.16+(index%7)*.025; g.spin=((index%5)-2)*.004; g.gravity=.00016; this.effects.addChild(g); particles.push(g);
+      particles.push({kind:'confetti',color:palette[index%palette.length],width,height,x:(index*83)%this.layout.width,y:-12-(index%9)*16,vx:((index%11)-5)*.025,vy:.16+(index%7)*.025,gravity:.00016});
     }
     const bursts=[{x:.23,y:.34},{x:.5,y:.25},{x:.77,y:.36}];
-    bursts.forEach((burst,burstIndex)=>Array.from({length:22},(_,index)=>{
-      const angle=(Math.PI*2*index)/22, speed=.12+(index%5)*.016;
-      const g=new Graphics().circle(0,0,2.1+(index%3)*.6).fill(palette[(index+burstIndex)%palette.length]);
-      g.position.set(this.layout.width*burst.x,this.layout.height*burst.y); g.vx=Math.cos(angle)*speed; g.vy=Math.sin(angle)*speed; g.spin=0; g.gravity=.00009; g.burst=true; this.effects.addChild(g); particles.push(g); return g;
+    const burstCount=this.rendererPreference==='canvas'?12:22;
+    bursts.forEach((burst,burstIndex)=>Array.from({length:burstCount},(_,index)=>{
+      const angle=(Math.PI*2*index)/burstCount,speed=.12+(index%5)*.016;
+      particles.push({kind:'spark',color:palette[(index+burstIndex)%palette.length],radius:2.1+(index%3)*.6,x:this.layout.width*burst.x,y:this.layout.height*burst.y,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,gravity:.00009});
     }));
+    this.effects.addChild(effect);
     let elapsed=0;
     const tick=(ticker)=>{
       elapsed+=ticker.deltaMS;
-      for(const particle of particles){particle.vy+=particle.gravity*ticker.deltaMS;particle.x+=particle.vx*ticker.deltaMS;particle.y+=particle.vy*ticker.deltaMS;particle.rotation+=particle.spin*ticker.deltaMS;particle.alpha=Math.max(0,1-Math.max(0,elapsed-(particle.burst?850:1500))/(particle.burst?1000:1100));}
+      effect.clear();
+      for(const particle of particles){
+        particle.vy+=particle.gravity*ticker.deltaMS;particle.x+=particle.vx*ticker.deltaMS;particle.y+=particle.vy*ticker.deltaMS;
+        const burst=particle.kind==='spark',alpha=Math.max(0,1-Math.max(0,elapsed-(burst?850:1500))/(burst?1000:1100));
+        if(burst)effect.circle(particle.x,particle.y,particle.radius).fill({color:particle.color,alpha});
+        else effect.rect(particle.x-particle.width/2,particle.y-particle.height/2,particle.width,particle.height).fill({color:particle.color,alpha});
+      }
       if(elapsed>2700)this.stopCelebration?.();
     };
-    this.stopCelebration=()=>{this.app.ticker.remove(tick);particles.forEach((particle)=>particle.destroy());this.stopCelebration=null;};
+    this.stopCelebration=()=>{this.app.ticker.remove(tick);if(!effect.destroyed)effect.destroy();this.stopCelebration=null;};
     this.app.ticker.add(tick); return profile;
   }
 

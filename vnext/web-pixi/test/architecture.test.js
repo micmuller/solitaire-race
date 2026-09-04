@@ -53,11 +53,21 @@ test('only reduced-quality canvas rendering is capped at 30 FPS',()=>{
 });
 
 test('finale policy keeps canvas and reduced profiles lightweight',()=>{
-  assert.deepEqual(celebrationProfileFor({rendererPreference:'webgl',qualityName:'high'}),{mode:'full',dialogDelay:950});
-  assert.deepEqual(celebrationProfileFor({rendererPreference:'webgl',qualityName:'balanced'}),{mode:'full',dialogDelay:950});
-  assert.deepEqual(celebrationProfileFor({rendererPreference:'canvas',qualityName:'high'}),{mode:'lite',dialogDelay:650});
-  assert.deepEqual(celebrationProfileFor({rendererPreference:'webgl',qualityName:'reduced'}),{mode:'lite',dialogDelay:650});
+  assert.deepEqual(celebrationProfileFor({rendererPreference:'webgl',qualityName:'high'}),{mode:'full',dialogDelay:1100});
+  assert.deepEqual(celebrationProfileFor({rendererPreference:'webgl',qualityName:'balanced'}),{mode:'full',dialogDelay:1100});
+  assert.deepEqual(celebrationProfileFor({rendererPreference:'canvas',qualityName:'high'}),{mode:'full',dialogDelay:1100});
+  assert.deepEqual(celebrationProfileFor({rendererPreference:'canvas',qualityName:'balanced'}),{mode:'full',dialogDelay:1100});
+  assert.deepEqual(celebrationProfileFor({rendererPreference:'webgl',qualityName:'reduced'}),{mode:'lite',dialogDelay:900});
   assert.deepEqual(celebrationProfileFor({rendererPreference:'canvas',qualityName:'reduced',prefersReducedMotion:true}),{mode:'static',dialogDelay:0});
+});
+
+test('full finale batches confetti and fireworks into one retained graphic',()=>{
+  const source=fs.readFileSync(path.join(root,'src/render/board-scene.js'),'utf8');
+  assert.match(source,/const particles=\[\],effect=new Graphics\(\)/);
+  assert.match(source,/kind:'confetti'/);
+  assert.match(source,/kind:'spark'/);
+  assert.doesNotMatch(source,/particles\.forEach\(\(particle\)=>particle\.destroy/);
+  assert.match(source,/text:'FINALE!'/);
 });
 
 test('snapshot cancellation clears transitions and snaps once',()=>{

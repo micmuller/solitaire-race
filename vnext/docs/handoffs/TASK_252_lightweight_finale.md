@@ -2,10 +2,12 @@
 
 Die Abschlussdarstellung verwendet drei explizite Profile:
 
-- `full`: bisheriges Konfetti und Feuerwerk auf WebGL mit High/Balanced.
-- `lite`: ein einzelner kurz eingeblendeter Goldakzent auf Canvas oder bei
-  manuell gewählter Qualität `reduced`.
-- `static`: derselbe sichtbare Goldakzent ohne Bewegung, wenn das Betriebssystem
+- `full`: Konfetti und drei Feuerwerke bei High/Balanced auf WebGL und Canvas.
+  Auf Canvas werden sie mit reduziertem Partikelbudget in einem einzigen
+  wiederverwendeten Graphics-Objekt gezeichnet.
+- `lite`: ein klar beschriftetes, animiertes `FINALE!`-Banner mit wenigen
+  goldenen Konfettisternen bei manuell gewählter Qualität `reduced`.
+- `static`: dasselbe sichtbare Finale-Banner ohne Bewegung, wenn das Betriebssystem
   reduzierte Bewegung verlangt.
 
 Die Menüvorschau und ein echtes Spielende verwenden dieselbe Policy. `force`
@@ -13,11 +15,13 @@ wiederholt nur die Vorschau und hebt das Ressourcenbudget nicht mehr auf.
 
 ## UAT
 
-1. Auf dem alten iPad Pro unter Balanced und Niedrig jeweils „Finale testen“:
-   Goldakzent und Abschlussdialog müssen sichtbar sein, ohne Partikelregen.
-2. Mit iPadOS „Bewegung reduzieren“ wiederholen: statischer Akzent und sofortiger
+1. Auf dem alten iPad Pro unter Balanced und High jeweils „Finale testen“:
+   Konfetti und drei Feuerwerke müssen eindeutig sichtbar sein.
+2. Unter Niedrig muss das animierte `FINALE!`-Banner mit wenigen goldenen
+   Konfettisternen sichtbar sein, ohne den vollen Partikelregen.
+3. Mit iPadOS „Bewegung reduzieren“ wiederholen: statisches Banner und sofortiger
    Dialog, keine Bewegung.
-3. Ein echtes Match beenden und danach Dialog, Menü und Board bedienen; kein
+4. Ein echtes Match beenden und danach Dialog, Menü und Board bedienen; kein
    Freeze und kein zurückbleibender Effekt.
-4. Auf Desktop/WebGL unter Balanced oder High prüfen, dass Konfetti und
+5. Auf Desktop/WebGL unter Balanced oder High prüfen, dass Konfetti und
    Feuerwerk unverändert erscheinen.
