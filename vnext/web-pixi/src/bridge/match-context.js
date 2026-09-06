@@ -22,9 +22,14 @@ export function sameTableauSelection(selection, meta) {
     && selection.source.index === meta.pileIndex;
 }
 
-export function guestSessionCandidate({ game, persistentSessionId, matchSessionId }) {
+export function guestSessionCandidate({ game, persistentSessionId, persistentPublicSessionId, matchSessionId }) {
   if (matchSessionId) return matchSessionId;
-  return game?.players?.p1?.sessionId === persistentSessionId ? null : persistentSessionId || null;
+  const host = game?.players?.p1;
+  const ownsHostSeat = Boolean(
+    (persistentPublicSessionId && host?.publicSessionId === persistentPublicSessionId)
+    || (persistentSessionId && host?.sessionId === persistentSessionId)
+  );
+  return ownsHostSeat ? null : persistentSessionId || null;
 }
 
 export function retryableSequenceReject(response) {

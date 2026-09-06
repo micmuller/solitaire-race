@@ -11,7 +11,7 @@
     <link rel="manifest" href="/vnext/pixi/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/vnext/pixi/icons/apple-touch-icon.png" />
     <title>Solitaire HighNoon · Pixi</title>
-    <script type="module" crossorigin src="/vnext/pixi/assets/index-BGFs_GTo.js"></script>
+    <script type="module" crossorigin src="/vnext/pixi/assets/index-DoiQ3GNu.js"></script>
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/Geometry-DoNiSHBh.js">
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/Filter-s671BCjm.js">
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/canvasUtils-C68kG0EC.js">
@@ -24,7 +24,7 @@
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/CanvasPool-C1CL5Xi5.js">
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/CanvasRenderer-Bar3pdmR.js">
     <link rel="modulepreload" crossorigin href="/vnext/pixi/assets/BitmapFont-BJq_GyN3.js">
-    <link rel="stylesheet" crossorigin href="/vnext/pixi/assets/index-DjVSHcYw.css">
+    <link rel="stylesheet" crossorigin href="/vnext/pixi/assets/index-Ok2Z8RvE.css">
   </head>
   <body>
     <main id="app">
@@ -57,14 +57,15 @@
 
       <div id="menu-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="menu-title">
         <section class="panel menu-panel">
-          <header class="menu-header"><div><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2></div><div class="menu-header-meta"><span id="menu-context">Kein aktives Spiel</span><span class="version-chip">v0.2.4</span><button class="close" data-close aria-label="Menü schließen">×</button></div></header>
+          <header class="menu-header"><div><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2></div><div class="menu-header-meta"><span id="menu-context">Kein aktives Spiel</span><span class="version-chip">v0.2.8</span><button class="close" data-close aria-label="Menü schließen">×</button></div></header>
           <nav class="menu-tabs" aria-label="Menübereiche" role="tablist">
             <button class="menu-tab active" role="tab" data-menu-tab="lobby"><span aria-hidden="true">⌂</span>Lobby</button><button class="menu-tab" role="tab" data-menu-tab="settings"><span aria-hidden="true"><i class="settings-gear">⚙︎</i></span>Einstellungen</button><button class="menu-tab" role="tab" data-menu-tab="game"><span aria-hidden="true">♠</span>Spiel</button><button class="menu-tab" role="tab" data-menu-tab="new-game"><span aria-hidden="true">★</span>Neues Spiel</button><button class="menu-tab" role="tab" data-menu-tab="bot"><span aria-hidden="true">♟</span>Bot</button><button class="menu-tab" role="tab" data-menu-tab="share"><span aria-hidden="true">➶</span>Teilen</button><button class="menu-tab" role="tab" data-menu-tab="info"><span aria-hidden="true">i</span>Info &amp; Diagnose</button>
           </nav>
           <div class="menu-body">
             <section class="menu-pane active" data-menu-panel="lobby">
               <div class="pane-heading"><p class="eyebrow">MIT-SPIELER FINDEN</p><h3>Lobby</h3><p>Offene Tische aktualisieren oder deinen Namen für die nächste Runde festlegen.</p></div>
-              <label>Nickname <input id="menu-nickname" maxlength="30" /></label>
+              <label>Nickname <span class="fallback"><input id="menu-nickname" maxlength="30" autocomplete="nickname" /><button id="menu-save-nickname">Speichern</button></span></label>
+              <p id="menu-save-status" class="field-note" aria-live="polite">Gilt sofort für dieses Profil.</p>
               <div class="menu-actions"><button id="menu-new-game" class="primary">Neuen Tisch eröffnen</button><button id="menu-refresh-games">Aktualisieren</button></div>
               <div class="segmented" aria-label="Spielmodus"><button data-mode="split" aria-pressed="true">Split</button><button data-mode="shared" aria-pressed="false">Shared</button></div>
               <div class="menu-actions"><button id="menu-lobby-host-bot">Human vs Bot</button><button id="menu-lobby-bot-versus">Bot vs Bot</button><button id="demo-game">Visuelle Demo</button></div>
@@ -114,7 +115,7 @@
             </section>
             <section class="menu-pane" data-menu-panel="info" hidden>
               <div class="pane-heading"><p class="eyebrow">SYSTEMSTATUS</p><h3>Info &amp; Diagnose</h3><p>Technische Daten für die Fehlersuche. Der Bericht enthält keine Spielzüge anderer Partien.</p></div>
-              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protokoll</dt><dd>2.5.2</dd><dt>Webclient</dt><dd>PixiJS 8 · 0.2.4</dd><dt>Match-ID</dt><dd id="info-match">–</dd><dt>Rolle</dt><dd id="info-role">–</dd><dt>Gegner/Bot</dt><dd id="info-opponent">–</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>State-Hash</dt><dd id="info-hash">–</dd></dl>
+              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protokoll</dt><dd>2.5.2</dd><dt>Webclient</dt><dd>PixiJS 8 · 0.2.8</dd><dt>Match-ID</dt><dd id="info-match">–</dd><dt>Rolle</dt><dd id="info-role">–</dd><dt>Gegner/Bot</dt><dd id="info-opponent">–</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>State-Hash</dt><dd id="info-hash">–</dd></dl>
               <div class="diagnostic-action"><div><strong>Fehlerbericht</strong><p>Version, Match-Kontext und letzte lokale Ereignisse in die Zwischenablage kopieren.</p></div><button id="copy-error-report" class="primary">Fehlerbericht kopieren</button></div>
               <textarea id="error-report-output" class="diagnostic-report" readonly hidden aria-label="Fehlerbericht zum manuellen Kopieren"></textarea>
             </section>
@@ -123,7 +124,7 @@
       </div>
 
       <div id="profile-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="profile-title" hidden>
-        <section class="panel compact-panel"><button class="close" data-close>×</button><p class="eyebrow">PROFIL</p><h2 id="profile-title">Spieler</h2><dl><dt>Rolle</dt><dd id="profile-role">–</dd><dt>Match</dt><dd id="profile-match">–</dd><dt>Version</dt><dd>Pixi Client 0.2.4</dd><dt>Protokoll</dt><dd>2.5.2</dd></dl></section>
+        <section class="panel compact-panel profile-panel"><button class="close" data-close>×</button><p class="eyebrow">PROFIL</p><h2 id="profile-title">Spieler</h2><label>Nickname <span class="fallback"><input id="profile-nickname" maxlength="32" autocomplete="nickname" /><button id="profile-save-nickname" class="primary">Speichern</button></span></label><p id="profile-save-status" class="field-note" aria-live="polite">Änderungen werden sofort für dieses Profil gespeichert.</p><dl><dt>Spieler-ID</dt><dd id="profile-player-id">–</dd><dt>Spiele</dt><dd id="profile-games">0</dd><dt>Siege</dt><dd id="profile-wins">0</dd><dt>Rolle</dt><dd id="profile-role">–</dd><dt>Match</dt><dd id="profile-match">–</dd><dt>Version</dt><dd>Pixi Client 0.2.8</dd><dt>Protokoll</dt><dd>2.5.2</dd></dl><section class="profile-history-section" aria-labelledby="profile-history-title"><h3 id="profile-history-title">Letzte Spiele</h3><ol id="profile-history" aria-live="polite"><li class="profile-history-empty">Noch keine abgeschlossenen Spiele.</li></ol></section></section>
       </div>
 
       <dialog id="restart-dialog"><h2>Neu starten</h2><p>Mit derselben Verteilung oder einem neuen Seed?</p><form method="dialog" class="button-row"><button id="restart-same" value="same">Gleicher Seed</button><button id="restart-new" value="new">Neuer Seed</button><button value="cancel">Abbrechen</button></form></dialog>

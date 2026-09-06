@@ -36,6 +36,12 @@ test('P2 uses a per-match guest session when the persistent identity owns P1',()
   assert.equal(guestSessionCandidate({game,persistentSessionId:'host-session',matchSessionId:null}),null);
   assert.equal(guestSessionCandidate({game,persistentSessionId:'other-session',matchSessionId:null}),'other-session');
   assert.equal(guestSessionCandidate({game,persistentSessionId:'host-session',matchSessionId:'guest-session'}),'guest-session');
+  assert.equal(guestSessionCandidate({
+    game:{players:{p1:{publicSessionId:'public-host'}}},
+    persistentSessionId:'secret-host-token',
+    persistentPublicSessionId:'public-host',
+    matchSessionId:null
+  }),null);
 });
 
 test('only duplicate sequence rejects with an expected sequence are retried',()=>{

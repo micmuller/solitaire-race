@@ -12,6 +12,7 @@ const { createManagedBot } = require('../bot/managedBot');
 const { SPEEDS, normalizeSpeed } = require('../bot/runner');
 const { LobbyStore } = require('./lobbyStore');
 const { MatchSession, normalizeProgressLimit } = require('./matchSession');
+const { ProfileStore, boundedLimit } = require('./profileStore');
 
 const MAX_BODY_BYTES = 64 * 1024;
 const OBSERVER_ID = 'observer';
@@ -84,6 +85,18 @@ function readJson(request) {
   });
 }
 
+function bearerToken(request) {
+  const authorization = request.headers.authorization;
+  const match = typeof authorization === 'string' ? authorization.match(/^Bearer\s+(.+)$/i) : null;
+  return match?.[1] || null;
+}
+
+function sessionCredential(body) {
+  return typeof body?.sessionToken === 'string' && body.sessionToken.length > 0
+    ? body.sessionToken
+    : body?.sessionId;
+}
+
 function serveWebAsset(urlPath, response) {
   const relative = urlPath === '/vnext/web' || urlPath === '/vnext/web/'
     ? 'index.html'
@@ -120,13 +133,22 @@ function servePixiWebAsset(urlPath, response) {
   return true;
 }
 
-function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 10000 } = {}) {
+function createVNextServer({
+  logger = console,
+  publicUrl,
+  botOrphanGraceMs = 10000,
+  profileDatabasePath = ':memory:',
+  profileStore: suppliedProfileStore
+} = {}) {
   const sessions = new Map();
   const peers = new Map();
   const bots = new Map();
+  const directMatches = new Map();
   const botOrphanTimers = new Map();
   const progressTimers = new Map();
-  const lobby = new LobbyStore();
+  const profileStore = suppliedProfileStore || new ProfileStore({ databasePath: profileDatabasePath });
+  const ownsProfileStore = !suppliedProfileStore;
+  const lobby = new LobbyStore({ profileStore });
   let listenPort = 3011;
 
   function log(event, fields = {}) {
@@ -166,8 +188,42 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
     progressTimers.delete(matchId);
   }
 
+  function recordFinishedMatch(session, state) {
+    const lobbyGame = lobby.markMatchFinished(session.matchId, state);
+    if (lobbyGame) return lobbyGame;
+    const direct = directMatches.get(session.matchId);
+    if (!direct || direct.resultRecorded || !state?.players) return null;
+    const requiredBots = direct.matchKind === 'bot-vs-bot' ? ['p1', 'p2'] : ['p2'];
+    if (!requiredBots.every((seat) => direct.botSeats.has(seat))) {
+      log('MATCH_RESULT_SKIPPED', { matchId: session.matchId, reason: 'EXPECTED_BOT_NOT_STARTED' });
+      return null;
+    }
+    profileStore.recordMatch({
+      resultId: direct.resultId,
+      matchId: session.matchId,
+      seed: session.header.seed,
+      mode: session.header.mode,
+      matchKind: direct.matchKind,
+      endedReason: state.endedReason,
+      winner: state.winner,
+      players: Object.fromEntries(['p1', 'p2'].map((seat) => [seat, {
+        playerId: direct.players[seat]?.playerId || null,
+        nickname: direct.players[seat]?.nickname || seat,
+        score: Number.isSafeInteger(state.players[seat]?.score) ? state.players[seat].score : 0
+      }]))
+    });
+    direct.resultRecorded = true;
+    const human = direct.players.p1;
+    if (human?.playerId && direct.sessionToken) {
+      const persisted = profileStore.playerById(human.playerId);
+      if (persisted) lobby.syncPersistedPlayer(direct.sessionToken, persisted);
+    }
+    log('MATCH_RESULT_RECORDED', { matchId: session.matchId, matchKind: direct.matchKind, winner: state.winner });
+    return direct;
+  }
+
   function finishTimedOutMatch(session, timeoutSnapshot) {
-    lobby.markMatchFinished(session.matchId, timeoutSnapshot.state);
+    recordFinishedMatch(session, timeoutSnapshot.state);
     const peersNotified = broadcast(session.matchId, timeoutSnapshot);
     stopBot(session.matchId, 'p1');
     stopBot(session.matchId, 'p2');
@@ -308,16 +364,81 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
         appVersion: APP_VERSION,
         protocolVersion: PROTOCOL_VERSION,
         matches: sessions.size,
-        lobbyGames: lobby.games.size
+        lobbyGames: lobby.games.size,
+        profileDatabase: 'ok'
+      });
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/vnext/profiles/sessions') {
+      try {
+        const body = await readJson(request);
+        const opened = profileStore.openSession({
+          sessionToken: bearerToken(request) || body.sessionToken,
+          nickname: body.nickname
+        });
+        log(opened.created ? 'PROFILE_CREATED' : 'PROFILE_SESSION_RESUMED', {
+          playerId: opened.player.playerId,
+          nickname: opened.player.nickname
+        });
+        sendJson(response, opened.created ? 201 : 200, {
+          player: opened.player,
+          sessionToken: opened.sessionToken
+        });
+      } catch (error) {
+        if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
+      }
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/vnext/profiles/me') {
+      try {
+        sendJson(response, 200, { player: profileStore.requirePlayer(bearerToken(request)) });
+      } catch (error) {
+        sendJson(response, error.statusCode || 500, { error: error.message });
+      }
+      return;
+    }
+    if (request.method === 'PATCH' && url.pathname === '/vnext/profiles/me') {
+      try {
+        const body = await readJson(request);
+        const sessionToken = bearerToken(request);
+        const player = profileStore.updateNickname(sessionToken, body.nickname);
+        lobby.syncPersistedPlayer(sessionToken, player);
+        log('PROFILE_NICKNAME_UPDATED', { playerId: player.playerId, nickname: player.nickname });
+        sendJson(response, 200, { player });
+      } catch (error) {
+        if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
+      }
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/vnext/profiles/me/matches') {
+      try {
+        sendJson(response, 200, {
+          matches: profileStore.matchHistory(bearerToken(request), boundedLimit(url.searchParams.get('limit')))
+        });
+      } catch (error) {
+        sendJson(response, error.statusCode || 500, { error: error.message });
+      }
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/vnext/leaderboard') {
+      sendJson(response, 200, {
+        players: profileStore.leaderboard(boundedLimit(url.searchParams.get('limit')))
       });
       return;
     }
     if (request.method === 'POST' && url.pathname === '/vnext/lobby/sessions') {
       try {
         const body = await readJson(request);
-        const player = lobby.createOrUpdatePlayer({ sessionId: body.sessionId, nickname: body.nickname });
+        const player = lobby.createOrUpdatePlayer({
+          sessionId: body.sessionId,
+          sessionToken: body.sessionToken,
+          nickname: body.nickname
+        });
         log('LOBBY_SESSION', { playerId: player.playerId, nickname: player.nickname });
-        sendJson(response, 200, { player });
+        sendJson(response, 200, {
+          player,
+          ...(player.sessionId?.startsWith('hs_') ? { sessionToken: player.sessionId } : {})
+        });
       } catch (error) {
         if (!response.headersSent) sendJson(response, error.statusCode || 500, { error: error.message });
       }
@@ -340,7 +461,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
         const progressLimitMinutes = normalizeProgressLimit(body.progressLimitMinutes);
         const session = new MatchSession({ matchId, seed, mode, progressLimitMinutes, clockActive: false });
         sessions.set(matchId, session);
-        const game = lobby.createGame({ sessionId: body.sessionId, matchId, seed, mode, name: body.name, progressLimitMinutes });
+        const game = lobby.createGame({ sessionId: sessionCredential(body), matchId, seed, mode, name: body.name, progressLimitMinutes });
         log('LOBBY_GAME_CREATED', {
           gameId: game.gameId,
           matchId,
@@ -370,7 +491,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
     if (request.method === 'POST' && lobbyPath?.[2] === '/join') {
       try {
         const body = await readJson(request);
-        const joined = lobby.joinGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: body.sessionId });
+        const joined = lobby.joinGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: sessionCredential(body) });
         const joinedSession = sessions.get(joined.matchId);
         joinedSession?.activateClock();
         if (joinedSession) scheduleProgressTimer(joinedSession);
@@ -398,7 +519,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
       try {
         const body = await readJson(request);
         const gameId = decodeURIComponent(lobbyPath[1]);
-        const game = lobby.leaveGame({ gameId, sessionId: body.sessionId });
+        const game = lobby.leaveGame({ gameId, sessionId: sessionCredential(body) });
         const waitingSession = sessions.get(game.matchId);
         waitingSession?.pauseClock();
         if (waitingSession) scheduleProgressTimer(waitingSession);
@@ -421,7 +542,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
     if (request.method === 'DELETE' && lobbyPath && !lobbyPath[2]) {
       try {
         const body = await readJson(request);
-        const game = lobby.deleteWaitingGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: body.sessionId });
+        const game = lobby.deleteWaitingGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: sessionCredential(body) });
         const deleted = {
           kind: 'lobbyDelete',
           matchId: game.matchId,
@@ -443,7 +564,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
       const matchId = decodeURIComponent(lobbyMatchPath[1]);
       try {
         const body = await readJson(request);
-        const game = lobby.endGameByMatch({ matchId, sessionId: body.sessionId });
+        const game = lobby.endGameByMatch({ matchId, sessionId: sessionCredential(body) });
         stopBot(matchId, 'p1');
         stopBot(matchId, 'p2');
         const ended = {
@@ -469,15 +590,35 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
           sendJson(response, 400, { error: 'seed and mode (split|shared) are required' });
           return;
         }
+        const matchKind = body.matchKind || null;
+        if (matchKind && !['human-vs-bot', 'bot-vs-bot'].includes(matchKind)) {
+          sendJson(response, 400, { error: 'matchKind must be human-vs-bot or bot-vs-bot' });
+          return;
+        }
+        const sessionToken = matchKind === 'human-vs-bot' ? bearerToken(request) : null;
+        const human = matchKind === 'human-vs-bot' ? profileStore.requirePlayer(sessionToken) : null;
         const matchId = `m-${crypto.randomUUID()}`;
         const progressLimitMinutes = normalizeProgressLimit(body.progressLimitMinutes);
         const session = new MatchSession({ matchId, seed: body.seed, mode: body.mode, progressLimitMinutes });
         sessions.set(matchId, session);
+        if (matchKind) {
+          directMatches.set(matchId, {
+            matchKind,
+            resultId: `mr-${crypto.randomUUID()}`,
+            resultRecorded: false,
+            sessionToken,
+            botSeats: new Set(),
+            players: matchKind === 'human-vs-bot'
+              ? { p1: { playerId: human.playerId, nickname: human.nickname }, p2: { playerId: null, nickname: 'Bot' } }
+              : { p1: { playerId: null, nickname: 'Bot P1' }, p2: { playerId: null, nickname: 'Bot P2' } }
+          });
+        }
         scheduleProgressTimer(session);
         log('MATCH_CREATED', {
           matchId,
           mode: body.mode,
           progressLimitMinutes,
+          matchKind,
           rev: session.current.rev,
           hash: shortHash(session.current.stateHash)
         });
@@ -486,6 +627,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
           mode: body.mode,
           seed: body.seed,
           progressLimitMinutes,
+          matchKind,
           protocolVersion: PROTOCOL_VERSION,
           rev: session.current.rev,
           stateHash: session.current.stateHash
@@ -529,6 +671,8 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
           logger
         });
         bots.set(botKey(session.matchId, clientId), managedBot);
+        const direct = directMatches.get(session.matchId);
+        if (direct) direct.botSeats.add(clientId);
         managedBot.done.finally(() => {
           if (bots.get(botKey(session.matchId, clientId)) === managedBot) bots.delete(botKey(session.matchId, clientId));
           reconcileBotOrphanTimer(session.matchId);
@@ -571,7 +715,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
       }
       try {
         const body = await readJson(request);
-        lobby.requireHostForMatch({ matchId: session.matchId, sessionId: body.sessionId });
+        lobby.requireHostForMatch({ matchId: session.matchId, sessionId: sessionCredential(body) });
         const seed = typeof body.seed === 'string' && body.seed.length > 0 ? body.seed : session.header.seed;
         const mode = typeof body.mode === 'string' && body.mode.length > 0 ? body.mode : session.header.mode;
         if (!MODES.includes(mode)) {
@@ -586,6 +730,12 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
         const restartSnapshot = session.restart({ seed, mode, progressLimitMinutes, clockActive });
         scheduleProgressTimer(session);
         const restartedGame = lobby.markMatchRestarted(session.matchId, { seed, mode, progressLimitMinutes });
+        const direct = directMatches.get(session.matchId);
+        if (direct) {
+          direct.resultId = `mr-${crypto.randomUUID()}`;
+          direct.resultRecorded = false;
+          direct.botSeats.clear();
+        }
         if (restartedGame) restartSnapshot.game = restartedGame;
         const peersNotified = broadcast(session.matchId, restartSnapshot);
         log('MATCH_RESTARTED', {
@@ -739,7 +889,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
       const outcome = activeSession.process(clientId, envelope);
       const matchFinished = outcome.response.kind === 'ack' && outcome.response.state?.status === 'finished';
       if (matchFinished) {
-        lobby.markMatchFinished(matchId, outcome.response.state);
+        recordFinishedMatch(activeSession, outcome.response.state);
       }
       if (outcome.response.kind === 'ack') {
         log('ACTION_ACK', {
@@ -818,11 +968,14 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
       for (const socket of room.values()) socket.close(1001, 'server shutdown');
     }
     return new Promise((resolve, reject) => {
-      wss.close(() => server.close((error) => error ? reject(error) : resolve()));
+      wss.close(() => server.close((error) => {
+        if (ownsProfileStore) profileStore.close();
+        error ? reject(error) : resolve();
+      }));
     });
   }
 
-  return { bots, close, lobby, server, sessions, start, wss };
+  return { bots, close, directMatches, lobby, profileStore, recordFinishedMatch, server, sessions, start, wss };
 }
 
 module.exports = { createVNextServer };

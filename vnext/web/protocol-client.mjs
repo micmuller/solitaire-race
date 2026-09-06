@@ -134,23 +134,47 @@ export class ProtocolClient {
   }
 }
 
-export async function createMatch(baseUrl, seed, mode, progressLimitMinutes = 0) {
+export async function createMatch(baseUrl, seed, mode, progressLimitMinutes = 0, { matchKind, sessionToken } = {}) {
   const response = await fetch(`${baseUrl}/vnext/matches`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ seed, mode, progressLimitMinutes })
+    headers: {
+      'content-type': 'application/json',
+      ...(sessionToken ? { authorization: `Bearer ${sessionToken}` } : {})
+    },
+    body: JSON.stringify({ seed, mode, progressLimitMinutes, ...(matchKind ? { matchKind } : {}) })
   });
   if (!response.ok) throw new Error(`Matcherstellung fehlgeschlagen (${response.status})`);
   return response.json();
 }
 
-export async function createLobbySession(baseUrl, { sessionId, nickname }) {
+export async function createLobbySession(baseUrl, { sessionId, sessionToken, nickname }) {
   const response = await fetch(`${baseUrl}/vnext/lobby/sessions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId, nickname })
+    body: JSON.stringify({ sessionId, sessionToken, nickname })
   });
   if (!response.ok) throw new Error(`Lobby-Anmeldung fehlgeschlagen (${response.status})`);
+  return response.json();
+}
+
+export async function updateProfileNickname(baseUrl, { sessionToken, nickname }) {
+  const response = await fetch(`${baseUrl}/vnext/profiles/me`, {
+    method: 'PATCH',
+    headers: {
+      authorization: `Bearer ${sessionToken}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ nickname })
+  });
+  if (!response.ok) throw new Error(`Nickname konnte nicht gespeichert werden (${response.status})`);
+  return response.json();
+}
+
+export async function listProfileMatches(baseUrl, { sessionToken, limit = 10 }) {
+  const response = await fetch(`${baseUrl}/vnext/profiles/me/matches?limit=${encodeURIComponent(limit)}`, {
+    headers: { authorization: `Bearer ${sessionToken}` }
+  });
+  if (!response.ok) throw new Error(`Spielhistorie konnte nicht geladen werden (${response.status})`);
   return response.json();
 }
 
@@ -160,61 +184,61 @@ export async function listLobbyGames(baseUrl) {
   return response.json();
 }
 
-export async function createLobbyGame(baseUrl, { sessionId, name, seed, mode, progressLimitMinutes = 0 }) {
+export async function createLobbyGame(baseUrl, { sessionId, sessionToken, name, seed, mode, progressLimitMinutes = 0 }) {
   const response = await fetch(`${baseUrl}/vnext/lobby/games`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId, name, seed, mode, progressLimitMinutes })
+    body: JSON.stringify({ sessionId, sessionToken, name, seed, mode, progressLimitMinutes })
   });
   if (!response.ok) throw new Error(`Lobby-Spiel konnte nicht erstellt werden (${response.status})`);
   return response.json();
 }
 
-export async function joinLobbyGame(baseUrl, gameId, { sessionId }) {
+export async function joinLobbyGame(baseUrl, gameId, { sessionId, sessionToken }) {
   const response = await fetch(`${baseUrl}/vnext/lobby/games/${encodeURIComponent(gameId)}/join`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId })
+    body: JSON.stringify({ sessionId, sessionToken })
   });
   if (!response.ok) throw new Error(`Lobby-Spiel konnte nicht betreten werden (${response.status})`);
   return response.json();
 }
 
-export async function leaveLobbyGame(baseUrl, gameId, { sessionId }) {
+export async function leaveLobbyGame(baseUrl, gameId, { sessionId, sessionToken }) {
   const response = await fetch(`${baseUrl}/vnext/lobby/games/${encodeURIComponent(gameId)}/leave`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId })
+    body: JSON.stringify({ sessionId, sessionToken })
   });
   if (!response.ok) throw new Error(`Lobby-Spiel konnte nicht verlassen werden (${response.status})`);
   return response.json();
 }
 
-export async function deleteLobbyGame(baseUrl, gameId, { sessionId }) {
+export async function deleteLobbyGame(baseUrl, gameId, { sessionId, sessionToken }) {
   const response = await fetch(`${baseUrl}/vnext/lobby/games/${encodeURIComponent(gameId)}`, {
     method: 'DELETE',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId })
+    body: JSON.stringify({ sessionId, sessionToken })
   });
   if (!response.ok) throw new Error(`Lobby-Spiel konnte nicht geloescht werden (${response.status})`);
   return response.json();
 }
 
-export async function endLobbyMatch(baseUrl, matchId, { sessionId }) {
+export async function endLobbyMatch(baseUrl, matchId, { sessionId, sessionToken }) {
   const response = await fetch(`${baseUrl}/vnext/lobby/matches/${encodeURIComponent(matchId)}/end`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId })
+    body: JSON.stringify({ sessionId, sessionToken })
   });
   if (!response.ok) throw new Error(`Spiel konnte nicht beendet werden (${response.status})`);
   return response.json();
 }
 
-export async function restartMatch(baseUrl, matchId, seed, mode, { sessionId, progressLimitMinutes } = {}) {
+export async function restartMatch(baseUrl, matchId, seed, mode, { sessionId, sessionToken, progressLimitMinutes } = {}) {
   const response = await fetch(`${baseUrl}/vnext/matches/${encodeURIComponent(matchId)}/restart`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ seed, mode, sessionId, progressLimitMinutes })
+    body: JSON.stringify({ seed, mode, sessionId, sessionToken, progressLimitMinutes })
   });
   if (!response.ok) throw new Error(`Restart fehlgeschlagen (${response.status})`);
   return response.json();

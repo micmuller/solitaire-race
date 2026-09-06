@@ -26,6 +26,7 @@ function publicPlayer(player) {
   return {
     playerId: player.playerId,
     sessionId: player.sessionId,
+    publicSessionId: player.publicSessionId || player.sessionId,
     nickname: player.nickname,
     stats: { ...player.stats }
   };
@@ -36,6 +37,7 @@ function publicSeat(seat) {
   return {
     playerId: seat.playerId,
     sessionId: seat.sessionId,
+    publicSessionId: seat.publicSessionId || seat.sessionId,
     nickname: seat.nickname
   };
 }
@@ -62,28 +64,47 @@ function publicGame(game) {
 }
 
 class LobbyStore {
-  constructor({ idFactory = () => crypto.randomUUID(), clock = nowIso } = {}) {
+  constructor({ idFactory = () => crypto.randomUUID(), clock = nowIso, profileStore = null } = {}) {
     this.idFactory = idFactory;
     this.clock = clock;
+    this.profileStore = profileStore;
     this.players = new Map();
     this.games = new Map();
     this.matchToGame = new Map();
   }
 
-  createOrUpdatePlayer({ sessionId, nickname }) {
+  createOrUpdatePlayer({ sessionId, sessionToken, nickname }) {
     const normalizedNickname = normalizeNickname(nickname);
     if (!normalizedNickname) {
       const error = new Error('nickname is required');
       error.statusCode = 400;
       throw error;
     }
-    const resolvedSessionId = typeof sessionId === 'string' && sessionId.length > 0
-      ? sessionId
-      : `ps-${this.idFactory()}`;
+    const credential = typeof sessionToken === 'string' && sessionToken.length > 0
+      ? sessionToken
+      : typeof sessionId === 'string' && sessionId.length > 0
+        ? sessionId
+        : null;
+    if (this.profileStore && (!credential || credential.startsWith('hs_'))) {
+      const persisted = this.profileStore.openSession({ sessionToken: credential, nickname: normalizedNickname });
+      const player = {
+        playerId: persisted.player.playerId,
+        sessionId: persisted.sessionToken,
+        publicSessionId: persisted.player.sessionId,
+        nickname: persisted.player.nickname,
+        stats: { ...persisted.player.stats },
+        createdAt: persisted.player.createdAt,
+        lastSeenAt: persisted.player.lastSeenAt
+      };
+      this.players.set(player.sessionId, player);
+      return publicPlayer(player);
+    }
+    const resolvedSessionId = credential || `ps-${this.idFactory()}`;
     const existing = this.players.get(resolvedSessionId);
     const player = existing || {
       playerId: `pl-${this.idFactory()}`,
       sessionId: resolvedSessionId,
+      publicSessionId: resolvedSessionId,
       nickname: normalizedNickname,
       stats: { ...PLAYER_HISTORY_TEMPLATE },
       createdAt: this.clock()
@@ -103,6 +124,23 @@ class LobbyStore {
     }
     player.lastSeenAt = this.clock();
     return player;
+  }
+
+  syncPersistedPlayer(sessionToken, persistedPlayer) {
+    const player = this.players.get(sessionToken);
+    if (player?.playerId === persistedPlayer.playerId) {
+      player.nickname = persistedPlayer.nickname;
+      player.stats = { ...persistedPlayer.stats };
+      player.lastSeenAt = persistedPlayer.lastSeenAt;
+    }
+    for (const game of this.games.values()) {
+      for (const seat of ['p1', 'p2']) {
+        if (game.players[seat]?.playerId !== persistedPlayer.playerId) continue;
+        game.players[seat].nickname = persistedPlayer.nickname;
+        game.updatedAt = this.clock();
+      }
+    }
+    return player ? publicPlayer(player) : persistedPlayer;
   }
 
   listGames() {
@@ -141,6 +179,7 @@ class LobbyStore {
       createdAt: timestamp,
       updatedAt: timestamp,
       history: {
+        resultId: `mr-${this.idFactory()}`,
         resultRecorded: false,
         scoreSnapshot: null
       }
@@ -262,6 +301,7 @@ class LobbyStore {
     if (progressLimitMinutes !== undefined) game.progressLimitMinutes = progressLimitMinutes;
     game.status = game.players.p2 ? 'active' : 'waiting';
     game.updatedAt = this.clock();
+    game.history.resultId = `mr-${this.idFactory()}`;
     game.history.resultRecorded = false;
     game.history.scoreSnapshot = null;
     return publicGame(game);
@@ -286,6 +326,22 @@ class LobbyStore {
   recordResult(game, state) {
     if (game.history.resultRecorded || !state?.players) return;
     const timestamp = this.clock();
+    if (this.profileStore) {
+      this.profileStore.recordMatch({
+        resultId: game.history.resultId,
+        matchId: game.matchId,
+        seed: game.seed,
+        mode: game.mode,
+        matchKind: 'human-vs-human',
+        endedReason: state.endedReason,
+        winner: state.winner,
+        players: Object.fromEntries(['p1', 'p2'].map((playerId) => [playerId, {
+          playerId: game.players[playerId]?.playerId || null,
+          nickname: game.players[playerId]?.nickname || playerId,
+          score: Number.isSafeInteger(state.players[playerId]?.score) ? state.players[playerId].score : 0
+        }]))
+      });
+    }
     for (const playerId of ['p1', 'p2']) {
       const sessionId = game.players[playerId]?.sessionId;
       const player = sessionId ? this.players.get(sessionId) : null;
@@ -296,6 +352,10 @@ class LobbyStore {
       player.stats.bestScore = Math.max(player.stats.bestScore, score);
       player.stats.lastGameAt = timestamp;
       if (state.winner === playerId) player.stats.gamesWon += 1;
+      if (this.profileStore) {
+        const persisted = this.profileStore.playerById(player.playerId);
+        if (persisted) player.stats = { ...persisted.stats };
+      }
     }
     game.history.resultRecorded = true;
   }

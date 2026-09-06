@@ -9,7 +9,7 @@ import { InputLock } from './input/input-lock.js';
 import { StockClickQueue } from './input/stock-click-queue.js';
 import { resolveQuality } from './theme/tokens.js';
 import { DEMO_CURRENT } from './assets/demo-state.js';
-import { ProtocolClient, createLobbyGame, createLobbySession, createMatch, deleteLobbyGame, endLobbyMatch, joinLobbyGame, leaveLobbyGame, listLobbyGames, restartMatch, startBot, stopBots } from '../../web/protocol-client.mjs';
+import { ProtocolClient, createLobbyGame, createLobbySession, createMatch, deleteLobbyGame, endLobbyMatch, joinLobbyGame, leaveLobbyGame, listLobbyGames, listProfileMatches, restartMatch, startBot, stopBots, updateProfileNickname } from '../../web/protocol-client.mjs';
 import { autoFoundationIntent, dropIntent, tableauSelection, wasteSelection } from '../../web/intent-mapping.mjs';
 import { cueForIntentResult } from '../../web/effects.mjs';
 import { generateRandomSeed } from '../../web/seed.mjs';
@@ -17,13 +17,13 @@ import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, resignDecision, resignResultCopy, retryableSequenceReject, sameTableauSelection, seedForHostedGame, waitingMatchMessage } from './bridge/match-context.js';
 import { buildErrorReport, copyDiagnosticText, describeOpponent } from './diagnostics/error-report.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.2.4';
+export const WEB_PIXI_CLIENT_VERSION = '0.2.8';
 const PROTOCOL_VERSION = '2.5.2';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
-const STORAGE = { nickname:'solitaire-vnext:nickname', session:'solitaire-vnext:lobbySessionId', server:'solitaire-vnext:serverBaseUrl', quality:'solitaire-pixi:quality', cardAnimations:'solitaire-pixi:cardAnimations', progressLimit:'solitaire-pixi:progressLimit', mute:'solitaire-pixi:mute', stockSide:'solitaire-pixi:stockSide' };
+const STORAGE = { nickname:'solitaire-vnext:nickname', session:'solitaire-vnext:lobbySessionId', sessionToken:'solitaire-vnext:profileSessionToken', publicSession:'solitaire-vnext:publicSessionId', server:'solitaire-vnext:serverBaseUrl', quality:'solitaire-pixi:quality', cardAnimations:'solitaire-pixi:cardAnimations', progressLimit:'solitaire-pixi:progressLimit', mute:'solitaire-pixi:mute', stockSide:'solitaire-pixi:stockSide' };
 const matchSessionKey = (matchId) => `solitaire-pixi:match-session:${matchId}`;
-let mode = 'split', baseUrl = storageGet(STORAGE.server) || window.location.origin, client = null, lobbyPlayer = null, activeGame = null, activeKind = 'human', selection = null, audioContext = null, celebrated = null, gameOverQueued = null, gameOverTimer = null;
+let mode = 'split', baseUrl = storageGet(STORAGE.server) || window.location.origin, client = null, lobbyPlayer = null, activeGame = null, activeKind = 'human', selection = null, audioContext = null, celebrated = null, gameOverQueued = null, gameOverTimer = null, refreshedFinishedProfile = null;
 const debugLines=[];
 let rendererContextLosses=0;
 const inputLock = new InputLock();
@@ -64,6 +64,7 @@ function debug(text) { debugLines.unshift(`${new Date().toLocaleTimeString()} ${
 pixi.canvas.addEventListener('webglcontextlost',(event)=>{event.preventDefault();rendererContextLosses+=1;debug(`renderer context lost (${rendererContextLosses})`);status('Grafik-Renderer wird wiederhergestellt …','Anzeige');});
 pixi.canvas.addEventListener('webglcontextrestored',()=>{debug('renderer context restored');pixi.ticker.start();if(client?.current)renderCurrent(client.current,'snapshot');status(client?.clientId==='observer'?'Beobachtermodus':'Dein Tisch ist bereit','Verbunden');});
 function storageGet(key) { try { return localStorage.getItem(key)||''; } catch { return ''; } }
+function profileSessionToken() { const token=storageGet(STORAGE.sessionToken)||storageGet(STORAGE.session); return token.startsWith('hs_')?token:''; }
 function overlayOpen(element, value) { element.hidden=!value; const reason=`overlay:${element.id}`; if(value) inputLock.lock(reason); else inputLock.unlock(reason); $('#board-lock').hidden=!inputLock.locked; $('#menu-open').setAttribute('aria-expanded',String(value&&element.id==='menu-overlay')); }
 function setMode(next) { mode=next==='shared'?'shared':'split'; all('[data-mode]').forEach((button)=>button.setAttribute('aria-pressed',String(button.dataset.mode===mode))); $('#menu-mode').value=mode; $('#bot-mode').value=mode; $('#mode-label').textContent=mode.toUpperCase(); }
 function progressLimitValueFrom(value) { const numeric=Number(value||0); return [0,2,3,5].includes(numeric)?numeric:0; }
@@ -101,6 +102,7 @@ function updateMeta() {
   $('#revision').textContent=revision; $('#hash').textContent=hash;
   $('#info-revision').textContent=revision; $('#info-hash').textContent=hash; $('#info-server').textContent=baseUrl; $('#current-host').textContent=baseUrl;
   $('#profile-role').textContent=client?.clientId||'–'; $('#profile-match').textContent=client?.matchId||'–';
+  $('#profile-player-id').textContent=lobbyPlayer?.playerId||'–'; $('#profile-games').textContent=String(lobbyPlayer?.stats?.gamesPlayed??0); $('#profile-wins').textContent=String(lobbyPlayer?.stats?.gamesWon??0);
   $('#score-label').textContent=String(current?.state.players?.[displayId]?.score??0);
   $('#p1-name').textContent=names.p1; $('#p2-name').textContent=names.p2;
   $('#p1-score b').textContent=String(current?.state.players?.p1?.score??0); $('#p2-score b').textContent=String(current?.state.players?.p2?.score??0);
@@ -110,6 +112,29 @@ function updateMeta() {
   $('#invite-link').value=client?inviteUrl({origin:location.origin,pathname:'/vnext/pixi/',matchId:client.matchId}):''; $('#menu-match-id').value=client?.matchId||'';
   $('#menu-context').textContent=client?`${client.clientId.toUpperCase()} · ${current?.state.mode?.toUpperCase()||mode.toUpperCase()} · rev ${current?.rev??'–'}`:'Kein aktives Spiel';
   $('#info-match').textContent=client?.matchId||'–'; $('#info-role').textContent=client?.clientId||'–'; $('#info-opponent').textContent=describeOpponent({activeKind,activeGame,role:client?.clientId}); refreshDebugHud();
+}
+function profileMatchCopy(match){
+  const outcome=match.won?'Gewonnen':'Verloren';
+  const reason=match.endedReason==='resign'?(match.won?'Gegner aufgegeben':'Aufgegeben'):match.endedReason==='inactivity'?(match.won?'Gegnerzeit abgelaufen':'Zeit abgelaufen'):'Beendet';
+  const kind={'human-vs-human':'Human vs Human','human-vs-bot':'Human vs Bot','bot-vs-bot':'Bot vs Bot'}[match.matchKind]||match.matchKind;
+  return {outcome,reason,kind,mode:match.mode==='shared'?'Shared':'Split'};
+}
+function renderProfileHistory(matches=[]){
+  const list=$('#profile-history');list.replaceChildren();
+  if(!matches.length){const empty=document.createElement('li');empty.className='profile-history-empty';empty.textContent='Noch keine abgeschlossenen Spiele.';list.append(empty);return;}
+  for(const match of matches){
+    const copy=profileMatchCopy(match),item=document.createElement('li'),heading=document.createElement('div'),meta=document.createElement('small'),outcome=document.createElement('strong');
+    item.className=match.won?'won':'lost';outcome.textContent=copy.outcome;heading.append(copy.reason,' · ',outcome);
+    const endedAt=new Date(match.endedAt),date=Number.isNaN(endedAt.valueOf())?'':` · ${endedAt.toLocaleString('de-CH',{dateStyle:'short',timeStyle:'short'})}`;
+    meta.textContent=`${copy.kind} · ${copy.mode} · ${match.score} ${match.score===1?'Punkt':'Punkte'}${date}`;
+    item.append(heading,meta);list.append(item);
+  }
+}
+async function refreshProfileHistory(){
+  const sessionToken=profileSessionToken();if(!sessionToken)return renderProfileHistory();
+  $('#profile-history').setAttribute('aria-busy','true');
+  try{const result=await listProfileMatches(baseUrl,{sessionToken,limit:10});renderProfileHistory(result.matches||[]);}
+  finally{$('#profile-history').removeAttribute('aria-busy');}
 }
 function isVisualPreview() { return client?.matchId?.startsWith('demo')===true; }
 function canSendActions() { return !isVisualPreview()&&interactionAllowed({ locked:inputLock.locked, current:client?.current, role:client?.clientId, lobbyStatus:activeGame?.status }); }
@@ -125,17 +150,17 @@ async function prepareMatchContext(matchId, role) {
   activeGame=game; activeKind='human';
   if(role!=='p2'||game.status!=='waiting')return;
   const sessionKey=matchSessionKey(matchId);
-  const sessionId=guestSessionCandidate({game,persistentSessionId:storageGet(STORAGE.session),matchSessionId:sessionStorage.getItem(sessionKey)});
+  const sessionId=guestSessionCandidate({game,persistentSessionId:profileSessionToken(),persistentPublicSessionId:storageGet(STORAGE.publicSession),matchSessionId:sessionStorage.getItem(sessionKey)});
   const nickname=($('#menu-nickname').value.trim()||'HighNoon')+(sessionId?'':' P2');
-  const result=await createLobbySession(baseUrl,{sessionId,nickname});
+  const result=await createLobbySession(baseUrl,{sessionToken:sessionId||undefined,nickname});
   lobbyPlayer=result.player;
   sessionStorage.setItem(sessionKey,lobbyPlayer.sessionId);
-  const joined=await joinLobbyGame(baseUrl,game.gameId,{sessionId:lobbyPlayer.sessionId});
+  const joined=await joinLobbyGame(baseUrl,game.gameId,{sessionToken:lobbyPlayer.sessionId});
   if(joined.role!=='p2')throw new Error('P2 konnte keinen eigenen Lobby-Sitz erhalten. Bitte Lobby aktualisieren und erneut verbinden.');
   activeGame=joined.game;
 }
 
-function renderCurrent(current, source='snapshot') { board.applyState(current,{source}); pixi.render(); updateMeta(); if(source==='ack'){const score=$(`#${client?.clientId==='p2'?'p2':'p1'}-score`);score.classList.remove('pulse');requestAnimationFrame(()=>score.classList.add('pulse'));} const local=client?.clientId==='p2'?'p2':'p1', opponent=local==='p1'?'p2':'p1'; const state=current.state; $('#accessible-state').textContent=`Revision ${current.rev}. ${local.toUpperCase()} hat ${state.players[local].stock.length} Karten im Stock, ${state.players[local].waste.length} im Waste und ${state.players[local].score} Punkte. Gegner ${state.players[opponent].score} Punkte.`; if(state.status!=='finished'){resetGameOver();return;} const key=`${client?.matchId}:${current.stateHash}`; let celebration={mode:'none',dialogDelay:0}; if(celebrated!==key){celebrated=key;celebration=board.celebrate();} const names=participantNames(),hasLobbySession=Boolean(activeGame||sessionStorage.getItem(matchSessionKey(client?.matchId))),decision=resignDecision({endedReason:state.endedReason,role:client?.clientId,hasLobbySession}); $('#game-over-new').hidden=decision!=='host-choice';$('#game-over-lobby').hidden=decision!=='host-choice';$('#game-over-close').hidden=decision==='host-choice'; if(state.endedReason==='resign'){const result=resignResultCopy({state,names,decision});$('#game-over-title').textContent=result.title;$('#game-over-text').textContent=result.text;}else if(state.endedReason==='inactivity'){$('#game-over-title').textContent=`${names[state.winner]} gewinnt`;$('#game-over-text').textContent=`${names.p1} ${state.players.p1.score} · ${names.p2} ${state.players.p2.score} · Zeit von ${names[state.endedBy]} abgelaufen`;}else{$('#game-over-title').textContent=`${state.winner?names[state.winner]:'Match'} gewinnt`;$('#game-over-text').textContent=`${names.p1} ${state.players.p1.score} · ${names.p2} ${state.players.p2.score} · ${state.endedReason}`;} if(gameOverQueued!==key){gameOverQueued=key;gameOverTimer=setTimeout(()=>{gameOverTimer=null;if(client?.current?.stateHash===current.stateHash&&!$('#game-over').open)$('#game-over').showModal();},celebration.dialogDelay);} }
+function renderCurrent(current, source='snapshot') { board.applyState(current,{source}); pixi.render(); updateMeta(); if(source==='ack'){const score=$(`#${client?.clientId==='p2'?'p2':'p1'}-score`);score.classList.remove('pulse');requestAnimationFrame(()=>score.classList.add('pulse'));} const local=client?.clientId==='p2'?'p2':'p1', opponent=local==='p1'?'p2':'p1'; const state=current.state; $('#accessible-state').textContent=`Revision ${current.rev}. ${local.toUpperCase()} hat ${state.players[local].stock.length} Karten im Stock, ${state.players[local].waste.length} im Waste und ${state.players[local].score} Punkte. Gegner ${state.players[opponent].score} Punkte.`; if(state.status!=='finished'){refreshedFinishedProfile=null;resetGameOver();return;} const key=`${client?.matchId}:${current.stateHash}`; refreshProfileAfterFinish(key); let celebration={mode:'none',dialogDelay:0}; if(celebrated!==key){celebrated=key;celebration=board.celebrate();} const names=participantNames(),hasLobbySession=Boolean(activeGame||sessionStorage.getItem(matchSessionKey(client?.matchId))),decision=resignDecision({endedReason:state.endedReason,role:client?.clientId,hasLobbySession}); $('#game-over-new').hidden=decision!=='host-choice';$('#game-over-lobby').hidden=decision!=='host-choice';$('#game-over-close').hidden=decision==='host-choice'; if(state.endedReason==='resign'){const result=resignResultCopy({state,names,decision});$('#game-over-title').textContent=result.title;$('#game-over-text').textContent=result.text;}else if(state.endedReason==='inactivity'){$('#game-over-title').textContent=`${names[state.winner]} gewinnt`;$('#game-over-text').textContent=`${names.p1} ${state.players.p1.score} · ${names.p2} ${state.players.p2.score} · Zeit von ${names[state.endedBy]} abgelaufen`;}else{$('#game-over-title').textContent=`${state.winner?names[state.winner]:'Match'} gewinnt`;$('#game-over-text').textContent=`${names.p1} ${state.players.p1.score} · ${names.p2} ${state.players.p2.score} · ${state.endedReason}`;} if(gameOverQueued!==key){gameOverQueued=key;gameOverTimer=setTimeout(()=>{gameOverTimer=null;if(client?.current?.stateHash===current.stateHash&&!$('#game-over').open)$('#game-over').showModal();},celebration.dialogDelay);} }
 
 async function connect(matchId, role, { route=true, reconnect=false }={}) {
   client?.close?.(); selection=null; stockClickQueue.clear(); board.clearTransient();
@@ -181,26 +206,55 @@ async function sendIntent(kind,payload) {
   if(kind==='draw'||kind==='recycle'){if(accepted)drainStockClickQueue();else stockClickQueue.clear();}
 }
 
-async function ensurePlayer(){ const nickname=$('#menu-nickname').value.trim()||'HighNoon'; const result=await createLobbySession(baseUrl,{sessionId:storageGet(STORAGE.session),nickname}); lobbyPlayer=result.player; localStorage.setItem(STORAGE.session,lobbyPlayer.sessionId); localStorage.setItem(STORAGE.nickname,lobbyPlayer.nickname); return lobbyPlayer; }
-function lobbyRow(game, sessionId) {
-  const ownHost=game.players.p1?.sessionId===sessionId,ownGuest=game.players.p2?.sessionId===sessionId;
+async function ensurePlayer(){
+  const nickname=$('#menu-nickname').value.trim()||storageGet(STORAGE.nickname)||'HighNoon',sessionToken=profileSessionToken();
+  const result=await createLobbySession(baseUrl,{sessionToken:sessionToken||undefined,nickname});
+  lobbyPlayer=result.player;
+  const token=result.sessionToken||sessionToken||lobbyPlayer.sessionId;
+  if(token?.startsWith('hs_'))localStorage.setItem(STORAGE.sessionToken,token);
+  localStorage.setItem(STORAGE.session,token||lobbyPlayer.sessionId);
+  localStorage.setItem(STORAGE.publicSession,lobbyPlayer.publicSessionId||'');
+  localStorage.setItem(STORAGE.nickname,lobbyPlayer.nickname);
+  $('#menu-nickname').value=lobbyPlayer.nickname; $('#profile-nickname').value=lobbyPlayer.nickname; updateMeta();
+  return lobbyPlayer;
+}
+function refreshProfileAfterFinish(key){
+  if(refreshedFinishedProfile===key||!['p1','p2'].includes(client?.clientId)||!profileSessionToken())return;
+  refreshedFinishedProfile=key;
+  ensurePlayer().then(refreshProfileHistory).catch((error)=>debug(`profile refresh after finish failed: ${error.message}`));
+}
+async function saveProfileNickname({input=$('#profile-nickname'),button=$('#profile-save-nickname'),message=$('#profile-save-status')}={}){
+  const nickname=input.value.trim(),sessionToken=profileSessionToken();
+  if(!nickname){showToast('Nickname darf nicht leer sein','error');input.focus();return;}
+  if(!sessionToken){showToast('Profil-Session fehlt – Lobby neu laden','error');return;}
+  button.disabled=true;message.textContent='Wird gespeichert …';
+  try{
+    const result=await updateProfileNickname(baseUrl,{sessionToken,nickname}),player=result.player;
+    lobbyPlayer={...lobbyPlayer,...player,sessionId:sessionToken,publicSessionId:player.sessionId};
+    if(activeGame?.players){for(const seat of ['p1','p2'])if(activeGame.players[seat]?.playerId===player.playerId)activeGame.players[seat].nickname=player.nickname;}
+    localStorage.setItem(STORAGE.nickname,player.nickname);localStorage.setItem(STORAGE.publicSession,player.sessionId);$('#profile-nickname').value=player.nickname;$('#menu-nickname').value=player.nickname;message.textContent='Nickname gespeichert.';updateMeta();showToast('Nickname gespeichert');
+  }catch(error){message.textContent=error.message;showToast(error.message,'error');}
+  finally{button.disabled=false;}
+}
+function lobbyRow(game, sessionId, publicSessionId) {
+  const owns=(seat)=>seat?.publicSessionId===publicSessionId||seat?.sessionId===sessionId,ownHost=owns(game.players.p1),ownGuest=owns(game.players.p2);
   const row=document.createElement('div'); row.className='lobby-game'; const label=document.createElement('span'); label.textContent=`${game.name} · ${game.players.p1?.nickname||'P1'} vs ${game.players.p2?.nickname||'offen'} · ${game.mode} · Uhr ${game.progressLimitMinutes?`${game.progressLimitMinutes} min`:'aus'}`;
   const button=document.createElement('button'); button.textContent=ownHost?'Als P1 öffnen':ownGuest?'Als P2 öffnen':'Als P2 beitreten'; button.disabled=game.status==='finished'||Boolean(game.players.p2&&!ownGuest&&!ownHost);
-  button.onclick=async()=>{try{await ensurePlayer(); activeKind='human'; if(ownHost||ownGuest){activeGame=game;await connect(game.matchId,ownHost?'p1':'p2');return;} const joined=await joinLobbyGame(baseUrl,game.gameId,{sessionId:lobbyPlayer.sessionId}); activeGame=joined.game; await connect(joined.matchId,joined.role);}catch(e){showToast(e.message,'error')}};
+  button.onclick=async()=>{try{await ensurePlayer(); activeKind='human'; if(ownHost||ownGuest){activeGame=game;await connect(game.matchId,ownHost?'p1':'p2');return;} const joined=await joinLobbyGame(baseUrl,game.gameId,{sessionToken:lobbyPlayer.sessionId}); activeGame=joined.game; await connect(joined.matchId,joined.role);}catch(e){showToast(e.message,'error')}};
   row.append(label,button); return row;
 }
-async function refreshLobby(){ const result=await listLobbyGames(baseUrl), sessionId=lobbyPlayer?.sessionId||storageGet(STORAGE.session), list=$('#menu-lobby-games'); list.replaceChildren();for(const game of result.games||[])list.append(lobbyRow(game,sessionId));if(!list.children.length)list.textContent='Keine offenen Spiele.'; }
-async function hostLobby({ name=$('#menu-game-name').value.trim(), requestedSeed='', selectedMode=mode, technicalSeed=false, progressLimitMinutes=progressLimitValue() }={}){ try{await ensurePlayer(); const seed=seedForHostedGame({requestedSeed,technical:technicalSeed,generateSeed:generateRandomSeed}); const created=await createLobbyGame(baseUrl,{sessionId:lobbyPlayer.sessionId,name:name||'HighNoon',seed,mode:selectedMode,progressLimitMinutes}); $('#menu-seed').value=seed;sessionStorage.setItem(matchSessionKey(created.matchId),lobbyPlayer.sessionId); activeGame=created.game; activeKind='human'; setMode(selectedMode); await connect(created.matchId,'p1'); status('Warte auf P2','Lobby');}catch(e){showToast(e.message,'error')} }
-async function hostBot(versus=false,speed='medium',selectedMode=mode,progressLimitMinutes=progressLimitValue()){ try{activeGame=null;setMode(selectedMode); const match=await createMatch(baseUrl,generateRandomSeed(),mode,progressLimitMinutes); activeKind=versus?'bot-versus':'bot'; if(versus){await startBot(baseUrl,match.matchId,{clientId:'p1',speed});await startBot(baseUrl,match.matchId,{clientId:'p2',speed});await connect(match.matchId,'observer');}else{await connect(match.matchId,'p1');await startBot(baseUrl,match.matchId,{clientId:'p2',speed});}}catch(e){showToast(e.message,'error')} }
+async function refreshLobby(){ const result=await listLobbyGames(baseUrl), sessionId=lobbyPlayer?.sessionId||profileSessionToken(),publicSessionId=lobbyPlayer?.publicSessionId||storageGet(STORAGE.publicSession), list=$('#menu-lobby-games'); list.replaceChildren();for(const game of result.games||[])list.append(lobbyRow(game,sessionId,publicSessionId));if(!list.children.length)list.textContent='Keine offenen Spiele.'; }
+async function hostLobby({ name=$('#menu-game-name').value.trim(), requestedSeed='', selectedMode=mode, technicalSeed=false, progressLimitMinutes=progressLimitValue() }={}){ try{await ensurePlayer(); const seed=seedForHostedGame({requestedSeed,technical:technicalSeed,generateSeed:generateRandomSeed}); const created=await createLobbyGame(baseUrl,{sessionToken:lobbyPlayer.sessionId,name:name||'HighNoon',seed,mode:selectedMode,progressLimitMinutes}); $('#menu-seed').value=seed;sessionStorage.setItem(matchSessionKey(created.matchId),lobbyPlayer.sessionId); activeGame=created.game; activeKind='human'; setMode(selectedMode); await connect(created.matchId,'p1'); status('Warte auf P2','Lobby');}catch(e){showToast(e.message,'error')} }
+async function hostBot(versus=false,speed='medium',selectedMode=mode,progressLimitMinutes=progressLimitValue()){ try{activeGame=null;setMode(selectedMode); if(!versus)await ensurePlayer(); const match=await createMatch(baseUrl,generateRandomSeed(),mode,progressLimitMinutes,{matchKind:versus?'bot-vs-bot':'human-vs-bot',sessionToken:versus?undefined:lobbyPlayer.sessionId}); activeKind=versus?'bot-versus':'bot'; if(versus){await startBot(baseUrl,match.matchId,{clientId:'p1',speed});await startBot(baseUrl,match.matchId,{clientId:'p2',speed});await connect(match.matchId,'observer');}else{await connect(match.matchId,'p1');await startBot(baseUrl,match.matchId,{clientId:'p2',speed});}}catch(e){showToast(e.message,'error')} }
 function startDemo(){ client?.close?.();activeGame=null;activeKind='preview';client={clientId:'p1',matchId:'demo-4-2',current:structuredClone(DEMO_CURRENT),close(){}}; board.setLocalId('p1'); renderCurrent(client.current,'snapshot'); overlayOpen($('#menu-overlay'),false); $('#connection-dot').classList.remove('online'); status('Nur visuelle Ansicht – kein Match wurde eröffnet','Demo'); }
-async function doRestart(newSeed){ if(!client||client.matchId.startsWith('demo'))return startDemo(); if(!lobbyPlayer){showToast('Restart benötigt ein gehostetes Lobby-Spiel','error');return;} try{await restartMatch(baseUrl,client.matchId,newSeed?generateRandomSeed():client.current.state.seed,client.current.state.mode,{sessionId:lobbyPlayer.sessionId});overlayOpen($('#menu-overlay'),false);}catch(e){showToast(e.message,'error')} }
-function returnToLobby(){ const matchId=client?.matchId;if(client&&!client.matchId.startsWith('demo'))stopBots(baseUrl,client.matchId).catch(()=>{});client?.close?.();client=null;activeGame=null;activeKind='human';selection=null;stockClickQueue.clear();resetGameOver();board.clearTransient();if(matchId)sessionStorage.removeItem(matchSessionKey(matchId));clearRoute();openMenuTab('lobby');overlayOpen($('#menu-overlay'),true);$('#connection-dot').classList.remove('online');refreshLobby().catch(()=>{}); }
-async function leaveOrDelete(){if(!activeGame||!lobbyPlayer)return showToast('Kein Lobby-Sitz aktiv','error');try{if(client?.clientId==='p1'&&activeGame.status==='waiting')await deleteLobbyGame(baseUrl,activeGame.gameId,{sessionId:lobbyPlayer.sessionId});else if(client?.clientId==='p2')await leaveLobbyGame(baseUrl,activeGame.gameId,{sessionId:lobbyPlayer.sessionId});else return showToast('Nur wartender Host oder P2 kann den Sitz freigeben','error');returnToLobby();}catch(e){showToast(e.message,'error')}}
-async function endGame(){if(!client||!lobbyPlayer)return showToast('Nur der Lobby-Host kann beenden','error');try{await endLobbyMatch(baseUrl,client.matchId,{sessionId:lobbyPlayer.sessionId});returnToLobby();}catch(e){showToast(e.message,'error')}}
+async function doRestart(newSeed){ if(!client||client.matchId.startsWith('demo'))return startDemo(); if(!lobbyPlayer){showToast('Restart benötigt ein gehostetes Lobby-Spiel','error');return;} try{await restartMatch(baseUrl,client.matchId,newSeed?generateRandomSeed():client.current.state.seed,client.current.state.mode,{sessionToken:lobbyPlayer.sessionId});overlayOpen($('#menu-overlay'),false);}catch(e){showToast(e.message,'error')} }
+function returnToLobby(){ const matchId=client?.matchId;if(client&&!client.matchId.startsWith('demo'))stopBots(baseUrl,client.matchId).catch(()=>{});client?.close?.();client=null;activeGame=null;activeKind='human';selection=null;stockClickQueue.clear();resetGameOver();board.clearTransient();if(matchId)sessionStorage.removeItem(matchSessionKey(matchId));clearRoute();openMenuTab('lobby');overlayOpen($('#menu-overlay'),true);$('#connection-dot').classList.remove('online');ensurePlayer().then(refreshLobby).catch(()=>{}); }
+async function leaveOrDelete(){if(!activeGame||!lobbyPlayer)return showToast('Kein Lobby-Sitz aktiv','error');try{if(client?.clientId==='p1'&&activeGame.status==='waiting')await deleteLobbyGame(baseUrl,activeGame.gameId,{sessionToken:lobbyPlayer.sessionId});else if(client?.clientId==='p2')await leaveLobbyGame(baseUrl,activeGame.gameId,{sessionToken:lobbyPlayer.sessionId});else return showToast('Nur wartender Host oder P2 kann den Sitz freigeben','error');returnToLobby();}catch(e){showToast(e.message,'error')}}
+async function endGame(){if(!client||!lobbyPlayer)return showToast('Nur der Lobby-Host kann beenden','error');try{await endLobbyMatch(baseUrl,client.matchId,{sessionToken:lobbyPlayer.sessionId});returnToLobby();}catch(e){showToast(e.message,'error')}}
 async function reconnect(){ if(!client||client.matchId.startsWith('demo'))return; const id=client.matchId,role=client.clientId;client.close();await new Promise(r=>setTimeout(r,100));await connect(id,role,{route:false,reconnect:true});overlayOpen($('#menu-overlay'),false); }
 
-async function restartAfterResign(){if(!client)return;const sessionId=lobbySessionId();try{await restartMatch(baseUrl,client.matchId,generateRandomSeed(),client.current.state.mode,{sessionId});}catch(error){showToast(error.message,'error');}}
-async function returnAfterResign(){if(!client)return;const sessionId=lobbySessionId();try{await endLobbyMatch(baseUrl,client.matchId,{sessionId});returnToLobby();}catch(error){showToast(error.message,'error');}}
+async function restartAfterResign(){if(!client)return;const sessionToken=lobbySessionId();try{await restartMatch(baseUrl,client.matchId,generateRandomSeed(),client.current.state.mode,{sessionToken});}catch(error){showToast(error.message,'error');}}
+async function returnAfterResign(){if(!client)return;if(!activeGame)return returnToLobby();const sessionToken=lobbySessionId();try{await endLobbyMatch(baseUrl,client.matchId,{sessionToken});returnToLobby();}catch(error){showToast(error.message,'error');}}
 
 function openMenuTab(name) { all('[data-menu-tab]').forEach((button)=>{const active=button.dataset.menuTab===name;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));}); all('[data-menu-panel]').forEach((panel)=>{const active=panel.dataset.menuPanel===name;panel.classList.toggle('active',active);panel.hidden=!active;}); }
 function updateMenuControls() {
@@ -216,10 +270,10 @@ function resignMatch() {
 
 function playCue(cue){ if(!cue||$('#mute').checked)return; audioContext??=new AudioContext(); const now=audioContext.currentTime,osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.type=cue==='invalid'?'sawtooth':'triangle';osc.frequency.value={draw:330,move:392,foundation:659,invalid:150,sync:240}[cue]||300;gain.gain.setValueAtTime(.035,now);gain.gain.exponentialRampToValueAtTime(.0001,now+.15);osc.connect(gain).connect(audioContext.destination);osc.start(now);osc.stop(now+.16);}
 
-$('#menu-nickname').value=storageGet(STORAGE.nickname)||'HighNoon'; $('#quality').value=quality.name; $('#card-animations').value=cardAnimationMode; $('#progress-limit').value=String(progressLimitMinutes); $('#mute').checked=storageGet(STORAGE.mute)==='1'; $('#server-url').value=baseUrl; $('#menu-seed').value=generateRandomSeed(); all('[data-stock-side]').forEach((button)=>button.setAttribute('aria-pressed',String(button.dataset.stockSide===stockSide)));
-all('[data-mode]').forEach((button)=>button.onclick=()=>setMode(button.dataset.mode)); $('#menu-refresh-games').onclick=()=>refreshLobby().catch(e=>showToast(e.message,'error')); $('#menu-new-game').onclick=()=>openMenuTab('new-game'); $('#menu-lobby-host-bot').onclick=()=>hostBot(false); $('#menu-lobby-bot-versus').onclick=()=>hostBot(true); $('#demo-game').onclick=startDemo;
+$('#menu-nickname').value=storageGet(STORAGE.nickname)||'HighNoon'; $('#profile-nickname').value=$('#menu-nickname').value; $('#quality').value=quality.name; $('#card-animations').value=cardAnimationMode; $('#progress-limit').value=String(progressLimitMinutes); $('#mute').checked=storageGet(STORAGE.mute)==='1'; $('#server-url').value=baseUrl; $('#menu-seed').value=generateRandomSeed(); all('[data-stock-side]').forEach((button)=>button.setAttribute('aria-pressed',String(button.dataset.stockSide===stockSide)));
+all('[data-mode]').forEach((button)=>button.onclick=()=>setMode(button.dataset.mode)); $('#menu-refresh-games').onclick=()=>refreshLobby().catch(e=>showToast(e.message,'error')); $('#menu-new-game').onclick=()=>openMenuTab('new-game'); $('#menu-lobby-host-bot').onclick=()=>hostBot(false); $('#menu-lobby-bot-versus').onclick=()=>hostBot(true); $('#demo-game').onclick=startDemo; $('#menu-save-nickname').onclick=()=>saveProfileNickname({input:$('#menu-nickname'),button:$('#menu-save-nickname'),message:$('#menu-save-status')}); $('#menu-nickname').addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();$('#menu-save-nickname').click();}});
 all('[data-stock-side]').forEach((button)=>button.onclick=()=>setStockSide(button.dataset.stockSide));
-$('#menu-open').onclick=()=>{updateMenuControls();openMenuTab(client&&!isVisualPreview()?'game':'lobby');overlayOpen($('#menu-overlay'),true);}; $('#profile-open').onclick=()=>overlayOpen($('#profile-overlay'),true); all('[data-close]').forEach((button)=>button.onclick=()=>{const overlay=button.closest('.overlay');if(overlay.id==='menu-overlay'&&!client){openMenuTab('lobby');return;}overlayOpen(overlay,false);}); all('[data-menu-tab]').forEach((button)=>button.onclick=()=>openMenuTab(button.dataset.menuTab));
+$('#menu-open').onclick=()=>{updateMenuControls();openMenuTab(client&&!isVisualPreview()?'game':'lobby');overlayOpen($('#menu-overlay'),true);}; $('#profile-open').onclick=()=>{$('#profile-nickname').value=lobbyPlayer?.nickname||storageGet(STORAGE.nickname)||'HighNoon';updateMeta();overlayOpen($('#profile-overlay'),true);ensurePlayer().then(refreshProfileHistory).catch((error)=>debug(`profile refresh on open failed: ${error.message}`));}; $('#profile-save-nickname').onclick=saveProfileNickname; $('#profile-nickname').addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();saveProfileNickname();}}); all('[data-close]').forEach((button)=>button.onclick=()=>{const overlay=button.closest('.overlay');if(overlay.id==='menu-overlay'&&!client){openMenuTab('lobby');return;}overlayOpen(overlay,false);}); all('[data-menu-tab]').forEach((button)=>button.onclick=()=>openMenuTab(button.dataset.menuTab));
 $('#restart-match').onclick=()=>$('#restart-dialog').showModal(); $('#restart-same').onclick=()=>doRestart(false); $('#restart-new').onclick=()=>doRestart(true); $('#resign').onclick=resignMatch; $('#reconnect').onclick=()=>reconnect().catch(e=>showToast(e.message,'error'));
 $('#game-over-new').onclick=restartAfterResign; $('#game-over-lobby').onclick=returnAfterResign;
 $('#leave-game').onclick=leaveOrDelete; $('#delete-game').onclick=leaveOrDelete; $('#end-game').onclick=endGame; $('#stop-bots').onclick=()=>client&&stopBots(baseUrl,client.matchId).then(()=>showToast('Bots gestoppt')).catch(e=>showToast(e.message,'error'));

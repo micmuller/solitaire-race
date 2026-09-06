@@ -384,7 +384,7 @@ test('Pixi bot menu selects split or shared for both bot match types',()=>{
   const select=html.match(/<select id="bot-mode">[\s\S]*?<\/select>/)?.[0] ?? '';
   assert.match(select,/value="split">Split/);
   assert.match(select,/value="shared">Shared/);
-  assert.match(main,/createMatch\(baseUrl,generateRandomSeed\(\),mode,progressLimitMinutes\)/);
+  assert.match(main,/createMatch\(baseUrl,generateRandomSeed\(\),mode,progressLimitMinutes,\{matchKind:/);
   assert.match(main,/hostBot\(false,\$\('#bot-speed'\)\.value,\$\('#bot-mode'\)\.value\)/);
   assert.match(main,/hostBot\(true,\$\('#bot-speed'\)\.value,\$\('#bot-mode'\)\.value\)/);
 });
@@ -464,20 +464,57 @@ test('production build is an installable web app scoped to the Pixi route',()=>{
   assert.equal(manifest.display,'standalone');
   assert.equal(manifest.icons.length,3);
   assert.match(main,/navigator\.serviceWorker\.register\('\/vnext\/pixi\/service-worker\.js'/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.4/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.8/);
   assert.match(server,/application\/manifest\+json/);
 });
 
-test('stable Pixi release metadata is consistently versioned as 0.2.4',()=>{
+test('stable Pixi release metadata is consistently versioned as 0.2.8',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
   const worker=fs.readFileSync(path.join(root,'public/service-worker.js'),'utf8');
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'0.2.4');
-  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.2\.4'/);
-  assert.match(html,/class="version-chip">v0\.2\.4/);
-  assert.match(html,/PixiJS 8 · 0\.2\.4/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.4/);
+  assert.equal(pkg.version,'0.2.8');
+  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.2\.8'/);
+  assert.match(html,/class="version-chip">v0\.2\.8/);
+  assert.match(html,/PixiJS 8 · 0\.2\.8/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.8/);
+});
+
+test('profile overlay saves a nickname through the protected session without reloading',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const protocol=fs.readFileSync(path.resolve(root,'../web/protocol-client.mjs'),'utf8');
+  assert.match(html,/id="profile-nickname"/);
+  assert.match(html,/id="profile-save-nickname"[^>]*>Speichern/);
+  assert.match(html,/id="profile-save-status"[^>]*aria-live="polite"/);
+  assert.match(html,/id="menu-save-nickname"[^>]*>Speichern/);
+  assert.match(html,/id="menu-save-status"[^>]*aria-live="polite"/);
+  assert.match(main,/updateProfileNickname\(baseUrl,\{sessionToken,nickname\}\)/);
+  assert.match(main,/localStorage\.setItem\(STORAGE\.nickname,player\.nickname\)/);
+  assert.match(main,/activeGame\.players\[seat\]\.nickname=player\.nickname/);
+  assert.match(protocol,/method: 'PATCH'/);
+  assert.match(protocol,/authorization: `Bearer \$\{sessionToken\}`/);
+});
+
+test('bot match creation declares persistent match type and authenticates the human seat',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const protocol=fs.readFileSync(path.resolve(root,'../web/protocol-client.mjs'),'utf8');
+  assert.match(main,/if\(!versus\)await ensurePlayer\(\)/);
+  assert.match(main,/matchKind:versus\?'bot-vs-bot':'human-vs-bot'/);
+  assert.match(main,/sessionToken:versus\?undefined:lobbyPlayer\.sessionId/);
+  assert.match(main,/if\(!activeGame\)return returnToLobby\(\)/);
+  assert.match(main,/ensurePlayer\(\)\.then\(refreshLobby\)/);
+  assert.match(main,/refreshProfileAfterFinish\(key\)/);
+  assert.match(main,/refreshedFinishedProfile===key/);
+  assert.match(main,/profile refresh on open failed/);
+  assert.match(html,/id="profile-history"[^>]*aria-live="polite"/);
+  assert.match(main,/match\.won\?'Gewonnen':'Verloren'/);
+  assert.match(main,/match\.won\?'Gegner aufgegeben':'Aufgegeben'/);
+  assert.match(main,/listProfileMatches\(baseUrl,\{sessionToken,limit:10\}\)/);
+  assert.match(protocol,/\/vnext\/profiles\/me\/matches\?limit=/);
+  assert.match(protocol,/\.\.\.\(sessionToken \? \{ authorization: `Bearer \$\{sessionToken\}` \} : \{\}\)/);
+  assert.match(protocol,/\.\.\.\(matchKind \? \{ matchKind \} : \{\}\)/);
 });
 
 test('progress clock offers the approved limits and renders both server-authoritative deadlines',()=>{

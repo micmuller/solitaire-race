@@ -254,6 +254,110 @@ test('human resign immediately stops the server-managed opponent bot', async (t)
   assert.equal(stopAfterResign.status, 404);
 });
 
+test('finished human-vs-bot match is persisted for the authenticated human profile', async (t) => {
+  const app = createVNextServer({ logger: silentLogger });
+  const address = await app.start({ port: 0 });
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const wsBase = baseUrl.replace(/^http/, 'ws');
+  t.after(async () => app.close());
+
+  const profile = await fetch(`${baseUrl}/vnext/profiles/sessions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ nickname: 'Human Bot Tester' })
+  }).then((response) => response.json());
+  const unauthorized = await fetch(`${baseUrl}/vnext/matches`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed: 'BOT-PERSISTENCE', mode: 'shared', matchKind: 'human-vs-bot' })
+  });
+  assert.equal(unauthorized.status, 401);
+  const matchResponse = await fetch(`${baseUrl}/vnext/matches`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${profile.sessionToken}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ seed: 'BOT-PERSISTENCE', mode: 'shared', matchKind: 'human-vs-bot' })
+  });
+  assert.equal(matchResponse.status, 201);
+  const match = await matchResponse.json();
+  assert.equal(match.matchKind, 'human-vs-bot');
+  const human = await connectRaw(`${wsBase}/vnext?matchId=${encodeURIComponent(match.matchId)}&clientId=p1&clientType=web`);
+  t.after(() => human.socket.close());
+  const initial = await human.next();
+  const started = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clientId: 'p2', speed: 'easy', maxActions: 1000 })
+  });
+  assert.equal(started.status, 202);
+  human.socket.send(JSON.stringify({
+    matchId: match.matchId,
+    clientId: 'p1',
+    seq: 0,
+    baseRev: initial.rev,
+    protocolVersion: PROTOCOL_VERSION,
+    kind: 'resign',
+    payload: {}
+  }));
+  let finished;
+  for (let index = 0; index < 20 && !finished; index += 1) {
+    const message = await human.next();
+    if (message.state?.status === 'finished') finished = message;
+  }
+  assert.ok(finished);
+  assert.equal(finished.state.status, 'finished');
+
+  const history = await fetch(`${baseUrl}/vnext/profiles/me/matches`, {
+    headers: { authorization: `Bearer ${profile.sessionToken}` }
+  }).then((response) => response.json());
+  assert.equal(history.matches.length, 1);
+  assert.equal(history.matches[0].matchKind, 'human-vs-bot');
+  assert.equal(history.matches[0].won, false);
+  const updated = await fetch(`${baseUrl}/vnext/profiles/me`, {
+    headers: { authorization: `Bearer ${profile.sessionToken}` }
+  }).then((response) => response.json());
+  assert.equal(updated.player.stats.gamesPlayed, 1);
+  assert.equal(updated.player.stats.gamesWon, 0);
+});
+
+test('finished bot-vs-bot match is stored as technical history without profile statistics', async (t) => {
+  const app = createVNextServer({ logger: silentLogger });
+  const address = await app.start({ port: 0 });
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  t.after(async () => app.close());
+  const match = await fetch(`${baseUrl}/vnext/matches`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed: 'BOT-VERSUS-PERSISTENCE', mode: 'split', matchKind: 'bot-vs-bot' })
+  }).then((response) => response.json());
+  const session = app.sessions.get(match.matchId);
+  const metadata = app.directMatches.get(match.matchId);
+  metadata.botSeats.add('p1');
+  metadata.botSeats.add('p2');
+  const outcome = session.process('p1', {
+    matchId: match.matchId,
+    clientId: 'p1',
+    seq: 0,
+    baseRev: 0,
+    protocolVersion: PROTOCOL_VERSION,
+    kind: 'resign',
+    payload: {}
+  });
+  app.recordFinishedMatch(session, outcome.response.state);
+
+  const stored = app.profileStore.database.prepare(`
+    SELECT match_kind FROM match_results WHERE match_id = ?
+  `).get(match.matchId);
+  const seats = app.profileStore.database.prepare(`
+    SELECT player_id FROM match_player_results WHERE result_key = ? ORDER BY seat
+  `).all(metadata.resultId);
+  assert.equal(stored.match_kind, 'bot-vs-bot');
+  assert.deepEqual(seats.map((seat) => seat.player_id), [null, null]);
+  assert.equal(app.profileStore.database.prepare('SELECT COUNT(*) AS count FROM players').get().count, 0);
+});
+
 test('orphaned human-vs-bot stops after the reconnect grace period', async (t) => {
   const logLines = [];
   const app = createVNextServer({

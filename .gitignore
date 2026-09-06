@@ -1,2 +1,7 @@
 node_modules/
 .DS_Store
+vnext/data/*.sqlite
+vnext/data/*.sqlite-shm
+vnext/data/*.sqlite-wal
+vnext/data/*.lock
+vnext/data/backups/*.sqlite
