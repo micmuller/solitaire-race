@@ -5,6 +5,7 @@ const {
   PROTOCOL_VERSION,
   RULES_VERSION,
   applyAction,
+  expireForInactivity,
   initMatch
 } = require('../core');
 
@@ -51,9 +52,14 @@ function validateHeader(header, expectedConfig) {
 function validateStep(step, position) {
   if (!step || typeof step !== 'object' || Array.isArray(step)) return 'Step must be an object';
   if (step.i !== position) return `Step index must be ${position}`;
-  if (!PLAYER_IDS.includes(step.clientId)) return 'Step clientId must be p1 or p2';
-  if (!Number.isSafeInteger(step.seq) || step.seq < 0) return 'Step seq must be a non-negative safe integer';
-  if (!Number.isSafeInteger(step.baseRev) || step.baseRev < 0) return 'Step baseRev must be a non-negative safe integer';
+  if (step.clientId === 'server') {
+    if (step.seq !== undefined || step.baseRev !== undefined) return 'Server step cannot contain seq or baseRev';
+    if (step.action?.kind !== 'inactivity' || !PLAYER_IDS.includes(step.action?.payload?.playerId)) {
+      return 'Server step must be an inactivity action for p1 or p2';
+    }
+  } else if (!PLAYER_IDS.includes(step.clientId)) return 'Step clientId must be p1, p2 or server';
+  if (step.clientId !== 'server' && (!Number.isSafeInteger(step.seq) || step.seq < 0)) return 'Step seq must be a non-negative safe integer';
+  if (step.clientId !== 'server' && (!Number.isSafeInteger(step.baseRev) || step.baseRev < 0)) return 'Step baseRev must be a non-negative safe integer';
   if (!step.action || typeof step.action !== 'object' || Array.isArray(step.action)) return 'Step action must be an object';
   if (typeof step.action.kind !== 'string' || step.action.kind.length === 0) return 'Step action.kind must be a non-empty string';
   if (!step.action.payload || typeof step.action.payload !== 'object' || Array.isArray(step.action.payload)) {
@@ -71,6 +77,7 @@ function validateStep(step, position) {
 }
 
 function protocolResult(current, step, lastAcceptedSeq) {
+  if (step.clientId === 'server') return expireForInactivity(current, step.action.payload.playerId);
   const expectedSeq = lastAcceptedSeq[step.clientId] + 1;
   if (step.seq < expectedSeq) {
     return {
@@ -131,7 +138,7 @@ function replay(actionLog, expectedConfig) {
       return fail(current, `Expected stateHash ${step.expectedStateHashAfter}, received ${actual.stateHash}`, step.i);
     }
 
-    if (actual.result === 'ack') lastAcceptedSeq[step.clientId] = step.seq;
+    if (actual.result === 'ack' && PLAYER_IDS.includes(step.clientId)) lastAcceptedSeq[step.clientId] = step.seq;
     if (actual.result === 'ack' || actual.result === 'snapshot') {
       current = { rev: actual.rev, state: actual.state, stateHash: actual.stateHash };
     }

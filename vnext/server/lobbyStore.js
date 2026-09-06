@@ -47,6 +47,7 @@ function publicGame(game) {
     name: game.name,
     seed: game.seed,
     mode: game.mode,
+    progressLimitMinutes: game.progressLimitMinutes,
     status: game.status,
     players: {
       p1: publicSeat(game.players.p1),
@@ -111,7 +112,7 @@ class LobbyStore {
       .map(publicGame);
   }
 
-  createGame({ sessionId, matchId, seed, mode, name }) {
+  createGame({ sessionId, matchId, seed, mode, name, progressLimitMinutes = 0 }) {
     const host = this.requirePlayer(sessionId);
     if (typeof matchId !== 'string' || matchId.length === 0) {
       const error = new Error('matchId is required');
@@ -131,6 +132,7 @@ class LobbyStore {
       name: String(name || `${host.nickname}s Spiel`).trim().slice(0, 48) || `${host.nickname}s Spiel`,
       seed,
       mode,
+      progressLimitMinutes,
       status: 'waiting',
       players: {
         p1: publicSeat(host),
@@ -252,11 +254,12 @@ class LobbyStore {
     return publicGame(game);
   }
 
-  markMatchRestarted(matchId, { seed, mode }) {
+  markMatchRestarted(matchId, { seed, mode, progressLimitMinutes }) {
     const game = this.gameByMatchId(matchId);
     if (!game) return null;
     game.seed = seed;
     game.mode = mode;
+    if (progressLimitMinutes !== undefined) game.progressLimitMinutes = progressLimitMinutes;
     game.status = game.players.p2 ? 'active' : 'waiting';
     game.updatedAt = this.clock();
     game.history.resultRecorded = false;

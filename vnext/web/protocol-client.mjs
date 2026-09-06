@@ -65,6 +65,10 @@ export class ProtocolClient {
       throw new Error('Ungültige Serverantwort');
     }
     if (['lobbyStart', 'lobbyWaiting', 'lobbyEnd', 'lobbyDelete'].includes(response.kind)) {
+      if (this.current && response.progressClock) {
+        this.current = { ...this.current, progressClock: response.progressClock, clockReceivedAt: Date.now() };
+        this.emit({ type: 'state', source: response.kind, current: this.current });
+      }
       this.emit({ type: response.kind, response });
       this.emit({ type: 'response', response });
       return;
@@ -88,7 +92,7 @@ export class ProtocolClient {
       const isRestart = response.kind === 'snapshot' && response.reason === 'RESTART';
       if (isRestart) this.nextSeq = 0;
       if (!this.current || response.rev >= this.current.rev || isRestart) {
-        this.current = { rev: response.rev, stateHash: response.stateHash, state: response.state };
+        this.current = { rev: response.rev, stateHash: response.stateHash, state: response.state, progressClock: response.progressClock || null, clockReceivedAt: Date.now() };
         if (isRestart) this.emit({ type: 'response', response });
         this.emit({ type: 'state', source: response.kind, current: this.current });
         if (isRestart) return;
@@ -130,11 +134,11 @@ export class ProtocolClient {
   }
 }
 
-export async function createMatch(baseUrl, seed, mode) {
+export async function createMatch(baseUrl, seed, mode, progressLimitMinutes = 0) {
   const response = await fetch(`${baseUrl}/vnext/matches`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ seed, mode })
+    body: JSON.stringify({ seed, mode, progressLimitMinutes })
   });
   if (!response.ok) throw new Error(`Matcherstellung fehlgeschlagen (${response.status})`);
   return response.json();
@@ -156,11 +160,11 @@ export async function listLobbyGames(baseUrl) {
   return response.json();
 }
 
-export async function createLobbyGame(baseUrl, { sessionId, name, seed, mode }) {
+export async function createLobbyGame(baseUrl, { sessionId, name, seed, mode, progressLimitMinutes = 0 }) {
   const response = await fetch(`${baseUrl}/vnext/lobby/games`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId, name, seed, mode })
+    body: JSON.stringify({ sessionId, name, seed, mode, progressLimitMinutes })
   });
   if (!response.ok) throw new Error(`Lobby-Spiel konnte nicht erstellt werden (${response.status})`);
   return response.json();
@@ -206,11 +210,11 @@ export async function endLobbyMatch(baseUrl, matchId, { sessionId }) {
   return response.json();
 }
 
-export async function restartMatch(baseUrl, matchId, seed, mode, { sessionId } = {}) {
+export async function restartMatch(baseUrl, matchId, seed, mode, { sessionId, progressLimitMinutes } = {}) {
   const response = await fetch(`${baseUrl}/vnext/matches/${encodeURIComponent(matchId)}/restart`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ seed, mode, sessionId })
+    body: JSON.stringify({ seed, mode, sessionId, progressLimitMinutes })
   });
   if (!response.ok) throw new Error(`Restart fehlgeschlagen (${response.status})`);
   return response.json();

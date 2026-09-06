@@ -126,8 +126,8 @@ function checkInvariants(state) {
   if (state.winner !== null && !PLAYER_IDS.includes(state.winner)) {
     violations.push({ code: 'INVALID_MATCH_WINNER', path: '$.winner', message: 'Winner must be p1, p2 or null' });
   }
-  if (state.endedReason !== null && !['resign', 'completed'].includes(state.endedReason)) {
-    violations.push({ code: 'INVALID_ENDED_REASON', path: '$.endedReason', message: 'Ended reason must be resign, completed or null' });
+  if (state.endedReason !== null && !['resign', 'completed', 'inactivity'].includes(state.endedReason)) {
+    violations.push({ code: 'INVALID_ENDED_REASON', path: '$.endedReason', message: 'Ended reason must be resign, completed, inactivity or null' });
   }
   if (state.endedBy !== null && !PLAYER_IDS.includes(state.endedBy)) {
     violations.push({ code: 'INVALID_ENDED_BY', path: '$.endedBy', message: 'EndedBy must be p1, p2 or null' });

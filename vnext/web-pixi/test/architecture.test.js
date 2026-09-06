@@ -384,7 +384,7 @@ test('Pixi bot menu selects split or shared for both bot match types',()=>{
   const select=html.match(/<select id="bot-mode">[\s\S]*?<\/select>/)?.[0] ?? '';
   assert.match(select,/value="split">Split/);
   assert.match(select,/value="shared">Shared/);
-  assert.match(main,/createMatch\(baseUrl,generateRandomSeed\(\),mode\)/);
+  assert.match(main,/createMatch\(baseUrl,generateRandomSeed\(\),mode,progressLimitMinutes\)/);
   assert.match(main,/hostBot\(false,\$\('#bot-speed'\)\.value,\$\('#bot-mode'\)\.value\)/);
   assert.match(main,/hostBot\(true,\$\('#bot-speed'\)\.value,\$\('#bot-mode'\)\.value\)/);
 });
@@ -464,20 +464,38 @@ test('production build is an installable web app scoped to the Pixi route',()=>{
   assert.equal(manifest.display,'standalone');
   assert.equal(manifest.icons.length,3);
   assert.match(main,/navigator\.serviceWorker\.register\('\/vnext\/pixi\/service-worker\.js'/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.3/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.4/);
   assert.match(server,/application\/manifest\+json/);
 });
 
-test('stable Pixi release metadata is consistently versioned as 0.2.3',()=>{
+test('stable Pixi release metadata is consistently versioned as 0.2.4',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
   const worker=fs.readFileSync(path.join(root,'public/service-worker.js'),'utf8');
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'0.2.3');
-  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.2\.3'/);
-  assert.match(html,/class="version-chip">v0\.2\.3/);
-  assert.match(html,/PixiJS 8 · 0\.2\.3/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.3/);
+  assert.equal(pkg.version,'0.2.4');
+  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.2\.4'/);
+  assert.match(html,/class="version-chip">v0\.2\.4/);
+  assert.match(html,/PixiJS 8 · 0\.2\.4/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.4/);
+});
+
+test('progress clock offers the approved limits and renders both server-authoritative deadlines',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const css=fs.readFileSync(path.join(root,'src/styles.css'),'utf8');
+  assert.match(html,/id="p1-clock"/);
+  assert.match(html,/id="p2-clock"/);
+  assert.equal((html.match(/id="progress-limit"/g)||[]).length,1);
+  assert.doesNotMatch(html,/id="(?:lobby|menu|bot)-progress-limit"/);
+  assert.match(html,/value="0" selected>Aus/);
+  assert.match(html,/value="2">2 Minuten/);
+  assert.match(html,/value="3">3 Minuten \(empfohlen\)/);
+  assert.match(html,/value="5">5 Minuten/);
+  assert.match(main,/progress\.deadlines\[playerId\]/);
+  assert.match(main,/solitaire-pixi:progressLimit/);
+  assert.match(css,/\.progress-clock\.warning/);
+  assert.match(css,/\.progress-clock\.danger/);
 });
 
 test('ordinary lobby hosting cannot reuse the diagnostic seed field',()=>{

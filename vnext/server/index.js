@@ -11,7 +11,7 @@ const { APP_VERSION, MODES, PLAYER_IDS, PROTOCOL_VERSION } = require('../core');
 const { createManagedBot } = require('../bot/managedBot');
 const { SPEEDS, normalizeSpeed } = require('../bot/runner');
 const { LobbyStore } = require('./lobbyStore');
-const { MatchSession } = require('./matchSession');
+const { MatchSession, normalizeProgressLimit } = require('./matchSession');
 
 const MAX_BODY_BYTES = 64 * 1024;
 const OBSERVER_ID = 'observer';
@@ -125,6 +125,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
   const peers = new Map();
   const bots = new Map();
   const botOrphanTimers = new Map();
+  const progressTimers = new Map();
   const lobby = new LobbyStore();
   let listenPort = 3011;
 
@@ -156,6 +157,45 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
   function broadcastLobbyLifecycle(matchId, payload) {
     return broadcast(matchId, payload, { clientType: 'web' })
       + broadcast(matchId, payload, { clientType: 'ios' });
+  }
+
+  function clearProgressTimer(matchId) {
+    const timer = progressTimers.get(matchId);
+    if (!timer) return;
+    clearTimeout(timer);
+    progressTimers.delete(matchId);
+  }
+
+  function finishTimedOutMatch(session, timeoutSnapshot) {
+    lobby.markMatchFinished(session.matchId, timeoutSnapshot.state);
+    const peersNotified = broadcast(session.matchId, timeoutSnapshot);
+    stopBot(session.matchId, 'p1');
+    stopBot(session.matchId, 'p2');
+    log('MATCH_INACTIVITY_TIMEOUT', {
+      matchId: session.matchId,
+      endedBy: timeoutSnapshot.state.endedBy,
+      winner: timeoutSnapshot.state.winner,
+      peers: peersNotified,
+      rev: timeoutSnapshot.rev,
+      hash: shortHash(timeoutSnapshot.stateHash)
+    });
+  }
+
+  function scheduleProgressTimer(session) {
+    clearProgressTimer(session.matchId);
+    const clock = session.progressClock();
+    if (!clock.running) return;
+    const deadlines = Object.values(clock.deadlines).filter(Number.isFinite);
+    if (deadlines.length === 0) return;
+    const delay = Math.max(0, Math.min(...deadlines) - Date.now());
+    const timer = setTimeout(() => {
+      progressTimers.delete(session.matchId);
+      const timeoutSnapshot = session.expireIfDue();
+      if (timeoutSnapshot) finishTimedOutMatch(session, timeoutSnapshot);
+      else scheduleProgressTimer(session);
+    }, delay);
+    timer.unref?.();
+    progressTimers.set(session.matchId, timer);
   }
 
   function botKey(matchId, clientId) {
@@ -221,6 +261,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
   }
 
   function disposeMatch(matchId, reason) {
+    clearProgressTimer(matchId);
     clearBotOrphanTimer(matchId);
     stopBot(matchId, 'p1');
     stopBot(matchId, 'p2');
@@ -296,13 +337,15 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
           return;
         }
         const matchId = `m-${crypto.randomUUID()}`;
-        const session = new MatchSession({ matchId, seed, mode });
+        const progressLimitMinutes = normalizeProgressLimit(body.progressLimitMinutes);
+        const session = new MatchSession({ matchId, seed, mode, progressLimitMinutes, clockActive: false });
         sessions.set(matchId, session);
-        const game = lobby.createGame({ sessionId: body.sessionId, matchId, seed, mode, name: body.name });
+        const game = lobby.createGame({ sessionId: body.sessionId, matchId, seed, mode, name: body.name, progressLimitMinutes });
         log('LOBBY_GAME_CREATED', {
           gameId: game.gameId,
           matchId,
           mode,
+          progressLimitMinutes,
           host: game.players.p1?.nickname,
           rev: session.current.rev,
           hash: shortHash(session.current.stateHash)
@@ -313,6 +356,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
           role: 'p1',
           mode,
           seed,
+          progressLimitMinutes,
           protocolVersion: PROTOCOL_VERSION,
           rev: session.current.rev,
           stateHash: session.current.stateHash
@@ -327,6 +371,9 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
       try {
         const body = await readJson(request);
         const joined = lobby.joinGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: body.sessionId });
+        const joinedSession = sessions.get(joined.matchId);
+        joinedSession?.activateClock();
+        if (joinedSession) scheduleProgressTimer(joinedSession);
         log('LOBBY_GAME_JOINED', {
           gameId: joined.game.gameId,
           matchId: joined.matchId,
@@ -338,6 +385,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
           matchId: joined.matchId,
           protocolVersion: PROTOCOL_VERSION,
           game: joined.game,
+          progressClock: joinedSession?.progressClock(),
           reason: 'P2_JOINED'
         });
         sendJson(response, 200, joined);
@@ -351,11 +399,15 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
         const body = await readJson(request);
         const gameId = decodeURIComponent(lobbyPath[1]);
         const game = lobby.leaveGame({ gameId, sessionId: body.sessionId });
+        const waitingSession = sessions.get(game.matchId);
+        waitingSession?.pauseClock();
+        if (waitingSession) scheduleProgressTimer(waitingSession);
         broadcastLobbyLifecycle(game.matchId, {
           kind: 'lobbyWaiting',
           matchId: game.matchId,
           protocolVersion: PROTOCOL_VERSION,
           game,
+          progressClock: waitingSession?.progressClock(),
           reason: 'P2_LEFT'
         });
         disconnectPeer(game.matchId, 'p2', 'p2 left lobby game');
@@ -418,11 +470,14 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
           return;
         }
         const matchId = `m-${crypto.randomUUID()}`;
-        const session = new MatchSession({ matchId, seed: body.seed, mode: body.mode });
+        const progressLimitMinutes = normalizeProgressLimit(body.progressLimitMinutes);
+        const session = new MatchSession({ matchId, seed: body.seed, mode: body.mode, progressLimitMinutes });
         sessions.set(matchId, session);
+        scheduleProgressTimer(session);
         log('MATCH_CREATED', {
           matchId,
           mode: body.mode,
+          progressLimitMinutes,
           rev: session.current.rev,
           hash: shortHash(session.current.stateHash)
         });
@@ -430,6 +485,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
           matchId,
           mode: body.mode,
           seed: body.seed,
+          progressLimitMinutes,
           protocolVersion: PROTOCOL_VERSION,
           rev: session.current.rev,
           stateHash: session.current.stateHash
@@ -522,13 +578,20 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
           sendJson(response, 400, { error: 'mode (split|shared) is required' });
           return;
         }
-        const restartSnapshot = session.restart({ seed, mode });
-        const restartedGame = lobby.markMatchRestarted(session.matchId, { seed, mode });
+        const progressLimitMinutes = body.progressLimitMinutes === undefined
+          ? session.progressLimitMinutes
+          : normalizeProgressLimit(body.progressLimitMinutes);
+        const lobbyGame = lobby.gameByMatchId(session.matchId);
+        const clockActive = !lobbyGame || lobbyGame.status === 'active';
+        const restartSnapshot = session.restart({ seed, mode, progressLimitMinutes, clockActive });
+        scheduleProgressTimer(session);
+        const restartedGame = lobby.markMatchRestarted(session.matchId, { seed, mode, progressLimitMinutes });
         if (restartedGame) restartSnapshot.game = restartedGame;
         const peersNotified = broadcast(session.matchId, restartSnapshot);
         log('MATCH_RESTARTED', {
           matchId: session.matchId,
           mode,
+          progressLimitMinutes,
           peers: peersNotified,
           rev: restartSnapshot.rev,
           hash: shortHash(restartSnapshot.stateHash)
@@ -667,7 +730,13 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
         socket.send(JSON.stringify(response));
         return;
       }
-      const outcome = sessions.get(matchId).process(clientId, envelope);
+      const activeSession = sessions.get(matchId);
+      const timeoutSnapshot = activeSession.expireIfDue();
+      if (timeoutSnapshot) {
+        finishTimedOutMatch(activeSession, timeoutSnapshot);
+        return;
+      }
+      const outcome = activeSession.process(clientId, envelope);
       const matchFinished = outcome.response.kind === 'ack' && outcome.response.state?.status === 'finished';
       if (matchFinished) {
         lobby.markMatchFinished(matchId, outcome.response.state);
@@ -703,6 +772,7 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
       }
       if (outcome.broadcast) broadcast(matchId, outcome.response);
       else socket.send(JSON.stringify(outcome.response));
+      scheduleProgressTimer(activeSession);
       if (matchFinished) {
         stopBot(matchId, 'p1');
         stopBot(matchId, 'p2');
@@ -738,6 +808,8 @@ function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 100
   }
 
   function close() {
+    for (const timer of progressTimers.values()) clearTimeout(timer);
+    progressTimers.clear();
     for (const timer of botOrphanTimers.values()) clearTimeout(timer);
     botOrphanTimers.clear();
     for (const bot of bots.values()) bot.stop();

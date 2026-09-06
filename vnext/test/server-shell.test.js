@@ -115,6 +115,59 @@ test('MatchSession produces a replayable authoritative ActionLog', () => {
   });
 });
 
+test('progress clock ignores stock draws and resets only after revealed tableau progress', () => {
+  let now = 1_000;
+  const session = new MatchSession({
+    matchId: 'm-progress-reset',
+    seed: 'PROGRESS-RESET',
+    mode: 'split',
+    progressLimitMinutes: 2,
+    now: () => now
+  });
+  assert.deepEqual(session.progressClock().deadlines, { p1: 121_000, p2: 121_000 });
+
+  now = 11_000;
+  const draw = session.process('p1', drawEnvelope('m-progress-reset', 'p1', 0, 0));
+  assert.equal(draw.response.kind, 'ack');
+  assert.equal(session.progressClock().deadlines.p1, 121_000);
+
+  const state = structuredClone(session.current.state);
+  state.players.p1.tableau[0].at(-1).faceDown = true;
+  session.current = { rev: 1, state, stateHash: stateHash(1, state) };
+  now = 12_000;
+  const flip = session.process('p1', {
+    matchId: 'm-progress-reset',
+    clientId: 'p1',
+    protocolVersion: PROTOCOL_VERSION,
+    seq: 1,
+    baseRev: 1,
+    kind: 'flip',
+    payload: { source: { zone: 'tableau', owner: 'p1', index: 0 } }
+  });
+  assert.equal(flip.response.kind, 'ack');
+  assert.equal(session.progressClock().deadlines.p1, 132_000);
+  assert.equal(session.progressClock().deadlines.p2, 121_000);
+});
+
+test('simultaneous progress-clock expiry has a stable result and replay', () => {
+  let now = 0;
+  const session = new MatchSession({
+    matchId: 'm-progress-expiry',
+    seed: 'PROGRESS-EXPIRY',
+    mode: 'shared',
+    progressLimitMinutes: 2,
+    now: () => now
+  });
+  now = 120_000;
+  const expired = session.expireIfDue();
+  assert.equal(expired.reason, 'INACTIVITY_TIMEOUT');
+  assert.equal(expired.state.endedReason, 'inactivity');
+  assert.equal(expired.state.endedBy, 'p1');
+  assert.equal(expired.state.winner, 'p2');
+  assert.equal(session.progressClock().running, false);
+  assert.equal(replay(session.actionLog(), defaultExpectedConfig('PROGRESS-EXPIRY', 'shared')).status, 'SUCCESS');
+});
+
 test('server shell imports no frozen gameplay modules', () => {
   const directory = path.join(__dirname, '..', 'server');
   for (const filename of fs.readdirSync(directory).filter((name) => name.endsWith('.js'))) {

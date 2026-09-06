@@ -5,8 +5,37 @@ const {
   PROTOCOL_VERSION,
   RULES_VERSION,
   applyAction,
+  expireForInactivity,
   initMatch
 } = require('../core');
+
+const PROGRESS_LIMITS = Object.freeze([0, 2, 3, 5]);
+
+function normalizeProgressLimit(value) {
+  const numeric = Number(value || 0);
+  if (!PROGRESS_LIMITS.includes(numeric)) {
+    const error = new TypeError('progressLimitMinutes must be 0, 2, 3 or 5');
+    error.statusCode = 400;
+    throw error;
+  }
+  return numeric;
+}
+
+function faceDownTableauCount(state, playerId) {
+  return state.players[playerId].tableau.reduce(
+    (total, stack) => total + stack.filter((card) => card.faceDown).length,
+    0
+  );
+}
+
+function foundationCardCount(state) {
+  return state.foundations.reduce((total, foundation) => total + foundation.cards.length, 0);
+}
+
+function madeProgress(before, after, playerId) {
+  return foundationCardCount(after) > foundationCardCount(before)
+    || faceDownTableauCount(after, playerId) < faceDownTableauCount(before, playerId);
+}
 
 function snapshot(session, reason) {
   return {
@@ -14,7 +43,8 @@ function snapshot(session, reason) {
     matchId: session.matchId,
     protocolVersion: PROTOCOL_VERSION,
     reason,
-    ...session.current
+    ...session.current,
+    progressClock: session.progressClock()
   };
 }
 
@@ -45,24 +75,79 @@ function validateEnvelope(session, actorId, envelope) {
 }
 
 class MatchSession {
-  constructor({ matchId, seed, mode, startedAt = new Date().toISOString() }) {
+  constructor({ matchId, seed, mode, startedAt = new Date().toISOString(), progressLimitMinutes = 0, clockActive = true, now = Date.now }) {
     if (typeof matchId !== 'string' || matchId.length === 0) throw new TypeError('matchId is required');
     this.matchId = matchId;
+    this.now = now;
+    this.progressLimitMinutes = normalizeProgressLimit(progressLimitMinutes);
+    this.clockActive = Boolean(clockActive && this.progressLimitMinutes);
+    this.deadlines = { p1: null, p2: null };
     this.current = initMatch(seed, mode);
-    this.header = { seed, protocolVersion: PROTOCOL_VERSION, rulesVersion: RULES_VERSION, mode, startedAt };
+    this.header = { seed, protocolVersion: PROTOCOL_VERSION, rulesVersion: RULES_VERSION, mode, startedAt, progressLimitMinutes: this.progressLimitMinutes };
     this.lastAcceptedSeq = { p1: -1, p2: -1 };
     this.steps = [];
+    if (this.clockActive) this.resetDeadlines();
+  }
+
+  resetDeadlines() {
+    const deadline = this.now() + (this.progressLimitMinutes * 60_000);
+    this.deadlines = { p1: deadline, p2: deadline };
+  }
+
+  progressClock() {
+    return {
+      enabled: this.progressLimitMinutes > 0,
+      running: this.clockActive && this.current.state.status === 'active',
+      limitSeconds: this.progressLimitMinutes * 60,
+      serverNow: this.now(),
+      deadlines: { ...this.deadlines }
+    };
+  }
+
+  activateClock() {
+    if (!this.progressLimitMinutes || this.current.state.status !== 'active') return;
+    this.clockActive = true;
+    this.resetDeadlines();
+  }
+
+  pauseClock() {
+    this.clockActive = false;
+    this.deadlines = { p1: null, p2: null };
+  }
+
+  expireIfDue() {
+    if (!this.clockActive || !this.progressLimitMinutes || this.current.state.status !== 'active') return null;
+    const now = this.now();
+    const expired = PLAYER_IDS.filter((playerId) => this.deadlines[playerId] <= now)
+      .sort((left, right) => this.deadlines[left] - this.deadlines[right] || left.localeCompare(right));
+    if (expired.length === 0) return null;
+    const playerId = expired[0];
+    const coreResult = expireForInactivity(this.current, playerId);
+    this.current = { rev: coreResult.rev, state: coreResult.state, stateHash: coreResult.stateHash };
+    this.pauseClock();
+    this.steps.push({
+      i: this.steps.length,
+      clientId: 'server',
+      action: { kind: 'inactivity', payload: { playerId } },
+      expectedResult: 'ack',
+      expectedStateHashAfter: coreResult.stateHash
+    });
+    return snapshot(this, 'INACTIVITY_TIMEOUT');
   }
 
   initialSnapshot() {
     return snapshot(this, 'INITIAL_CONNECT');
   }
 
-  restart({ seed = this.header.seed, mode = this.header.mode, startedAt = new Date().toISOString() } = {}) {
+  restart({ seed = this.header.seed, mode = this.header.mode, startedAt = new Date().toISOString(), progressLimitMinutes = this.progressLimitMinutes, clockActive = this.clockActive } = {}) {
+    this.progressLimitMinutes = normalizeProgressLimit(progressLimitMinutes);
+    this.clockActive = Boolean(clockActive && this.progressLimitMinutes);
     this.current = initMatch(seed, mode);
-    this.header = { seed, protocolVersion: PROTOCOL_VERSION, rulesVersion: RULES_VERSION, mode, startedAt };
+    this.header = { seed, protocolVersion: PROTOCOL_VERSION, rulesVersion: RULES_VERSION, mode, startedAt, progressLimitMinutes: this.progressLimitMinutes };
     this.lastAcceptedSeq = { p1: -1, p2: -1 };
     this.steps = [];
+    if (this.clockActive) this.resetDeadlines();
+    else this.deadlines = { p1: null, p2: null };
     return snapshot(this, 'RESTART');
   }
 
@@ -80,6 +165,7 @@ class MatchSession {
     }
 
     const expectedSeq = this.lastAcceptedSeq[actorId] + 1;
+    const previous = this.current;
     let coreResult;
     if (envelope.seq < expectedSeq) {
       coreResult = { result: 'reject', code: 'DUPLICATE_SEQ', expectedSeq, ...this.current };
@@ -108,13 +194,17 @@ class MatchSession {
     if (coreResult.result === 'ack') {
       this.lastAcceptedSeq[actorId] = envelope.seq;
       this.current = { rev: coreResult.rev, state: coreResult.state, stateHash: coreResult.stateHash };
+      if (this.clockActive && madeProgress(previous.state, this.current.state, actorId)) {
+        this.deadlines[actorId] = this.now() + (this.progressLimitMinutes * 60_000);
+      }
       const response = {
         kind: 'ack',
         matchId: this.matchId,
         clientId: actorId,
         seq: envelope.seq,
         protocolVersion: PROTOCOL_VERSION,
-        ...this.current
+        ...this.current,
+        progressClock: this.progressClock()
       };
       if (coreResult.resolvedFoundationIndex !== undefined) {
         response.resolvedFoundationIndex = coreResult.resolvedFoundationIndex;
@@ -131,4 +221,4 @@ class MatchSession {
   }
 }
 
-module.exports = { MatchSession };
+module.exports = { MatchSession, PROGRESS_LIMITS, normalizeProgressLimit };
