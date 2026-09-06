@@ -254,6 +254,71 @@ test('human resign immediately stops the server-managed opponent bot', async (t)
   assert.equal(stopAfterResign.status, 404);
 });
 
+test('orphaned human-vs-bot stops after the reconnect grace period', async (t) => {
+  const logLines = [];
+  const app = createVNextServer({
+    logger: { log(line) { logLines.push(line); }, error: silentLogger.error },
+    botOrphanGraceMs: 80
+  });
+  const address = await app.start({ port: 0 });
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const wsBase = baseUrl.replace(/^http/, 'ws');
+  t.after(() => app.close());
+  const match = await fetch(`${baseUrl}/vnext/matches`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed: 'BOT-HUMAN-ORPHAN', mode: 'split' })
+  }).then((response) => response.json());
+  const human = await connectRaw(`${wsBase}/vnext?matchId=${encodeURIComponent(match.matchId)}&clientId=p1&clientType=web`);
+  await human.next();
+  const started = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clientId: 'p2', speed: 'easy', maxActions: 1000 })
+  });
+  assert.equal(started.status, 202);
+  await waitUntil(() => app.bots.size === 1);
+
+  human.socket.close();
+  await waitUntil(() => logLines.some((line) => line.includes('BOT_ORPHAN_STOP_SCHEDULED')));
+  const reconnected = await connectRaw(`${wsBase}/vnext?matchId=${encodeURIComponent(match.matchId)}&clientId=p1&clientType=web&reconnect=1`);
+  await reconnected.next();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(app.bots.size, 1);
+  assert.ok(logLines.some((line) => line.includes('BOT_ORPHAN_STOP_CANCELLED')));
+
+  reconnected.socket.close();
+  await waitUntil(() => app.bots.size === 0);
+  assert.match(logLines.join('\n'), /BOT_ORPHANED_STOPPED/);
+});
+
+test('orphaned bot-vs-bot stops both managed bots when its last observer closes', async (t) => {
+  const app = createVNextServer({ logger: silentLogger, botOrphanGraceMs: 30 });
+  const address = await app.start({ port: 0 });
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const wsBase = baseUrl.replace(/^http/, 'ws');
+  t.after(() => app.close());
+  const match = await fetch(`${baseUrl}/vnext/matches`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ seed: 'BOT-VERSUS-ORPHAN', mode: 'shared' })
+  }).then((response) => response.json());
+  const observer = await connectRaw(`${wsBase}/vnext?matchId=${encodeURIComponent(match.matchId)}&clientId=observer&clientType=web`);
+  await observer.next();
+  for (const clientId of ['p1', 'p2']) {
+    const response = await fetch(`${baseUrl}/vnext/matches/${match.matchId}/bot`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ clientId, speed: 'easy', maxActions: 1000 })
+    });
+    assert.equal(response.status, 202);
+  }
+  await waitUntil(() => app.bots.size === 2);
+
+  observer.socket.close();
+  await waitUntil(() => app.bots.size === 0);
+});
+
 test('server-managed bot-vs-bot can be observed over websocket', async (t) => {
   const baseUrl = await withServer(t);
   const wsBase = baseUrl.replace(/^http/, 'ws');

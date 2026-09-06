@@ -120,10 +120,11 @@ function servePixiWebAsset(urlPath, response) {
   return true;
 }
 
-function createVNextServer({ logger = console, publicUrl } = {}) {
+function createVNextServer({ logger = console, publicUrl, botOrphanGraceMs = 10000 } = {}) {
   const sessions = new Map();
   const peers = new Map();
   const bots = new Map();
+  const botOrphanTimers = new Map();
   const lobby = new LobbyStore();
   let listenPort = 3011;
 
@@ -178,7 +179,49 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     return bot.report;
   }
 
+  function runningBotIds(matchId) {
+    return PLAYER_IDS.filter((clientId) => bots.has(botKey(matchId, clientId)));
+  }
+
+  function clearBotOrphanTimer(matchId) {
+    const timer = botOrphanTimers.get(matchId);
+    if (!timer) return false;
+    clearTimeout(timer);
+    botOrphanTimers.delete(matchId);
+    return true;
+  }
+
+  function hasBotController(matchId, botIds = runningBotIds(matchId)) {
+    const sockets = [...(peers.get(matchId)?.values() || [])];
+    if (botIds.length >= 2) return sockets.some((socket) => socket.clientId === OBSERVER_ID);
+    if (botIds.length === 1) {
+      const humanId = PLAYER_IDS.find((clientId) => clientId !== botIds[0]);
+      return sockets.some((socket) => socket.clientId === humanId);
+    }
+    return false;
+  }
+
+  function reconcileBotOrphanTimer(matchId) {
+    const botIds = runningBotIds(matchId);
+    if (botIds.length === 0 || hasBotController(matchId, botIds)) {
+      if (clearBotOrphanTimer(matchId)) log('BOT_ORPHAN_STOP_CANCELLED', { matchId });
+      return;
+    }
+    if (botOrphanTimers.has(matchId)) return;
+    const timer = setTimeout(() => {
+      botOrphanTimers.delete(matchId);
+      const orphanedBotIds = runningBotIds(matchId);
+      if (orphanedBotIds.length === 0 || hasBotController(matchId, orphanedBotIds)) return;
+      const stopped = orphanedBotIds.filter((clientId) => stopBot(matchId, clientId));
+      log('BOT_ORPHANED_STOPPED', { matchId, bots: stopped, graceMs: botOrphanGraceMs });
+    }, botOrphanGraceMs);
+    timer.unref?.();
+    botOrphanTimers.set(matchId, timer);
+    log('BOT_ORPHAN_STOP_SCHEDULED', { matchId, bots: botIds, graceMs: botOrphanGraceMs });
+  }
+
   function disposeMatch(matchId, reason) {
+    clearBotOrphanTimer(matchId);
     stopBot(matchId, 'p1');
     stopBot(matchId, 'p2');
     const room = peers.get(matchId);
@@ -430,7 +473,11 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
           logger
         });
         bots.set(botKey(session.matchId, clientId), managedBot);
-        managedBot.done.finally(() => bots.delete(botKey(session.matchId, clientId)));
+        managedBot.done.finally(() => {
+          if (bots.get(botKey(session.matchId, clientId)) === managedBot) bots.delete(botKey(session.matchId, clientId));
+          reconcileBotOrphanTimer(session.matchId);
+        });
+        reconcileBotOrphanTimer(session.matchId);
         log('BOT_STARTED', { matchId: session.matchId, clientId, speed, maxActions });
         sendJson(response, 202, {
           matchId: session.matchId,
@@ -559,6 +606,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
     const { matchId, clientId, peerKey: connectedPeerKey } = socket;
     if (!peers.has(matchId)) peers.set(matchId, new Map());
     peers.get(matchId).set(connectedPeerKey, socket);
+    reconcileBotOrphanTimer(matchId);
     log('WS_CONNECTED', { matchId, clientId, peers: peers.get(matchId).size });
     socket.send(JSON.stringify(sessions.get(matchId).initialSnapshot()));
     log('SNAPSHOT_SENT', {
@@ -666,6 +714,7 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
       if (room?.get(connectedPeerKey) === socket) room.delete(connectedPeerKey);
       if (room?.size === 0) peers.delete(matchId);
       log('WS_DISCONNECTED', { matchId, clientId, peers: room?.size || 0 });
+      reconcileBotOrphanTimer(matchId);
     });
   });
 
@@ -689,6 +738,8 @@ function createVNextServer({ logger = console, publicUrl } = {}) {
   }
 
   function close() {
+    for (const timer of botOrphanTimers.values()) clearTimeout(timer);
+    botOrphanTimers.clear();
     for (const bot of bots.values()) bot.stop();
     bots.clear();
     for (const room of peers.values()) {
