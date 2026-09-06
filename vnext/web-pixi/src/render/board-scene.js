@@ -4,7 +4,7 @@ import { TOKENS } from '../theme/tokens.js';
 import { TransitionController } from '../animation/transition-controller.js';
 import { RetainedCardStore } from './retained-card-store.js';
 import { nearestDropTarget } from '../input/drop-target.js';
-import { celebrationProfileFor } from './renderer-profile.js';
+import { cardAnimationScaleFor, celebrationProfileFor, normalizeCardAnimationMode } from './renderer-profile.js';
 
 const SUITS = { C: '♣', D: '♦', H: '♥', S: '♠' };
 const RANKS = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
@@ -259,13 +259,14 @@ class CardView extends Container {
 }
 
 export class BoardScene {
-  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, stockSide = 'left', courtAtlas = null, materials = {}, rendererPreference = 'unknown', tickerMaxFps = 0, prefersReducedMotion = false }) {
+  constructor(app, { onSource, onStock, onTarget, onAutoFoundation, canInteract, quality, stockSide = 'left', courtAtlas = null, materials = {}, rendererPreference = 'unknown', tickerMaxFps = 0, prefersReducedMotion = false, cardAnimationMode = 'auto' }) {
     this.app = app;
     this.callbacks = { onSource, onStock, onTarget, onAutoFoundation, canInteract };
     this.quality = quality;
     this.rendererPreference = rendererPreference;
     this.tickerMaxFps = tickerMaxFps;
     this.prefersReducedMotion = prefersReducedMotion;
+    this.cardAnimationMode = normalizeCardAnimationMode(cardAnimationMode);
     this.stockSide = stockSide === 'right' ? 'right' : 'left';
     this.courtTextures=createCourtTextures(courtAtlas);
     this.root = new Container();
@@ -341,10 +342,21 @@ export class BoardScene {
   transitionDuration(source, force, cardId, placement, handoffAccepted = false) {
     if (source !== 'ack' || force || this.readOnly) return 0;
     if (this.dropHandoff) return 0;
-    return motionProfileFor(placement).duration * BoardScene.prototype.motionScale.call(this);
+    return motionProfileFor(placement).duration * BoardScene.prototype.cardMotionScale.call(this);
   }
 
   motionScale() { return this.rendererPreference === 'canvas' ? 0 : this.quality.motionScale; }
+
+  cardMotionScale() {
+    return cardAnimationScaleFor({
+      mode:this.cardAnimationMode,
+      qualityName:this.quality.name,
+      qualityMotionScale:this.quality.motionScale,
+      prefersReducedMotion:this.prefersReducedMotion
+    });
+  }
+
+  setCardAnimationMode(value) { this.cardAnimationMode=normalizeCardAnimationMode(value); }
 
   updateCard(view, placement, neutralInteraction = false) {
     const redrawn=view.update(placement.card, placement.width, placement.height, placement.compact, {
@@ -376,7 +388,7 @@ export class BoardScene {
   }
 
   animateFlip(view, placement) {
-    const duration=TOKENS.motion.flip*this.motionScale();
+    const duration=TOKENS.motion.flip*this.cardMotionScale();
     if(duration===0){this.updateCard(view,placement);return;}
     let swapped=false;
     this.transitions.tween(`flip:${view.cardId}`,duration,({progress})=>{
@@ -458,8 +470,8 @@ export class BoardScene {
       const localHandoff=handoffAccepted&&this.dropHandoff?.ids.includes(placement.card.cardId);
       const turning = !isNew && previousCard?.faceDown && !placement.card.faceDown;
       const moving = duration > 0 && (previous.x !== placement.x || previous.y !== placement.y);
-      const flipInPlace = shouldAnimateFlip({ wasFaceDown:previousCard?.faceDown, faceDown:placement.card.faceDown, moving, source, force, motionScale:this.readOnly?0:this.motionScale() });
-      const flipWhileMoving = shouldAnimateMovingFlip({ wasFaceDown:previousCard?.faceDown, faceDown:placement.card.faceDown, moving, source, force, motionScale:this.readOnly?0:this.motionScale() });
+      const flipInPlace = shouldAnimateFlip({ wasFaceDown:previousCard?.faceDown, faceDown:placement.card.faceDown, moving, source, force, motionScale:this.readOnly?0:this.cardMotionScale() });
+      const flipWhileMoving = shouldAnimateMovingFlip({ wasFaceDown:previousCard?.faceDown, faceDown:placement.card.faceDown, moving, source, force, motionScale:this.readOnly?0:this.cardMotionScale() });
       if(holdingDrag||holdingHandoff){
         this.transitions.cancel(`hover:${placement.card.cardId}`); this.updateCard(view,placement); view.zIndex=999;
         this.positions.set(placement.card.cardId,{x:placement.x,y:placement.y}); continue;

@@ -1,7 +1,7 @@
 import { Application, Assets } from 'pixi.js';
 import './styles.css';
 import { BoardScene } from './render/board-scene.js';
-import { rendererPreferenceFor, tickerMaxFpsFor } from './render/renderer-profile.js';
+import { normalizeCardAnimationMode, rendererPreferenceFor, tickerMaxFpsFor } from './render/renderer-profile.js';
 import courtAtlasUrl from './assets/art/court-figures-v1.png?url';
 import tableFeltUrl from './assets/art/table-felt-v1.png?url';
 import tableWalnutUrl from './assets/art/table-walnut-v1.png?url';
@@ -17,11 +17,11 @@ import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, resignDecision, resignResultCopy, retryableSequenceReject, sameTableauSelection, seedForHostedGame, waitingMatchMessage } from './bridge/match-context.js';
 import { buildErrorReport, copyDiagnosticText, describeOpponent } from './diagnostics/error-report.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.2.2';
+export const WEB_PIXI_CLIENT_VERSION = '0.2.3';
 const PROTOCOL_VERSION = '2.5.2';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
-const STORAGE = { nickname:'solitaire-vnext:nickname', session:'solitaire-vnext:lobbySessionId', server:'solitaire-vnext:serverBaseUrl', quality:'solitaire-pixi:quality', mute:'solitaire-pixi:mute', stockSide:'solitaire-pixi:stockSide' };
+const STORAGE = { nickname:'solitaire-vnext:nickname', session:'solitaire-vnext:lobbySessionId', server:'solitaire-vnext:serverBaseUrl', quality:'solitaire-pixi:quality', cardAnimations:'solitaire-pixi:cardAnimations', mute:'solitaire-pixi:mute', stockSide:'solitaire-pixi:stockSide' };
 const matchSessionKey = (matchId) => `solitaire-pixi:match-session:${matchId}`;
 let mode = 'split', baseUrl = storageGet(STORAGE.server) || window.location.origin, client = null, lobbyPlayer = null, activeGame = null, activeKind = 'human', selection = null, audioContext = null, celebrated = null, gameOverQueued = null, gameOverTimer = null;
 const debugLines=[];
@@ -30,6 +30,7 @@ const inputLock = new InputLock();
 const stockClickQueue = new StockClickQueue();
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let quality = resolveQuality(localStorage.getItem(STORAGE.quality) || 'balanced', reducedMotion);
+let cardAnimationMode = normalizeCardAnimationMode(storageGet(STORAGE.cardAnimations));
 let stockSide = storageGet(STORAGE.stockSide)==='right'?'right':'left';
 
 const pixi = new Application();
@@ -44,7 +45,7 @@ const [courtAtlas, feltTexture, woodTexture]=await Promise.all([
 $('#pixi-stage').appendChild(pixi.canvas); $('#loading').hidden = true;
 
 const board = new BoardScene(pixi, {
-  quality, stockSide, courtAtlas, materials:{felt:feltTexture,wood:woodTexture}, rendererPreference, tickerMaxFps, prefersReducedMotion:reducedMotion,
+  quality, stockSide, courtAtlas, materials:{felt:feltTexture,wood:woodTexture}, rendererPreference, tickerMaxFps, prefersReducedMotion:reducedMotion, cardAnimationMode,
   canInteract: () => canSendActions(),
   onSource: (meta) => handleSource(meta), onStock: () => handleStock(), onTarget: (target) => handleTarget(target), onAutoFoundation: (meta, card) => handleAutoFoundation(meta, card),
   onCancel: () => { selection=null; debug('pointer sequence reset to authoritative state'); }
@@ -197,7 +198,7 @@ function resignMatch() {
 
 function playCue(cue){ if(!cue||$('#mute').checked)return; audioContext??=new AudioContext(); const now=audioContext.currentTime,osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.type=cue==='invalid'?'sawtooth':'triangle';osc.frequency.value={draw:330,move:392,foundation:659,invalid:150,sync:240}[cue]||300;gain.gain.setValueAtTime(.035,now);gain.gain.exponentialRampToValueAtTime(.0001,now+.15);osc.connect(gain).connect(audioContext.destination);osc.start(now);osc.stop(now+.16);}
 
-$('#menu-nickname').value=storageGet(STORAGE.nickname)||'HighNoon'; $('#quality').value=quality.name; $('#mute').checked=storageGet(STORAGE.mute)==='1'; $('#server-url').value=baseUrl; $('#menu-seed').value=generateRandomSeed(); all('[data-stock-side]').forEach((button)=>button.setAttribute('aria-pressed',String(button.dataset.stockSide===stockSide)));
+$('#menu-nickname').value=storageGet(STORAGE.nickname)||'HighNoon'; $('#quality').value=quality.name; $('#card-animations').value=cardAnimationMode; $('#mute').checked=storageGet(STORAGE.mute)==='1'; $('#server-url').value=baseUrl; $('#menu-seed').value=generateRandomSeed(); all('[data-stock-side]').forEach((button)=>button.setAttribute('aria-pressed',String(button.dataset.stockSide===stockSide)));
 all('[data-mode]').forEach((button)=>button.onclick=()=>setMode(button.dataset.mode)); $('#menu-refresh-games').onclick=()=>refreshLobby().catch(e=>showToast(e.message,'error')); $('#menu-new-game').onclick=()=>openMenuTab('new-game'); $('#menu-lobby-host-bot').onclick=()=>hostBot(false); $('#menu-lobby-bot-versus').onclick=()=>hostBot(true); $('#demo-game').onclick=startDemo;
 all('[data-stock-side]').forEach((button)=>button.onclick=()=>setStockSide(button.dataset.stockSide));
 $('#menu-open').onclick=()=>{updateMenuControls();openMenuTab(client&&!isVisualPreview()?'game':'lobby');overlayOpen($('#menu-overlay'),true);}; $('#profile-open').onclick=()=>overlayOpen($('#profile-overlay'),true); all('[data-close]').forEach((button)=>button.onclick=()=>{const overlay=button.closest('.overlay');if(overlay.id==='menu-overlay'&&!client){openMenuTab('lobby');return;}overlayOpen(overlay,false);}); all('[data-menu-tab]').forEach((button)=>button.onclick=()=>openMenuTab(button.dataset.menuTab));
@@ -209,7 +210,7 @@ $('#menu-mode').onchange=()=>setMode($('#menu-mode').value); $('#bot-mode').onch
 $('#save-server-url').onclick=()=>{try{const url=new URL($('#server-url').value.trim());if(!['http:','https:'].includes(url.protocol))throw new Error();baseUrl=url.toString().replace(/\/$/,'');localStorage.setItem(STORAGE.server,baseUrl);updateMeta();showToast('Server gespeichert');}catch{showToast('Ungültige Server-URL','error')}};
 $('#copy-invite').onclick=async()=>{if(!client)return;try{await copyDiagnosticText(inviteUrl({origin:location.origin,pathname:'/vnext/pixi/',matchId:client.matchId}));showToast('Einladungslink kopiert');}catch{showToast('Einladungslink konnte nicht kopiert werden','error');}};
 $('#copy-error-report').onclick=async()=>{const report=buildErrorReport({version:WEB_PIXI_CLIENT_VERSION,protocolVersion:PROTOCOL_VERSION,client,activeKind,activeGame,baseUrl,rendererDiagnostics:{...board.diagnostics(),contextLosses:rendererContextLosses},debugLines,timestamp:new Date().toISOString(),userAgent:navigator.userAgent}),output=$('#error-report-output');output.value=report;try{await copyDiagnosticText(report);output.hidden=true;showToast('Fehlerbericht kopiert');}catch{output.hidden=false;output.focus();output.select();output.setSelectionRange(0,report.length);showToast('Bericht angezeigt – lange drücken und kopieren','error');}};
-$('#quality').onchange=()=>{localStorage.setItem(STORAGE.quality,$('#quality').value);showToast('Grafikqualität wird beim Neuladen aktiviert');}; $('#mute').onchange=()=>localStorage.setItem(STORAGE.mute,$('#mute').checked?'1':'0'); $('#debug-toggle').onchange=refreshDebugHud;
+$('#quality').onchange=()=>{localStorage.setItem(STORAGE.quality,$('#quality').value);showToast('Grafikqualität wird beim Neuladen aktiviert');}; $('#card-animations').onchange=()=>{cardAnimationMode=normalizeCardAnimationMode($('#card-animations').value);localStorage.setItem(STORAGE.cardAnimations,cardAnimationMode);board.setCardAnimationMode(cardAnimationMode);showToast(reducedMotion?'Bewegung reduzieren hat weiterhin Vorrang':'Kartenanimationen gespeichert');}; $('#mute').onchange=()=>localStorage.setItem(STORAGE.mute,$('#mute').checked?'1':'0'); $('#debug-toggle').onchange=refreshDebugHud;
 $('#preview-final-sequence').onclick=()=>{const names=participantNames(),p1=client?.current?.state.players?.p1?.score??0,p2=client?.current?.state.players?.p2?.score??0;overlayOpen($('#menu-overlay'),false);$('#game-over-title').textContent='Finale Vorschau';$('#game-over-text').textContent=`${names.p1} ${p1} · ${names.p2} ${p2}`;const celebration=board.celebrate({force:true});status(celebration.mode==='full'?'Konfetti und Feuerwerk werden getestet':celebration.mode==='lite'?'Leichter Goldabschluss wird getestet':'Statischer Goldabschluss wird gezeigt','Finale');setTimeout(()=>{if(!$('#game-over').open)$('#game-over').showModal();},celebration.dialogDelay);};
 window.addEventListener('keydown',(event)=>{if(event.key==='Escape'){selection=null;board.setSelection(null);all('.overlay:not([hidden])').filter(x=>x.id!=='menu-overlay'||client).forEach(x=>overlayOpen(x,false));}});
 window.addEventListener('resize',resizeBoard);

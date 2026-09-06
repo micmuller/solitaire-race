@@ -10,7 +10,7 @@ import { resolveQuality } from '../src/theme/tokens.js';
 import { TransitionController } from '../src/animation/transition-controller.js';
 import { BoardScene, cancelCardTransitions, cardVisualSignature, handoffReachedState, handoffReachedTarget, motionProfileFor, placementMatchesHandoffTarget, pointInsideRect, pointerSequenceLost, shouldAnimateFlip, shouldAnimateMovingFlip, shouldHoldActiveDrag, shouldSuppressPostDragTap, visiblePileCards } from '../src/render/board-scene.js';
 import { buildErrorReport, copyDiagnosticText, describeOpponent } from '../src/diagnostics/error-report.js';
-import { celebrationProfileFor, isAppleTouchDevice, rendererPreferenceFor, tickerMaxFpsFor } from '../src/render/renderer-profile.js';
+import { cardAnimationScaleFor, celebrationProfileFor, isAppleTouchDevice, normalizeCardAnimationMode, rendererPreferenceFor, tickerMaxFpsFor } from '../src/render/renderer-profile.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
@@ -46,6 +46,16 @@ test('stock click queue preserves each bounded click in FIFO count order',()=>{
 
 test('quality profiles and reduced motion are deterministic',()=>{
   assert.equal(resolveQuality('high',false).resolutionCap,2); assert.equal(resolveQuality('high',true).name,'reduced'); assert.equal(resolveQuality('reduced',false).particles,0);
+});
+
+test('card animation preference follows quality and always respects reduced motion',()=>{
+  assert.equal(normalizeCardAnimationMode('invalid'),'auto');
+  assert.equal(cardAnimationScaleFor({mode:'auto',qualityName:'high',qualityMotionScale:1}),1);
+  assert.equal(cardAnimationScaleFor({mode:'auto',qualityName:'balanced',qualityMotionScale:.85}),.85);
+  assert.equal(cardAnimationScaleFor({mode:'auto',qualityName:'reduced',qualityMotionScale:0}),0);
+  assert.equal(cardAnimationScaleFor({mode:'on',qualityName:'reduced',qualityMotionScale:0}),.85);
+  assert.equal(cardAnimationScaleFor({mode:'off',qualityName:'high',qualityMotionScale:1}),0);
+  assert.equal(cardAnimationScaleFor({mode:'on',qualityName:'high',qualityMotionScale:1,prefersReducedMotion:true}),0);
 });
 
 test('iPad and touch-mode iPadOS Safari use the canvas renderer fallback',()=>{
@@ -300,9 +310,12 @@ test('observer states snap without depending on the animation ticker',()=>{
   assert.equal(BoardScene.prototype.transitionDuration.call(scene,'ack',false,'card',{zone:'foundation'}),0);
 });
 
-test('canvas renderer snaps every player state without depending on the animation ticker',()=>{
-  const scene={dropHandoff:null,readOnly:false,rendererPreference:'canvas',quality:{motionScale:1},motionScale:BoardScene.prototype.motionScale};
+test('canvas keeps general motion disabled while allowing configured card transitions',()=>{
+  const scene={dropHandoff:null,readOnly:false,rendererPreference:'canvas',quality:{name:'balanced',motionScale:.85},cardAnimationMode:'auto',prefersReducedMotion:false,motionScale:BoardScene.prototype.motionScale,cardMotionScale:BoardScene.prototype.cardMotionScale};
   assert.equal(BoardScene.prototype.motionScale.call(scene),0);
+  assert.equal(BoardScene.prototype.cardMotionScale.call(scene),.85);
+  assert.ok(BoardScene.prototype.transitionDuration.call(scene,'ack',false,'card',{zone:'waste'})>0);
+  scene.quality={name:'reduced',motionScale:0};
   assert.equal(BoardScene.prototype.transitionDuration.call(scene,'ack',false,'card',{zone:'waste'}),0);
 });
 
@@ -428,6 +441,17 @@ test('settings persist the local stock and waste side without changing game stat
   assert.match(main,/board\.setStockSide\(stockSide\)/);
 });
 
+test('settings expose a persistent three-state card animation preference',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  assert.match(html,/id="card-animations"/);
+  assert.match(html,/value="auto" selected>Automatisch/);
+  assert.match(html,/value="on">Ein/);
+  assert.match(html,/value="off">Aus/);
+  assert.match(main,/solitaire-pixi:cardAnimations/);
+  assert.match(main,/board\.setCardAnimationMode\(cardAnimationMode\)/);
+});
+
 test('production build is an installable web app scoped to the Pixi route',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
@@ -440,20 +464,20 @@ test('production build is an installable web app scoped to the Pixi route',()=>{
   assert.equal(manifest.display,'standalone');
   assert.equal(manifest.icons.length,3);
   assert.match(main,/navigator\.serviceWorker\.register\('\/vnext\/pixi\/service-worker\.js'/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.2/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.3/);
   assert.match(server,/application\/manifest\+json/);
 });
 
-test('stable Pixi release metadata is consistently versioned as 0.2.2',()=>{
+test('stable Pixi release metadata is consistently versioned as 0.2.3',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
   const worker=fs.readFileSync(path.join(root,'public/service-worker.js'),'utf8');
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'0.2.2');
-  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.2\.2'/);
-  assert.match(html,/class="version-chip">v0\.2\.2/);
-  assert.match(html,/PixiJS 8 · 0\.2\.2/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.2/);
+  assert.equal(pkg.version,'0.2.3');
+  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.2\.3'/);
+  assert.match(html,/class="version-chip">v0\.2\.3/);
+  assert.match(html,/PixiJS 8 · 0\.2\.3/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.3/);
 });
 
 test('ordinary lobby hosting cannot reuse the diagnostic seed field',()=>{
