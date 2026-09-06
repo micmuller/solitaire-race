@@ -5,9 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RetainedCardStore } from '../src/render/retained-card-store.js';
 import { InputLock } from '../src/input/input-lock.js';
+import { StockClickQueue } from '../src/input/stock-click-queue.js';
 import { resolveQuality } from '../src/theme/tokens.js';
 import { TransitionController } from '../src/animation/transition-controller.js';
-import { BoardScene, cardVisualSignature, handoffReachedState, handoffReachedTarget, motionProfileFor, placementMatchesHandoffTarget, shouldAnimateFlip, shouldHoldActiveDrag, shouldSuppressPostDragTap, visiblePileCards } from '../src/render/board-scene.js';
+import { BoardScene, cancelCardTransitions, cardVisualSignature, handoffReachedState, handoffReachedTarget, motionProfileFor, placementMatchesHandoffTarget, pointInsideRect, pointerSequenceLost, shouldAnimateFlip, shouldAnimateMovingFlip, shouldHoldActiveDrag, shouldSuppressPostDragTap, visiblePileCards } from '../src/render/board-scene.js';
 import { buildErrorReport, copyDiagnosticText, describeOpponent } from '../src/diagnostics/error-report.js';
 import { celebrationProfileFor, isAppleTouchDevice, rendererPreferenceFor, tickerMaxFpsFor } from '../src/render/renderer-profile.js';
 
@@ -30,6 +31,17 @@ test('card visuals are redrawn only when a visible property changes',()=>{
 
 test('overlay and pending reasons independently lock canvas input',()=>{
   const lock=new InputLock(); lock.lock('overlay'); lock.lock('pending'); lock.unlock('overlay'); assert.equal(lock.locked,true); lock.unlock('pending'); assert.equal(lock.locked,false);
+});
+
+test('only a sole pending lock may collect another stock click',()=>{
+  const lock=new InputLock(); lock.lock('pending'); assert.equal(lock.only('pending'),true); assert.equal(lock.has('pending'),true);
+  lock.lock('overlay'); assert.equal(lock.only('pending'),false); lock.unlock('overlay'); assert.equal(lock.only('pending'),true);
+});
+
+test('stock click queue preserves each bounded click in FIFO count order',()=>{
+  const queue=new StockClickQueue(3);
+  assert.equal(queue.enqueue(),true); assert.equal(queue.enqueue(),true); assert.equal(queue.enqueue(),true); assert.equal(queue.enqueue(),false);
+  assert.equal(queue.count,3); assert.equal(queue.take(),true); assert.equal(queue.count,2); queue.clear(); assert.equal(queue.take(),false);
 });
 
 test('quality profiles and reduced motion are deterministic',()=>{
@@ -194,6 +206,42 @@ test('the synthetic tap immediately following a drag is consumed once',()=>{
   assert.equal(shouldSuppressPostDragTap(1300,1250),false);
 });
 
+test('a mouse move without a pressed button identifies a lost pointer sequence',()=>{
+  assert.equal(pointerSequenceLost({pointerType:'mouse',buttons:0}),true);
+  assert.equal(pointerSequenceLost({pointerType:'mouse',buttons:1}),false);
+  assert.equal(pointerSequenceLost({pointerType:'touch',buttons:0}),false);
+});
+
+test('a lost pointer sequence clears drag and selection and snaps to authority',()=>{
+  let cleared=0,reconciled=null;
+  const scene={drag:{pointerId:7,active:true},dropHandoff:{ids:['card']},selection:{cardIds:['card']},lastTap:{id:'card'},suppressTapUntil:0,
+    dropCue:{clear(){cleared+=1;}},callbacks:{onCancel(){cleared+=1;}},current:{rev:31,state:{}},
+    applyState(current,options){reconciled={current,options};}};
+  assert.equal(BoardScene.prototype.pointerCancel.call(scene,{pointerId:8}),false);
+  assert.equal(BoardScene.prototype.pointerCancel.call(scene,{pointerId:7}),true);
+  assert.equal(scene.drag,null); assert.equal(scene.dropHandoff,null); assert.equal(scene.selection,null); assert.equal(scene.lastTap,null);
+  assert.ok(scene.suppressTapUntil>0); assert.equal(cleared,2);
+  assert.deepEqual(reconciled,{current:scene.current,options:{source:'snapshot',force:true}});
+});
+
+test('rapid stock and target events are gated before transient state mutation',()=>{
+  const source=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  assert.match(source,/function handleSource\(meta\) \{\s*if\(!canSendActions\(\)\)return false;/);
+  assert.match(source,/function handleStock\(\) \{ if\(!canSendActions\(\)\)return false;/);
+  assert.match(source,/function handleTarget\(target\) \{ if\(!canSendActions\(\)\)return false;/);
+  assert.match(source,/function handleAutoFoundation\(meta,card\) \{ if\(!canSendActions\(\)\)return false;/);
+});
+
+test('a stale second mouse tap follows its physical stock position instead of the moved waste card',()=>{
+  let stock=0,source=0;
+  const scene={suppressTapUntil:0,drag:null,lastTap:{id:'drawn',time:performance.now()},
+    callbacks:{canInteract:()=>true,onStock:()=>stock++,onSource:()=>source++},
+    cards:new Map([['drawn',{meta:{interactive:true,zone:'waste',x:100,y:20,width:70,height:100},card:{faceDown:false}}]]),
+    targets:[{zone:'stock',x:10,y:20,width:70,height:100}]};
+  BoardScene.prototype.pointerTap.call(scene,{global:{x:30,y:50}},'drawn');
+  assert.equal(stock,1); assert.equal(source,0); assert.equal(scene.lastTap,null);
+});
+
 test('finishing a pending drag keeps its alpha under transition control',()=>{
   const view={cardId:'dragged',alpha:.82,card:{},cardWidth:80,cardHeight:114,meta:{compact:false},hoverLift:0,
     update(){this.alpha=1;},scale:{set(){}},rotation:0};
@@ -263,6 +311,22 @@ test('only an in-place authoritative reveal uses the flip animation',()=>{
   assert.equal(shouldAnimateFlip(base),true);
   assert.equal(shouldAnimateFlip({...base,source:'snapshot'}),false);
   assert.equal(shouldAnimateFlip({...base,moving:true}),false);
+});
+
+test('a moving stock card keeps its back until the midpoint flip',()=>{
+  const base={wasFaceDown:true,faceDown:false,moving:true,source:'ack',force:false,motionScale:1};
+  assert.equal(shouldAnimateMovingFlip(base),true);
+  assert.equal(shouldAnimateMovingFlip({...base,moving:false}),false);
+  assert.equal(shouldAnimateMovingFlip({...base,source:'snapshot'}),false);
+  assert.equal(shouldAnimateMovingFlip({...base,motionScale:0}),false);
+  assert.equal(pointInsideRect({x:25,y:35},{x:20,y:30,width:10,height:12}),true);
+  assert.equal(pointInsideRect({x:31,y:35},{x:20,y:30,width:10,height:12}),false);
+});
+
+test('pruned cards cancel every active tween before their display object is destroyed',()=>{
+  const cancelled=[];
+  cancelCardTransitions({cancel:(id)=>cancelled.push(id)},'drawn');
+  assert.deepEqual(cancelled,['drawn','flip:drawn','reject:drawn','hover:drawn']);
 });
 
 test('board zones omit the P1 divider and P2 outline',()=>{
@@ -376,20 +440,20 @@ test('production build is an installable web app scoped to the Pixi route',()=>{
   assert.equal(manifest.display,'standalone');
   assert.equal(manifest.icons.length,3);
   assert.match(main,/navigator\.serviceWorker\.register\('\/vnext\/pixi\/service-worker\.js'/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.0/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.2/);
   assert.match(server,/application\/manifest\+json/);
 });
 
-test('stable Pixi release metadata is consistently versioned as 0.2.0',()=>{
+test('stable Pixi release metadata is consistently versioned as 0.2.2',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
   const worker=fs.readFileSync(path.join(root,'public/service-worker.js'),'utf8');
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'0.2.0');
-  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.2\.0'/);
-  assert.match(html,/class="version-chip">v0\.2\.0/);
-  assert.match(html,/PixiJS 8 · 0\.2\.0/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.0/);
+  assert.equal(pkg.version,'0.2.2');
+  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.2\.2'/);
+  assert.match(html,/class="version-chip">v0\.2\.2/);
+  assert.match(html,/PixiJS 8 · 0\.2\.2/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.2/);
 });
 
 test('ordinary lobby hosting cannot reuse the diagnostic seed field',()=>{

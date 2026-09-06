@@ -23,6 +23,8 @@ The production build includes a scoped web app manifest, iOS home-screen metadat
 - PixiJS: retained board scene, procedural card/material assets, card hit areas, drag preview and cancellable transitions.
 - Shared modules: `../web/protocol-client.mjs`, `intent-mapping.mjs`, `lobby.mjs`, `seed.mjs`, and `effects.mjs` are bundled directly. No rules or Core modules are imported.
 - State: only server ack/snapshot events update permanent card placement. Selection, drag and pending are transient. Every snapshot cancels animation and snaps retained `cardId` views to authority.
+- Pointer recovery: lost mouse releases, pointer cancellation, capture loss and window blur cancel the transient gesture and reconcile immediately to the latest authoritative state. Pending input is gated before it can mutate selection or drag state.
+- Stock pacing: mouse clicks received during a pending draw are buffered in a small bounded queue and executed one-by-one after authoritative acknowledgements. A stale second click follows its physical stock position instead of the card view that has already moved to waste.
 - Layout: `src/layout/layout-engine.js` is pure and owns zones, scales, columns, slots, fan spacing and hit geometry.
 
 ## Assets and visual language

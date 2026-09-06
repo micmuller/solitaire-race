@@ -6,6 +6,7 @@ import courtAtlasUrl from './assets/art/court-figures-v1.png?url';
 import tableFeltUrl from './assets/art/table-felt-v1.png?url';
 import tableWalnutUrl from './assets/art/table-walnut-v1.png?url';
 import { InputLock } from './input/input-lock.js';
+import { StockClickQueue } from './input/stock-click-queue.js';
 import { resolveQuality } from './theme/tokens.js';
 import { DEMO_CURRENT } from './assets/demo-state.js';
 import { ProtocolClient, createLobbyGame, createLobbySession, createMatch, deleteLobbyGame, endLobbyMatch, joinLobbyGame, leaveLobbyGame, listLobbyGames, restartMatch, startBot, stopBots } from '../../web/protocol-client.mjs';
@@ -16,7 +17,7 @@ import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, resignDecision, resignResultCopy, retryableSequenceReject, sameTableauSelection, seedForHostedGame, waitingMatchMessage } from './bridge/match-context.js';
 import { buildErrorReport, copyDiagnosticText, describeOpponent } from './diagnostics/error-report.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.2.0';
+export const WEB_PIXI_CLIENT_VERSION = '0.2.2';
 const PROTOCOL_VERSION = '2.5.2';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
@@ -26,6 +27,7 @@ let mode = 'split', baseUrl = storageGet(STORAGE.server) || window.location.orig
 const debugLines=[];
 let rendererContextLosses=0;
 const inputLock = new InputLock();
+const stockClickQueue = new StockClickQueue();
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let quality = resolveQuality(localStorage.getItem(STORAGE.quality) || 'balanced', reducedMotion);
 let stockSide = storageGet(STORAGE.stockSide)==='right'?'right':'left';
@@ -44,7 +46,8 @@ $('#pixi-stage').appendChild(pixi.canvas); $('#loading').hidden = true;
 const board = new BoardScene(pixi, {
   quality, stockSide, courtAtlas, materials:{felt:feltTexture,wood:woodTexture}, rendererPreference, tickerMaxFps, prefersReducedMotion:reducedMotion,
   canInteract: () => canSendActions(),
-  onSource: (meta) => handleSource(meta), onStock: () => handleStock(), onTarget: (target) => handleTarget(target), onAutoFoundation: (meta, card) => handleAutoFoundation(meta, card)
+  onSource: (meta) => handleSource(meta), onStock: () => handleStock(), onTarget: (target) => handleTarget(target), onAutoFoundation: (meta, card) => handleAutoFoundation(meta, card),
+  onCancel: () => { selection=null; debug('pointer sequence reset to authoritative state'); }
 });
 const boardShell=$('#board-shell');
 function resizeBoard() { const width=boardShell.clientWidth,height=boardShell.clientHeight; if(!(width>0&&height>0))return; pixi.renderer.resize(width,height); board.resize(width,height); refreshDebugHud(); }
@@ -91,6 +94,10 @@ function updateMeta() {
 }
 function isVisualPreview() { return client?.matchId?.startsWith('demo')===true; }
 function canSendActions() { return !isVisualPreview()&&interactionAllowed({ locked:inputLock.locked, current:client?.current, role:client?.clientId, lobbyStatus:activeGame?.status }); }
+function localBoardPoint(event) { const rect=pixi.canvas.getBoundingClientRect(); return {x:(event.clientX-rect.left)*board.layout.width/rect.width,y:(event.clientY-rect.top)*board.layout.height/rect.height}; }
+function queuePendingStockClick(event) { if(!inputLock.only('pending')||!board.containsStockPoint(localBoardPoint(event)))return; if(stockClickQueue.enqueue())debug(`stock click queued (${stockClickQueue.count})`); }
+function drainStockClickQueue() { if(!stockClickQueue.take())return; queueMicrotask(()=>{if(!handleStock())stockClickQueue.clear();}); }
+$('#board-lock').addEventListener('pointerup',queuePendingStockClick);
 
 async function prepareMatchContext(matchId, role) {
   const games=(await listLobbyGames(baseUrl)).games||[];
@@ -112,7 +119,7 @@ async function prepareMatchContext(matchId, role) {
 function renderCurrent(current, source='snapshot') { board.applyState(current,{source}); pixi.render(); updateMeta(); if(source==='ack'){const score=$(`#${client?.clientId==='p2'?'p2':'p1'}-score`);score.classList.remove('pulse');requestAnimationFrame(()=>score.classList.add('pulse'));} const local=client?.clientId==='p2'?'p2':'p1', opponent=local==='p1'?'p2':'p1'; const state=current.state; $('#accessible-state').textContent=`Revision ${current.rev}. ${local.toUpperCase()} hat ${state.players[local].stock.length} Karten im Stock, ${state.players[local].waste.length} im Waste und ${state.players[local].score} Punkte. Gegner ${state.players[opponent].score} Punkte.`; if(state.status!=='finished'){resetGameOver();return;} const key=`${client?.matchId}:${current.stateHash}`; let celebration={mode:'none',dialogDelay:0}; if(celebrated!==key){celebrated=key;celebration=board.celebrate();} const names=participantNames(),hasLobbySession=Boolean(activeGame||sessionStorage.getItem(matchSessionKey(client?.matchId))),decision=resignDecision({endedReason:state.endedReason,role:client?.clientId,hasLobbySession}); $('#game-over-new').hidden=decision!=='host-choice';$('#game-over-lobby').hidden=decision!=='host-choice';$('#game-over-close').hidden=decision==='host-choice'; if(state.endedReason==='resign'){const result=resignResultCopy({state,names,decision});$('#game-over-title').textContent=result.title;$('#game-over-text').textContent=result.text;}else{$('#game-over-title').textContent=`${state.winner?names[state.winner]:'Match'} gewinnt`;$('#game-over-text').textContent=`${names.p1} ${state.players.p1.score} · ${names.p2} ${state.players.p2.score} · ${state.endedReason}`;} if(gameOverQueued!==key){gameOverQueued=key;gameOverTimer=setTimeout(()=>{gameOverTimer=null;if(client?.current?.stateHash===current.stateHash&&!$('#game-over').open)$('#game-over').showModal();},celebration.dialogDelay);} }
 
 async function connect(matchId, role, { route=true, reconnect=false }={}) {
-  client?.close?.(); selection=null; board.clearTransient();
+  client?.close?.(); selection=null; stockClickQueue.clear(); board.clearTransient();
   if(!activeGame||activeGame.matchId!==matchId)await prepareMatchContext(matchId,role);
   client=new ProtocolClient({baseUrl,matchId,clientId:role}); board.setLocalId(role);
   client.subscribe((event)=>{
@@ -132,6 +139,7 @@ async function connect(matchId, role, { route=true, reconnect=false }={}) {
 
 function selectionForMeta(meta) { if(meta.zone==='waste') return wasteSelection(client.clientId,meta.pileCards); if(meta.zone==='tableau') return tableauSelection(client.clientId,meta.pileIndex,meta.cardIndex,meta.pileCards); return null; }
 function handleSource(meta) {
+  if(!canSendActions())return false;
   if(meta.zone==='stock') return handleStock();
   if(sameTableauSelection(selection,meta))return;
   if(selection&&meta.zone==='tableau') return handleTarget({zone:'tableau',index:meta.pileIndex});
@@ -139,17 +147,19 @@ function handleSource(meta) {
   selection=selectionForMeta(meta); board.setSelection(selection); if(selection) status(`${selection.count} Karte${selection.count===1?'':'n'} ausgewählt`,'Auswahl');
 }
 function clearSelection(){selection=null;board.cancelInteraction();}
-function handleStock() { const local=client?.current?.state.players?.[client.clientId]; if(!local)return; selection=null;board.cancelInteraction(); const kind=local.stock.length?'draw':'recycle'; const payload=kind==='draw'?{source:{zone:'stock',owner:client.clientId},target:{zone:'waste',owner:client.clientId}}:{source:{zone:'waste',owner:client.clientId},target:{zone:'stock',owner:client.clientId}}; sendIntent(kind,payload); }
-function handleTarget(target) { if(target.zone==='stock'){handleStock();return true;} const intent=dropIntent(selection,client?.clientId,target); if(!intent)return false;sendIntent(intent.kind,intent.payload);return true; }
-function handleAutoFoundation(meta,card) { const next=selectionForMeta(meta), intent=autoFoundationIntent(next,client.current.state.foundations,card); if(intent){sendIntent(intent.kind,intent.payload);return true;} clearSelection();showToast('Keine passende Foundation – Auswahl aufgehoben','error');return false; }
+function handleStock() { if(!canSendActions())return false; const local=client?.current?.state.players?.[client.clientId]; if(!local)return false; selection=null;board.cancelInteraction(); const kind=local.stock.length?'draw':'recycle'; const payload=kind==='draw'?{source:{zone:'stock',owner:client.clientId},target:{zone:'waste',owner:client.clientId}}:{source:{zone:'waste',owner:client.clientId},target:{zone:'stock',owner:client.clientId}}; sendIntent(kind,payload); return true; }
+function handleTarget(target) { if(!canSendActions())return false; if(target.zone==='stock')return handleStock(); const intent=dropIntent(selection,client?.clientId,target); if(!intent)return false;sendIntent(intent.kind,intent.payload);return true; }
+function handleAutoFoundation(meta,card) { if(!canSendActions())return false; const next=selectionForMeta(meta), intent=autoFoundationIntent(next,client.current.state.foundations,card); if(intent){sendIntent(intent.kind,intent.payload);return true;} clearSelection();showToast('Keine passende Foundation – Auswahl aufgehoben','error');return false; }
 
 async function sendIntent(kind,payload) {
   if(!client)return;
   if(!canSendActions()){if(activeGame?.status==='waiting')showToast(waitingMatchMessage(client.clientId),'error');return;}
   inputLock.lock('pending'); $('#board-lock').hidden=false; board.setPending(true); debug(`intent ${kind} seq=${client.nextSeq}`);
-  try { let response=await client.sendIntent(kind,payload); if(retryableSequenceReject(response)){debug(`sequence recovery expected=${response.expectedSeq}`);response=await client.sendIntent(kind,payload);} debug(`${response.kind} ${response.code||''} rev=${response.rev}`); playCue(cueForIntentResult(kind,response)); if(response.kind==='reject'){ board.rejectToAuthority(); showToast(`Abgelehnt: ${response.code}`,'error'); } else if(response.kind==='ack') showToast(`${kind} bestätigt`); }
+  let accepted=false;
+  try { let response=await client.sendIntent(kind,payload); if(retryableSequenceReject(response)){debug(`sequence recovery expected=${response.expectedSeq}`);response=await client.sendIntent(kind,payload);} debug(`${response.kind} ${response.code||''} rev=${response.rev}`); playCue(cueForIntentResult(kind,response)); if(response.kind==='reject'){ board.rejectToAuthority(); showToast(`Abgelehnt: ${response.code}`,'error'); } else if(response.kind==='ack'){accepted=true;showToast(`${kind} bestätigt`);} }
   catch(error){ board.rejectToAuthority(); if(error.code==='ACTION_TIMEOUT'){debug('action timeout: reconnecting');showToast(error.message,'error');try{await reconnect();}catch(reconnectError){showToast(`Resync fehlgeschlagen: ${reconnectError.message}`,'error');}}else showToast(error.message,'error'); }
   finally { selection=null; inputLock.unlock('pending'); board.cancelInteraction(); $('#board-lock').hidden=!inputLock.locked; }
+  if(kind==='draw'||kind==='recycle'){if(accepted)drainStockClickQueue();else stockClickQueue.clear();}
 }
 
 async function ensurePlayer(){ const nickname=$('#menu-nickname').value.trim()||'HighNoon'; const result=await createLobbySession(baseUrl,{sessionId:storageGet(STORAGE.session),nickname}); lobbyPlayer=result.player; localStorage.setItem(STORAGE.session,lobbyPlayer.sessionId); localStorage.setItem(STORAGE.nickname,lobbyPlayer.nickname); return lobbyPlayer; }
@@ -165,7 +175,7 @@ async function hostLobby({ name=$('#menu-game-name').value.trim(), requestedSeed
 async function hostBot(versus=false,speed='medium',selectedMode=mode){ try{activeGame=null;setMode(selectedMode); const match=await createMatch(baseUrl,generateRandomSeed(),mode); activeKind=versus?'bot-versus':'bot'; if(versus){await startBot(baseUrl,match.matchId,{clientId:'p1',speed});await startBot(baseUrl,match.matchId,{clientId:'p2',speed});await connect(match.matchId,'observer');}else{await connect(match.matchId,'p1');await startBot(baseUrl,match.matchId,{clientId:'p2',speed});}}catch(e){showToast(e.message,'error')} }
 function startDemo(){ client?.close?.();activeGame=null;activeKind='preview';client={clientId:'p1',matchId:'demo-4-2',current:structuredClone(DEMO_CURRENT),close(){}}; board.setLocalId('p1'); renderCurrent(client.current,'snapshot'); overlayOpen($('#menu-overlay'),false); $('#connection-dot').classList.remove('online'); status('Nur visuelle Ansicht – kein Match wurde eröffnet','Demo'); }
 async function doRestart(newSeed){ if(!client||client.matchId.startsWith('demo'))return startDemo(); if(!lobbyPlayer){showToast('Restart benötigt ein gehostetes Lobby-Spiel','error');return;} try{await restartMatch(baseUrl,client.matchId,newSeed?generateRandomSeed():client.current.state.seed,client.current.state.mode,{sessionId:lobbyPlayer.sessionId});overlayOpen($('#menu-overlay'),false);}catch(e){showToast(e.message,'error')} }
-function returnToLobby(){ const matchId=client?.matchId;if(client&&!client.matchId.startsWith('demo'))stopBots(baseUrl,client.matchId).catch(()=>{});client?.close?.();client=null;activeGame=null;activeKind='human';selection=null;resetGameOver();board.clearTransient();if(matchId)sessionStorage.removeItem(matchSessionKey(matchId));clearRoute();openMenuTab('lobby');overlayOpen($('#menu-overlay'),true);$('#connection-dot').classList.remove('online');refreshLobby().catch(()=>{}); }
+function returnToLobby(){ const matchId=client?.matchId;if(client&&!client.matchId.startsWith('demo'))stopBots(baseUrl,client.matchId).catch(()=>{});client?.close?.();client=null;activeGame=null;activeKind='human';selection=null;stockClickQueue.clear();resetGameOver();board.clearTransient();if(matchId)sessionStorage.removeItem(matchSessionKey(matchId));clearRoute();openMenuTab('lobby');overlayOpen($('#menu-overlay'),true);$('#connection-dot').classList.remove('online');refreshLobby().catch(()=>{}); }
 async function leaveOrDelete(){if(!activeGame||!lobbyPlayer)return showToast('Kein Lobby-Sitz aktiv','error');try{if(client?.clientId==='p1'&&activeGame.status==='waiting')await deleteLobbyGame(baseUrl,activeGame.gameId,{sessionId:lobbyPlayer.sessionId});else if(client?.clientId==='p2')await leaveLobbyGame(baseUrl,activeGame.gameId,{sessionId:lobbyPlayer.sessionId});else return showToast('Nur wartender Host oder P2 kann den Sitz freigeben','error');returnToLobby();}catch(e){showToast(e.message,'error')}}
 async function endGame(){if(!client||!lobbyPlayer)return showToast('Nur der Lobby-Host kann beenden','error');try{await endLobbyMatch(baseUrl,client.matchId,{sessionId:lobbyPlayer.sessionId});returnToLobby();}catch(e){showToast(e.message,'error')}}
 async function reconnect(){ if(!client||client.matchId.startsWith('demo'))return; const id=client.matchId,role=client.clientId;client.close();await new Promise(r=>setTimeout(r,100));await connect(id,role,{route:false,reconnect:true});overlayOpen($('#menu-overlay'),false); }
