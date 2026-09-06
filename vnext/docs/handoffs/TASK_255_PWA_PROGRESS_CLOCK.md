@@ -2,6 +2,7 @@
 
 ## Completed scope
 
+- Server version: `1.1.0-alpha.18`
 - Pixi client version: `0.2.4`
 - Options: off (default), 2, 3, or 5 minutes per player
 - One persistent global option under Settings; lobby, new-game and bot tabs do
@@ -19,6 +20,9 @@
 - Native iOS/iPadOS client `1.2.2 (17)` mirrors the accepted central setting,
   score-header bars, color thresholds, server-time interpolation and timeout
   result presentation
+
+The shared protocol version remains `2.5.2`; the progress-clock delivery did
+not require a protocol-version increment.
 
 ## Lifecycle
 
