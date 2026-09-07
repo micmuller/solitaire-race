@@ -646,6 +646,82 @@ test('vNext lobby API allows only p1 to end a lobby game', async (t) => {
   assert.equal(ended.game.status, 'finished');
 });
 
+test('completed lobby round restarts its progress clock when both seats remain occupied', async (t) => {
+  const app = createVNextServer({ logger: silentLogger });
+  const address = await app.start({ port: 0 });
+  const httpBase = `http://127.0.0.1:${address.port}`;
+  const wsBase = `ws://127.0.0.1:${address.port}`;
+  const sockets = [];
+  t.after(async () => {
+    for (const socket of sockets) socket.close();
+    await app.close();
+  });
+
+  const host = await fetch(`${httpBase}/vnext/lobby/sessions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nickname: 'Clock Host' })
+  }).then((response) => response.json());
+  const guest = await fetch(`${httpBase}/vnext/lobby/sessions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nickname: 'Clock Guest' })
+  }).then((response) => response.json());
+  const created = await fetch(`${httpBase}/vnext/lobby/games`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: host.player.sessionId,
+      name: 'Clock Restart',
+      seed: 'CLOCK-FIRST',
+      mode: 'split',
+      progressLimitMinutes: 2
+    })
+  }).then((response) => response.json());
+  await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/join`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: guest.player.sessionId })
+  });
+
+  const p1 = await connect(`${wsBase}/vnext?matchId=${created.matchId}&clientId=p1&clientType=ios`);
+  const p2 = await connect(`${wsBase}/vnext?matchId=${created.matchId}&clientId=p2&clientType=web`);
+  sockets.push(p1.socket, p2.socket);
+  await p1.next();
+  await p2.next();
+
+  const p2Finished = p2.next();
+  p1.socket.send(JSON.stringify({
+    matchId: created.matchId,
+    clientId: 'p1',
+    seq: 0,
+    baseRev: 0,
+    protocolVersion: PROTOCOL_VERSION,
+    kind: 'resign',
+    payload: {}
+  }));
+  const finished = await p1.next();
+  await p2Finished;
+  assert.equal(finished.state.status, 'finished');
+  assert.equal(finished.progressClock.running, false);
+
+  const p1Restarted = p1.next();
+  const p2Restarted = p2.next();
+  const restarted = await fetch(`${httpBase}/vnext/matches/${created.matchId}/restart`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sessionId: host.player.sessionId, seed: 'CLOCK-SECOND', mode: 'split' })
+  }).then((response) => response.json());
+
+  assert.equal(restarted.game.status, 'active');
+  assert.equal(restarted.progressClock.enabled, true);
+  assert.equal(restarted.progressClock.running, true);
+  assert.equal(Number.isFinite(restarted.progressClock.deadlines.p1), true);
+  assert.equal(Number.isFinite(restarted.progressClock.deadlines.p2), true);
+  for (const message of [await p1Restarted, await p2Restarted]) {
+    assert.equal(message.reason, 'RESTART');
+    assert.equal(message.progressClock.running, true);
+    assert.equal(Number.isFinite(message.progressClock.deadlines.p1), true);
+    assert.equal(Number.isFinite(message.progressClock.deadlines.p2), true);
+  }
+});
+
 test('lobby lifecycle gates start, authorizes restart and deletes waiting games', async (t) => {
   const app = createVNextServer({ logger: silentLogger });
   const address = await app.start({ port: 0 });

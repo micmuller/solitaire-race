@@ -178,6 +178,12 @@ export async function listProfileMatches(baseUrl, { sessionToken, limit = 10 }) 
   return response.json();
 }
 
+export async function listLeaderboard(baseUrl, { limit = 25 } = {}) {
+  const response = await fetch(`${baseUrl}/vnext/leaderboard?limit=${encodeURIComponent(limit)}`);
+  if (!response.ok) throw new Error(`Leaderboard konnte nicht geladen werden (${response.status})`);
+  return response.json();
+}
+
 export async function listLobbyGames(baseUrl) {
   const response = await fetch(`${baseUrl}/vnext/lobby/games`);
   if (!response.ok) throw new Error(`Lobby konnte nicht geladen werden (${response.status})`);

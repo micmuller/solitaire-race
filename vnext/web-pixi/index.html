@@ -43,9 +43,9 @@
 
       <div id="menu-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="menu-title">
         <section class="panel menu-panel">
-          <header class="menu-header"><div><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2></div><div class="menu-header-meta"><span id="menu-context">Kein aktives Spiel</span><span class="version-chip">v0.2.8</span><button class="close" data-close aria-label="Menü schließen">×</button></div></header>
+          <header class="menu-header"><div><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2></div><div class="menu-header-meta"><span id="menu-context">Kein aktives Spiel</span><span class="version-chip">v0.3.0</span><button class="close" data-close aria-label="Menü schließen">×</button></div></header>
           <nav class="menu-tabs" aria-label="Menübereiche" role="tablist">
-            <button class="menu-tab active" role="tab" data-menu-tab="lobby"><span aria-hidden="true">⌂</span>Lobby</button><button class="menu-tab" role="tab" data-menu-tab="settings"><span aria-hidden="true"><i class="settings-gear">⚙︎</i></span>Einstellungen</button><button class="menu-tab" role="tab" data-menu-tab="game"><span aria-hidden="true">♠</span>Spiel</button><button class="menu-tab" role="tab" data-menu-tab="new-game"><span aria-hidden="true">★</span>Neues Spiel</button><button class="menu-tab" role="tab" data-menu-tab="bot"><span aria-hidden="true">♟</span>Bot</button><button class="menu-tab" role="tab" data-menu-tab="share"><span aria-hidden="true">➶</span>Teilen</button><button class="menu-tab" role="tab" data-menu-tab="info"><span aria-hidden="true">i</span>Info &amp; Diagnose</button>
+            <button class="menu-tab active" role="tab" data-menu-tab="lobby"><span aria-hidden="true">⌂</span>Lobby</button><button class="menu-tab" role="tab" data-menu-tab="settings"><span aria-hidden="true"><i class="settings-gear">⚙︎</i></span>Einstellungen</button><button class="menu-tab" role="tab" data-menu-tab="game"><span aria-hidden="true">♠</span>Spiel</button><button class="menu-tab" role="tab" data-menu-tab="new-game"><span aria-hidden="true">★</span>Neues Spiel</button><button class="menu-tab" role="tab" data-menu-tab="bot"><span aria-hidden="true">♟</span>Bot</button><button class="menu-tab" role="tab" data-menu-tab="share"><span aria-hidden="true">➶</span>Teilen</button><button class="menu-tab" role="tab" data-menu-tab="leaderboard"><span aria-hidden="true">♛</span>Leaderboard</button><button class="menu-tab" role="tab" data-menu-tab="info"><span aria-hidden="true">i</span>Info &amp; Diagnose</button>
           </nav>
           <div class="menu-body">
             <section class="menu-pane active" data-menu-panel="lobby">
@@ -99,9 +99,16 @@
               <label>Spieler <select id="menu-role"><option>p1</option><option>p2</option><option>observer</option></select></label>
               <button id="menu-connect-match">Verbinden</button>
             </section>
+            <section class="menu-pane" data-menu-panel="leaderboard" hidden>
+              <div class="pane-heading"><p class="eyebrow">HIGHNOON RANGLISTE</p><h3>Leaderboard</h3><p>Rangfolge nach Siegen, Gesamtpunkten und Bestscore. Es erscheinen Profile mit mindestens einem abgeschlossenen Spiel.</p></div>
+              <div class="leaderboard-toolbar"><span>Top 25</span><button id="leaderboard-refresh">Aktualisieren</button></div>
+              <p id="leaderboard-state" class="leaderboard-state" aria-live="polite">Rangliste wird geladen …</p>
+              <ol id="leaderboard-list" class="leaderboard-list" aria-label="HighNoon Rangliste"></ol>
+            </section>
             <section class="menu-pane" data-menu-panel="info" hidden>
               <div class="pane-heading"><p class="eyebrow">SYSTEMSTATUS</p><h3>Info &amp; Diagnose</h3><p>Technische Daten für die Fehlersuche. Der Bericht enthält keine Spielzüge anderer Partien.</p></div>
-              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protokoll</dt><dd>2.5.2</dd><dt>Webclient</dt><dd>PixiJS 8 · 0.2.8</dd><dt>Match-ID</dt><dd id="info-match">–</dd><dt>Rolle</dt><dd id="info-role">–</dd><dt>Gegner/Bot</dt><dd id="info-opponent">–</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>State-Hash</dt><dd id="info-hash">–</dd></dl>
+              <div class="diagnostic-action"><div><strong>Spielerprofil</strong><p>Nickname, Statistik und die letzten abgeschlossenen Spiele anzeigen.</p></div><button id="info-open-profile">Profil öffnen</button></div>
+              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protokoll</dt><dd>2.5.2</dd><dt>Webclient</dt><dd>PixiJS 8 · 0.3.0</dd><dt>Match-ID</dt><dd id="info-match">–</dd><dt>Rolle</dt><dd id="info-role">–</dd><dt>Gegner/Bot</dt><dd id="info-opponent">–</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>State-Hash</dt><dd id="info-hash">–</dd></dl>
               <div class="diagnostic-action"><div><strong>Fehlerbericht</strong><p>Version, Match-Kontext und letzte lokale Ereignisse in die Zwischenablage kopieren.</p></div><button id="copy-error-report" class="primary">Fehlerbericht kopieren</button></div>
               <textarea id="error-report-output" class="diagnostic-report" readonly hidden aria-label="Fehlerbericht zum manuellen Kopieren"></textarea>
             </section>
@@ -110,7 +117,13 @@
       </div>
 
       <div id="profile-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="profile-title" hidden>
-        <section class="panel compact-panel profile-panel"><button class="close" data-close>×</button><p class="eyebrow">PROFIL</p><h2 id="profile-title">Spieler</h2><label>Nickname <span class="fallback"><input id="profile-nickname" maxlength="32" autocomplete="nickname" /><button id="profile-save-nickname" class="primary">Speichern</button></span></label><p id="profile-save-status" class="field-note" aria-live="polite">Änderungen werden sofort für dieses Profil gespeichert.</p><dl><dt>Spieler-ID</dt><dd id="profile-player-id">–</dd><dt>Spiele</dt><dd id="profile-games">0</dd><dt>Siege</dt><dd id="profile-wins">0</dd><dt>Rolle</dt><dd id="profile-role">–</dd><dt>Match</dt><dd id="profile-match">–</dd><dt>Version</dt><dd>Pixi Client 0.2.8</dd><dt>Protokoll</dt><dd>2.5.2</dd></dl><section class="profile-history-section" aria-labelledby="profile-history-title"><h3 id="profile-history-title">Letzte Spiele</h3><ol id="profile-history" aria-live="polite"><li class="profile-history-empty">Noch keine abgeschlossenen Spiele.</li></ol></section></section>
+        <section class="panel profile-panel">
+          <header class="profile-header"><div><p class="eyebrow">SPIELERPROFIL</p><h2 id="profile-title">HighNoon</h2><p class="profile-id">Spieler-ID <span id="profile-player-id">–</span></p></div><span class="version-chip">Pixi 0.3.0</span><button class="close" data-close aria-label="Profil schließen">×</button></header>
+          <section class="profile-card"><label>Nickname <span class="fallback"><input id="profile-nickname" maxlength="32" autocomplete="nickname" /><button id="profile-save-nickname" class="primary">Speichern</button></span></label><p id="profile-save-status" class="field-note" aria-live="polite">Änderungen werden sofort für dieses Profil gespeichert.</p></section>
+          <section class="profile-stats" aria-label="Spielerstatistik"><div><small>Spiele</small><strong id="profile-games">0</strong></div><div><small>Siege</small><strong id="profile-wins">0</strong></div><div><small>Punkte</small><strong id="profile-points">0</strong></div><div><small>Bestscore</small><strong id="profile-best-score">0</strong></div></section>
+          <section class="profile-history-section" aria-labelledby="profile-history-title"><div class="profile-section-heading"><div><p class="eyebrow">CHRONIK</p><h3 id="profile-history-title">Letzte Spiele</h3></div><span id="profile-context">Rolle – · kein Match</span></div><ol id="profile-history" aria-live="polite"><li class="profile-history-empty">Noch keine abgeschlossenen Spiele.</li></ol></section>
+          <button id="profile-open-leaderboard" class="profile-leaderboard-link primary">Leaderboard öffnen</button>
+        </section>
       </div>
 
       <dialog id="restart-dialog"><h2>Neu starten</h2><p>Mit derselben Verteilung oder einem neuen Seed?</p><form method="dialog" class="button-row"><button id="restart-same" value="same">Gleicher Seed</button><button id="restart-new" value="new">Neuer Seed</button><button value="cancel">Abbrechen</button></form></dialog>

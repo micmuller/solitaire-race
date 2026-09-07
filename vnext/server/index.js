@@ -726,7 +726,10 @@ function createVNextServer({
           ? session.progressLimitMinutes
           : normalizeProgressLimit(body.progressLimitMinutes);
         const lobbyGame = lobby.gameByMatchId(session.matchId);
-        const clockActive = !lobbyGame || lobbyGame.status === 'active';
+        // A completed lobby round is still marked `finished` at this point.
+        // The restart below reactivates it when both seats remain occupied, so
+        // derive clock activity from the seats rather than the stale status.
+        const clockActive = !lobbyGame || Boolean(lobbyGame.players.p2);
         const restartSnapshot = session.restart({ seed, mode, progressLimitMinutes, clockActive });
         scheduleProgressTimer(session);
         const restartedGame = lobby.markMatchRestarted(session.matchId, { seed, mode, progressLimitMinutes });

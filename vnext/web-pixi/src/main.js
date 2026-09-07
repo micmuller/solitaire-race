@@ -9,7 +9,7 @@ import { InputLock } from './input/input-lock.js';
 import { StockClickQueue } from './input/stock-click-queue.js';
 import { resolveQuality } from './theme/tokens.js';
 import { DEMO_CURRENT } from './assets/demo-state.js';
-import { ProtocolClient, createLobbyGame, createLobbySession, createMatch, deleteLobbyGame, endLobbyMatch, joinLobbyGame, leaveLobbyGame, listLobbyGames, listProfileMatches, restartMatch, startBot, stopBots, updateProfileNickname } from '../../web/protocol-client.mjs';
+import { ProtocolClient, createLobbyGame, createLobbySession, createMatch, deleteLobbyGame, endLobbyMatch, joinLobbyGame, leaveLobbyGame, listLeaderboard, listLobbyGames, listProfileMatches, restartMatch, startBot, stopBots, updateProfileNickname } from '../../web/protocol-client.mjs';
 import { autoFoundationIntent, dropIntent, tableauSelection, wasteSelection } from '../../web/intent-mapping.mjs';
 import { cueForIntentResult } from '../../web/effects.mjs';
 import { generateRandomSeed } from '../../web/seed.mjs';
@@ -17,7 +17,7 @@ import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, resignDecision, resignResultCopy, retryableSequenceReject, sameTableauSelection, seedForHostedGame, waitingMatchMessage } from './bridge/match-context.js';
 import { buildErrorReport, copyDiagnosticText, describeOpponent } from './diagnostics/error-report.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.2.8';
+export const WEB_PIXI_CLIENT_VERSION = '0.3.0';
 const PROTOCOL_VERSION = '2.5.2';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
@@ -44,6 +44,7 @@ const [courtAtlas, feltTexture, woodTexture]=await Promise.all([
   loadOptionalTexture(courtAtlasUrl), loadOptionalTexture(tableFeltUrl), loadOptionalTexture(tableWalnutUrl)
 ]);
 $('#pixi-stage').appendChild(pixi.canvas); $('#loading').hidden = true;
+$('#app').addEventListener('dblclick',(event)=>event.preventDefault(),{passive:false});
 
 const board = new BoardScene(pixi, {
   quality, stockSide, courtAtlas, materials:{felt:feltTexture,wood:woodTexture}, rendererPreference, tickerMaxFps, prefersReducedMotion:reducedMotion, cardAnimationMode,
@@ -101,8 +102,9 @@ function updateMeta() {
   const revision=current?`rev ${current.rev}`:'rev –', hash=current?`hash ${current.stateHash.slice(0,12)}`:'hash –';
   $('#revision').textContent=revision; $('#hash').textContent=hash;
   $('#info-revision').textContent=revision; $('#info-hash').textContent=hash; $('#info-server').textContent=baseUrl; $('#current-host').textContent=baseUrl;
-  $('#profile-role').textContent=client?.clientId||'–'; $('#profile-match').textContent=client?.matchId||'–';
-  $('#profile-player-id').textContent=lobbyPlayer?.playerId||'–'; $('#profile-games').textContent=String(lobbyPlayer?.stats?.gamesPlayed??0); $('#profile-wins').textContent=String(lobbyPlayer?.stats?.gamesWon??0);
+  $('#profile-title').textContent=lobbyPlayer?.nickname||storageGet(STORAGE.nickname)||'HighNoon';
+  $('#profile-context').textContent=`Rolle ${client?.clientId?.toUpperCase()||'–'} · ${client?.matchId||'kein Match'}`;
+  $('#profile-player-id').textContent=lobbyPlayer?.playerId||'–'; $('#profile-games').textContent=String(lobbyPlayer?.stats?.gamesPlayed??0); $('#profile-wins').textContent=String(lobbyPlayer?.stats?.gamesWon??0); $('#profile-points').textContent=String(lobbyPlayer?.stats?.totalScore??0); $('#profile-best-score').textContent=String(lobbyPlayer?.stats?.bestScore??0);
   $('#score-label').textContent=String(current?.state.players?.[displayId]?.score??0);
   $('#p1-name').textContent=names.p1; $('#p2-name').textContent=names.p2;
   $('#p1-score b').textContent=String(current?.state.players?.p1?.score??0); $('#p2-score b').textContent=String(current?.state.players?.p2?.score??0);
@@ -135,6 +137,22 @@ async function refreshProfileHistory(){
   $('#profile-history').setAttribute('aria-busy','true');
   try{const result=await listProfileMatches(baseUrl,{sessionToken,limit:10});renderProfileHistory(result.matches||[]);}
   finally{$('#profile-history').removeAttribute('aria-busy');}
+}
+function renderLeaderboard(players=[]){
+  const list=$('#leaderboard-list'),state=$('#leaderboard-state');list.replaceChildren();
+  state.hidden=players.length>0;state.textContent=players.length?'':'Noch keine abgeschlossenen Spiele für die Rangliste.';state.classList.remove('error');
+  for(const player of players){
+    const item=document.createElement('li'),rank=document.createElement('strong'),identity=document.createElement('div'),name=document.createElement('b'),played=document.createElement('small'),values=document.createElement('div');
+    item.className=player.rank<=3?'leaderboard-row podium':'leaderboard-row';rank.className='leaderboard-rank';rank.textContent=String(player.rank);name.textContent=player.nickname;played.textContent=`${player.stats.gamesPlayed} ${player.stats.gamesPlayed===1?'Spiel':'Spiele'}`;identity.className='leaderboard-player';identity.append(name,played);values.className='leaderboard-values';
+    for(const [label,value] of [['Siege',player.stats.gamesWon],['Punkte',player.stats.totalScore],['Best',player.stats.bestScore]]){const metric=document.createElement('span'),number=document.createElement('b'),caption=document.createElement('small');number.textContent=String(value);caption.textContent=label;metric.append(number,caption);values.append(metric);}
+    item.append(rank,identity,values);list.append(item);
+  }
+}
+async function refreshLeaderboard(){
+  const state=$('#leaderboard-state'),button=$('#leaderboard-refresh');state.hidden=false;state.classList.remove('error');state.textContent='Rangliste wird geladen …';button.disabled=true;
+  try{const result=await listLeaderboard(baseUrl,{limit:25});renderLeaderboard(result.players||[]);}
+  catch(error){$('#leaderboard-list').replaceChildren();state.hidden=false;state.classList.add('error');state.textContent=`Leaderboard konnte nicht geladen werden. ${error.message}`;}
+  finally{button.disabled=false;}
 }
 function isVisualPreview() { return client?.matchId?.startsWith('demo')===true; }
 function canSendActions() { return !isVisualPreview()&&interactionAllowed({ locked:inputLock.locked, current:client?.current, role:client?.clientId, lobbyStatus:activeGame?.status }); }
@@ -263,6 +281,10 @@ function updateMenuControls() {
   $('#leave-game').hidden=!activeGame||role!=='p2'; $('#delete-game').hidden=!activeGame||role!=='p1'||activeGame.status!=='waiting';
   $('#menu-mode').value=mode; $('#bot-mode').value=mode; updateMeta();
 }
+function openProfile(){
+  $('#profile-nickname').value=lobbyPlayer?.nickname||storageGet(STORAGE.nickname)||'HighNoon';updateMeta();overlayOpen($('#menu-overlay'),false);overlayOpen($('#profile-overlay'),true);ensurePlayer().then(refreshProfileHistory).catch((error)=>debug(`profile refresh on open failed: ${error.message}`));
+}
+function openLeaderboard(){overlayOpen($('#profile-overlay'),false);openMenuTab('leaderboard');overlayOpen($('#menu-overlay'),true);refreshLeaderboard();}
 function resignMatch() {
   if(!client||client.current?.state.status!=='active'||!['p1','p2'].includes(client.clientId)){showToast('Aufgeben ist nur in einem aktiven Match möglich','error');return;}
   overlayOpen($('#menu-overlay'),false); sendIntent('resign',{});
@@ -273,7 +295,7 @@ function playCue(cue){ if(!cue||$('#mute').checked)return; audioContext??=new Au
 $('#menu-nickname').value=storageGet(STORAGE.nickname)||'HighNoon'; $('#profile-nickname').value=$('#menu-nickname').value; $('#quality').value=quality.name; $('#card-animations').value=cardAnimationMode; $('#progress-limit').value=String(progressLimitMinutes); $('#mute').checked=storageGet(STORAGE.mute)==='1'; $('#server-url').value=baseUrl; $('#menu-seed').value=generateRandomSeed(); all('[data-stock-side]').forEach((button)=>button.setAttribute('aria-pressed',String(button.dataset.stockSide===stockSide)));
 all('[data-mode]').forEach((button)=>button.onclick=()=>setMode(button.dataset.mode)); $('#menu-refresh-games').onclick=()=>refreshLobby().catch(e=>showToast(e.message,'error')); $('#menu-new-game').onclick=()=>openMenuTab('new-game'); $('#menu-lobby-host-bot').onclick=()=>hostBot(false); $('#menu-lobby-bot-versus').onclick=()=>hostBot(true); $('#demo-game').onclick=startDemo; $('#menu-save-nickname').onclick=()=>saveProfileNickname({input:$('#menu-nickname'),button:$('#menu-save-nickname'),message:$('#menu-save-status')}); $('#menu-nickname').addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();$('#menu-save-nickname').click();}});
 all('[data-stock-side]').forEach((button)=>button.onclick=()=>setStockSide(button.dataset.stockSide));
-$('#menu-open').onclick=()=>{updateMenuControls();openMenuTab(client&&!isVisualPreview()?'game':'lobby');overlayOpen($('#menu-overlay'),true);}; $('#profile-open').onclick=()=>{$('#profile-nickname').value=lobbyPlayer?.nickname||storageGet(STORAGE.nickname)||'HighNoon';updateMeta();overlayOpen($('#profile-overlay'),true);ensurePlayer().then(refreshProfileHistory).catch((error)=>debug(`profile refresh on open failed: ${error.message}`));}; $('#profile-save-nickname').onclick=saveProfileNickname; $('#profile-nickname').addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();saveProfileNickname();}}); all('[data-close]').forEach((button)=>button.onclick=()=>{const overlay=button.closest('.overlay');if(overlay.id==='menu-overlay'&&!client){openMenuTab('lobby');return;}overlayOpen(overlay,false);}); all('[data-menu-tab]').forEach((button)=>button.onclick=()=>openMenuTab(button.dataset.menuTab));
+$('#menu-open').onclick=()=>{updateMenuControls();openMenuTab(client&&!isVisualPreview()?'game':'lobby');overlayOpen($('#menu-overlay'),true);}; $('#profile-open').onclick=openProfile; $('#info-open-profile').onclick=openProfile; $('#profile-open-leaderboard').onclick=openLeaderboard; $('#leaderboard-refresh').onclick=refreshLeaderboard; $('#profile-save-nickname').onclick=saveProfileNickname; $('#profile-nickname').addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();saveProfileNickname();}}); all('[data-close]').forEach((button)=>button.onclick=()=>{const overlay=button.closest('.overlay');if(overlay.id==='menu-overlay'&&!client){openMenuTab('lobby');return;}overlayOpen(overlay,false);}); all('[data-menu-tab]').forEach((button)=>button.onclick=()=>{openMenuTab(button.dataset.menuTab);if(button.dataset.menuTab==='leaderboard')refreshLeaderboard();});
 $('#restart-match').onclick=()=>$('#restart-dialog').showModal(); $('#restart-same').onclick=()=>doRestart(false); $('#restart-new').onclick=()=>doRestart(true); $('#resign').onclick=resignMatch; $('#reconnect').onclick=()=>reconnect().catch(e=>showToast(e.message,'error'));
 $('#game-over-new').onclick=restartAfterResign; $('#game-over-lobby').onclick=returnAfterResign;
 $('#leave-game').onclick=leaveOrDelete; $('#delete-game').onclick=leaveOrDelete; $('#end-game').onclick=endGame; $('#stop-bots').onclick=()=>client&&stopBots(baseUrl,client.matchId).then(()=>showToast('Bots gestoppt')).catch(e=>showToast(e.message,'error'));

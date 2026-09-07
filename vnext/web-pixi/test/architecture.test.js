@@ -389,10 +389,12 @@ test('Pixi bot menu selects split or shared for both bot match types',()=>{
   assert.match(main,/hostBot\(true,\$\('#bot-speed'\)\.value,\$\('#bot-mode'\)\.value\)/);
 });
 
-test('menu keeps seven ordered areas and exposes the diagnostic report action',()=>{
+test('menu keeps eight ordered areas and exposes leaderboard before diagnostics',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const tabs=[...html.matchAll(/data-menu-tab="([^"]+)"/g)].map((match)=>match[1]);
-  assert.deepEqual(tabs,['lobby','settings','game','new-game','bot','share','info']);
+  assert.deepEqual(tabs,['lobby','settings','game','new-game','bot','share','leaderboard','info']);
+  assert.match(html,/id="leaderboard-list"/);
+  assert.match(html,/id="leaderboard-refresh"/);
   assert.match(html,/id="copy-error-report"/);
   assert.match(html,/id="error-report-output"/);
   assert.match(html,/Info &amp; Diagnose/);
@@ -464,36 +466,47 @@ test('production build is an installable web app scoped to the Pixi route',()=>{
   assert.equal(manifest.display,'standalone');
   assert.equal(manifest.icons.length,3);
   assert.match(main,/navigator\.serviceWorker\.register\('\/vnext\/pixi\/service-worker\.js'/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.8/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.0/);
   assert.match(server,/application\/manifest\+json/);
 });
 
-test('stable Pixi release metadata is consistently versioned as 0.2.8',()=>{
+test('stable Pixi release metadata is consistently versioned as 0.3.0',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
   const worker=fs.readFileSync(path.join(root,'public/service-worker.js'),'utf8');
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'0.2.8');
-  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.2\.8'/);
-  assert.match(html,/class="version-chip">v0\.2\.8/);
-  assert.match(html,/PixiJS 8 · 0\.2\.8/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.2\.8/);
+  assert.equal(pkg.version,'0.3.0');
+  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.3\.0'/);
+  assert.match(html,/class="version-chip">v0\.3\.0/);
+  assert.match(html,/PixiJS 8 · 0\.3\.0/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.0/);
 });
 
 test('profile overlay saves a nickname through the protected session without reloading',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  const css=fs.readFileSync(path.join(root,'src/styles.css'),'utf8');
   const protocol=fs.readFileSync(path.resolve(root,'../web/protocol-client.mjs'),'utf8');
   assert.match(html,/id="profile-nickname"/);
   assert.match(html,/id="profile-save-nickname"[^>]*>Speichern/);
   assert.match(html,/id="profile-save-status"[^>]*aria-live="polite"/);
   assert.match(html,/id="menu-save-nickname"[^>]*>Speichern/);
   assert.match(html,/id="menu-save-status"[^>]*aria-live="polite"/);
+  assert.match(html,/id="info-open-profile"[^>]*>Profil öffnen/);
+  assert.match(html,/id="profile-points"/);
+  assert.match(html,/id="profile-best-score"/);
+  assert.match(html,/id="profile-open-leaderboard"[^>]*>Leaderboard öffnen/);
+  assert.match(main,/\$\('#info-open-profile'\)\.onclick=openProfile/);
+  assert.match(main,/listLeaderboard\(baseUrl,\{limit:25\}\)/);
+  assert.match(main,/\$\('#profile-open-leaderboard'\)\.onclick=openLeaderboard/);
+  assert.match(protocol,/\/vnext\/leaderboard\?limit=/);
   assert.match(main,/updateProfileNickname\(baseUrl,\{sessionToken,nickname\}\)/);
   assert.match(main,/localStorage\.setItem\(STORAGE\.nickname,player\.nickname\)/);
   assert.match(main,/activeGame\.players\[seat\]\.nickname=player\.nickname/);
   assert.match(protocol,/method: 'PATCH'/);
   assert.match(protocol,/authorization: `Bearer \$\{sessionToken\}`/);
+  assert.match(css,/html, body \{ position: fixed; inset: 0; \}/);
+  assert.match(main,/addEventListener\('dblclick',\(event\)=>event\.preventDefault\(\)/);
 });
 
 test('bot match creation declares persistent match type and authenticates the human seat',()=>{
@@ -550,7 +563,7 @@ test('installed iOS app reserves the status bar and card wear stays stable',()=>
   const source=fs.readFileSync(path.join(root,'src/render/board-scene.js'),'utf8');
   assert.match(html,/apple-mobile-web-app-status-bar-style" content="black"/);
   assert.doesNotMatch(html,/black-translucent/);
-  assert.match(css,/#app \{ padding-top: env\(safe-area-inset-top, 0px\); \}/);
+  assert.match(css,/#app \{ padding-top: env\(safe-area-inset-top, 0px\);[^}]*\}/);
   assert.match(css,/env\(safe-area-inset-bottom,0px\)/);
   assert.match(source,/export function cardWearUnit/);
   assert.match(source,/drawCardWear\(this\.surface,card,width,height\)/);
