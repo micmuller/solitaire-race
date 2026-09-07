@@ -8,6 +8,7 @@ export function describeOpponent({ activeKind = 'human', activeGame = null, role
   if (opponent?.nickname) return `${opponent.nickname} (${opponentRole.toUpperCase()})`;
   if (activeGame?.status === 'waiting') return 'Noch nicht verbunden';
   if (activeGame) return 'Human';
+  if (activeKind === 'bot-versus-visual') return 'Bot P2 · P1 als visueller Client-Bot';
   if (activeKind === 'bot-versus') return 'Bot P1 vs Bot P2';
   if (activeKind === 'bot') return role === 'p1' ? 'Bot (P2)' : 'Human vs Bot';
   return 'Unbekannt';

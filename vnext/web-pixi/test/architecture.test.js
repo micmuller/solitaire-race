@@ -386,7 +386,20 @@ test('Pixi bot menu selects split or shared for both bot match types',()=>{
   assert.match(select,/value="shared">Shared/);
   assert.match(main,/createMatch\(baseUrl,generateRandomSeed\(\),mode,progressLimitMinutes,\{matchKind:/);
   assert.match(main,/hostBot\(false,\$\('#bot-speed'\)\.value,\$\('#bot-mode'\)\.value\)/);
-  assert.match(main,/hostBot\(true,\$\('#bot-speed'\)\.value,\$\('#bot-mode'\)\.value\)/);
+  assert.match(main,/hostBot\(true,\$\('#bot-speed'\)\.value,\$\('#bot-mode'\)\.value,progressLimitValue\(\),botVersusView\)/);
+});
+
+test('Pixi bot-vs-bot menu keeps the fast observer and adds a visual client-bot mode',()=>{
+  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
+  assert.match(html,/data-bot-view="observer"[^>]*>Schnell/);
+  assert.match(html,/data-bot-view="visual"[^>]*>Visuell/);
+  assert.match(main,/await connect\(match\.matchId,'p1'\)/);
+  assert.match(main,/await startBot\(baseUrl,match\.matchId,\{clientId:'p2',speed\}\);startVisualBot\(speed\)/);
+  assert.match(main,/await connect\(match\.matchId,'observer'\)/);
+  assert.match(main,/waitForVisualIdle:waitForBoardIdle/);
+  assert.match(main,/if\(!reconnect\)stopVisualBot\('connection changed'\)/);
+  assert.match(main,/reason!==\s*'INITIAL_CONNECT'\)[^{]*\{ selection=null; board\.clearTransient\(\)/);
 });
 
 test('menu keeps eight ordered areas and exposes leaderboard before diagnostics',()=>{
@@ -427,7 +440,7 @@ test('visual preview is local and cannot block a subsequent match connection',()
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
   const preview=main.match(/function startDemo\(\)\{([^\n]+)\}/)?.[1]||'';
   assert.match(main,/client\?\.close\?\.\(\); selection=null/);
-  assert.match(main,/return !isVisualPreview\(\)&&interactionAllowed/);
+  assert.match(main,/return !isVisualPreview\(\)&&\(automated\|\|!visualBotController\?\.running\)&&interactionAllowed/);
   assert.match(preview,/activeKind='preview'/);
   assert.match(preview,/close\(\)\{\}/);
   assert.match(preview,/classList\.remove\('online'\)/);
@@ -466,20 +479,20 @@ test('production build is an installable web app scoped to the Pixi route',()=>{
   assert.equal(manifest.display,'standalone');
   assert.equal(manifest.icons.length,3);
   assert.match(main,/navigator\.serviceWorker\.register\('\/vnext\/pixi\/service-worker\.js'/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.2/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.3/);
   assert.match(server,/application\/manifest\+json/);
 });
 
-test('stable Pixi release metadata is consistently versioned as 0.3.2',()=>{
+test('stable Pixi release metadata is consistently versioned as 0.3.3',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
   const worker=fs.readFileSync(path.join(root,'public/service-worker.js'),'utf8');
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'0.3.2');
-  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.3\.2'/);
-  assert.match(html,/class="version-chip">v0\.3\.2/);
-  assert.match(html,/PixiJS 8 · 0\.3\.2/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.2/);
+  assert.equal(pkg.version,'0.3.3');
+  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.3\.3'/);
+  assert.match(html,/class="version-chip">v0\.3\.3/);
+  assert.match(html,/PixiJS 8 · 0\.3\.3/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.3/);
 });
 
 test('profile credentials use authorization headers instead of lobby request bodies',()=>{

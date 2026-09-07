@@ -560,6 +560,7 @@ export class BoardScene {
   }
 
   setLocalId(id) { this.localId = id === 'observer' ? 'p1' : id; this.readOnly = id === 'observer'; }
+  hasActiveTransitions() { return this.transitions.size > 0; }
   setStockSide(side) { this.stockSide=side==='right'?'right':'left'; if(this.current)this.applyState(this.current,{source:'snapshot',force:true}); else if(this.layout)this.resize(this.layout.width,this.layout.height); }
   containsStockPoint(point) { return pointInsideRect(point,this.targets.find((target)=>target.zone==='stock')); }
   setSelection(selection) { this.selection = selection; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
