@@ -41,13 +41,13 @@ Current smoke scope:
 HTTP endpoints:
 
 - `GET /health`
-- `POST /vnext/lobby/sessions` with `{ "nickname": "...", "sessionId": "optional" }`
+- `POST /vnext/lobby/sessions` with `{ "nickname": "..." }`; resume through
+  `Authorization: Bearer <token>`
 - `GET /vnext/lobby/games`
-- `POST /vnext/lobby/games` with
-  `{ "sessionId": "...", "name": "...", "seed": "...", "mode": "split|shared" }`
-- `POST /vnext/lobby/games/:gameId/join` with `{ "sessionId": "..." }`
-- `POST /vnext/lobby/games/:gameId/leave` with `{ "sessionId": "..." }`
-- `POST /vnext/lobby/matches/:matchId/end` with `{ "sessionId": "..." }`
+- Authenticated Lobby mutations use `Authorization: Bearer <token>`; bearer
+  tokens never appear in public player, seat or game payloads
+- `POST /vnext/lobby/games`, `POST .../:gameId/join`, `POST .../:gameId/leave`
+  and `POST /vnext/lobby/matches/:matchId/end`
 - `POST /vnext/matches` with `{ "seed": "...", "mode": "split|shared" }`
 - `GET /vnext/matches/:matchId`
 - `GET /vnext/matches/:matchId/replay`
@@ -80,10 +80,10 @@ Lobby sessions and Lobby games are an in-memory coordination layer above the
 authoritative match sessions. A Lobby game owns the human-facing game name,
 host/guest nicknames and the underlying technical `matchId`; `p1` and `p2`
 still connect to the same WebSocket protocol after the Lobby resolves the
-match. Player records already include reserved history fields for later
-persistence and leaderboards: `gamesPlayed`, `gamesWon`, `totalScore`,
-`bestScore` and `lastGameAt`. The current alpha line does not persist or
-aggregate these fields yet.
+match. SQLite persists and transactionally aggregates `gamesPlayed`,
+`gamesWon`, `totalScore`, `bestScore`, match history and leaderboard data.
+Backup, verified restore and host migration are documented in
+`../docs/runbooks/PROFILE_DATABASE_MIGRATION.md`.
 
 Only the stored `p1` Lobby session can end a Lobby game. Ending marks the Lobby
 game `finished`, stops managed bots for that match and broadcasts a `lobbyEnd`

@@ -22,11 +22,17 @@ function normalizeNickname(value) {
     .slice(0, 32);
 }
 
+function publicSessionIdentity(player) {
+  if (player.publicSessionId) return player.publicSessionId;
+  return String(player.sessionId || '').startsWith('hs_') ? player.playerId : player.sessionId;
+}
+
 function publicPlayer(player) {
+  const publicSessionId = publicSessionIdentity(player);
   return {
     playerId: player.playerId,
-    sessionId: player.sessionId,
-    publicSessionId: player.publicSessionId || player.sessionId,
+    sessionId: publicSessionId,
+    publicSessionId,
     nickname: player.nickname,
     stats: { ...player.stats }
   };
@@ -34,11 +40,22 @@ function publicPlayer(player) {
 
 function publicSeat(seat) {
   if (!seat) return null;
+  const publicSessionId = publicSessionIdentity(seat);
   return {
     playerId: seat.playerId,
-    sessionId: seat.sessionId,
-    publicSessionId: seat.publicSessionId || seat.sessionId,
+    sessionId: publicSessionId,
+    publicSessionId,
     nickname: seat.nickname
+  };
+}
+
+function internalSeat(player) {
+  if (!player) return null;
+  return {
+    playerId: player.playerId,
+    sessionId: player.sessionId,
+    publicSessionId: player.publicSessionId || player.sessionId,
+    nickname: player.nickname
   };
 }
 
@@ -97,7 +114,7 @@ class LobbyStore {
         lastSeenAt: persisted.player.lastSeenAt
       };
       this.players.set(player.sessionId, player);
-      return publicPlayer(player);
+      return { ...player, stats: { ...player.stats } };
     }
     const resolvedSessionId = credential || `ps-${this.idFactory()}`;
     const existing = this.players.get(resolvedSessionId);
@@ -112,7 +129,7 @@ class LobbyStore {
     player.nickname = normalizedNickname;
     player.lastSeenAt = this.clock();
     this.players.set(resolvedSessionId, player);
-    return publicPlayer(player);
+    return { ...player, stats: { ...player.stats } };
   }
 
   requirePlayer(sessionId) {
@@ -140,7 +157,7 @@ class LobbyStore {
         game.updatedAt = this.clock();
       }
     }
-    return player ? publicPlayer(player) : persistedPlayer;
+    return player ? { ...player, stats: { ...player.stats } } : persistedPlayer;
   }
 
   listGames() {
@@ -173,7 +190,7 @@ class LobbyStore {
       progressLimitMinutes,
       status: 'waiting',
       players: {
-        p1: publicSeat(host),
+        p1: internalSeat(host),
         p2: null
       },
       createdAt: timestamp,
@@ -210,7 +227,7 @@ class LobbyStore {
       error.statusCode = 409;
       throw error;
     }
-    game.players.p2 = publicSeat(guest);
+    game.players.p2 = internalSeat(guest);
     game.status = 'active';
     game.updatedAt = this.clock();
     return { game: publicGame(game), role: 'p2', matchId: game.matchId };
@@ -363,6 +380,10 @@ class LobbyStore {
   gameByMatchId(matchId) {
     const gameId = this.matchToGame.get(matchId);
     return gameId ? this.games.get(gameId) : null;
+  }
+
+  publicPlayer(player) {
+    return publicPlayer(player);
   }
 }
 

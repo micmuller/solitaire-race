@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { acquireDatabaseLock, readDatabaseLock } = require('../server/databaseLock');
-const { ProfileAdmin } = require('../server/profileAdmin');
+const { ProfileAdmin, manifestPathFor } = require('../server/profileAdmin');
 const { ProfileStore } = require('../server/profileStore');
 
 function fixture(t) {
@@ -44,8 +44,56 @@ test('ProfileAdmin lists profiles and creates a consistent backup', async (t) =>
 
   const backupPath = await admin.createBackup({ suffix: 'test' });
   assert.equal(fs.existsSync(backupPath), true);
+  assert.equal(fs.existsSync(manifestPathFor(backupPath)), true);
+  const verified = admin.verifyBackup(backupPath);
+  assert.equal(verified.integrity[0], 'ok');
+  assert.equal(verified.foreignKeyViolations, 0);
+  assert.equal(verified.schemaVersion, 2);
+  assert.match(verified.sha256, /^[a-f0-9]{64}$/);
   const backupAdmin = new ProfileAdmin({ databasePath: backupPath });
   assert.deepEqual(backupAdmin.listProfiles().map((profile) => profile.nickname).sort(), ['Alice Test', 'Bob Test']);
+});
+
+test('ProfileAdmin restores a verified backup atomically and creates a safety backup', async (t) => {
+  const { directory, databasePath, alice } = fixture(t);
+  const backupDirectory = path.join(directory, 'backups');
+  const admin = new ProfileAdmin({ databasePath, backupDirectory });
+  const backupPath = await admin.createBackup({ suffix: 'migration' });
+
+  const writable = admin.open({ readOnly: false });
+  writable.prepare('UPDATE players SET nickname = ? WHERE player_id = ?').run('Changed After Backup', alice.player.playerId);
+  writable.close();
+  assert.equal(admin.profileDetails(alice.player.playerId).nickname, 'Changed After Backup');
+
+  await assert.rejects(
+    admin.restoreBackup({ backupPath, confirmedTarget: 'not-the-target' }),
+    (error) => error.code === 'RESTORE_CONFIRMATION_REQUIRED'
+  );
+  const restored = await admin.restoreBackup({ backupPath, confirmedTarget: admin.databasePath });
+  assert.equal(restored.integrity, 'ok');
+  assert.equal(restored.schemaVersion, 2);
+  assert.equal(fs.existsSync(restored.safetyBackupPath), true);
+  assert.equal(fs.existsSync(manifestPathFor(restored.safetyBackupPath)), true);
+  assert.equal(admin.profileDetails(alice.player.playerId).nickname, 'Alice Test');
+});
+
+test('ProfileAdmin rejects a changed backup and blocks restore while the server owns the database', async (t) => {
+  const { directory, databasePath } = fixture(t);
+  const admin = new ProfileAdmin({ databasePath, backupDirectory: path.join(directory, 'backups') });
+  const backupPath = await admin.createBackup({ suffix: 'tamper-test' });
+  fs.appendFileSync(backupPath, 'changed');
+  assert.throws(
+    () => admin.verifyBackup(backupPath),
+    (error) => error.code === 'BACKUP_MANIFEST_MISMATCH'
+  );
+
+  const cleanBackup = await admin.createBackup({ suffix: 'lock-test' });
+  const release = acquireDatabaseLock(databasePath, 'vNext server');
+  t.after(release);
+  await assert.rejects(
+    admin.restoreBackup({ backupPath: cleanBackup, confirmedTarget: admin.databasePath }),
+    (error) => error.code === 'DATABASE_IN_USE'
+  );
 });
 
 test('ProfileAdmin backs up then deletes a profile while retaining anonymous match history', async (t) => {

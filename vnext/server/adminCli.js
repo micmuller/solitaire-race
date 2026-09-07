@@ -11,6 +11,39 @@ function option(name, fallback) {
   return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : fallback;
 }
 
+function commandName() {
+  const candidate = process.argv[2];
+  return candidate && !candidate.startsWith('--') ? candidate : 'menu';
+}
+
+function printJson(value) {
+  console.log(JSON.stringify(value, null, 2));
+}
+
+async function runCommand(admin) {
+  const command = commandName();
+  if (command === 'menu') return false;
+  if (command === 'backup') {
+    const backupPath = await admin.createBackup({ suffix: option('--suffix', 'manual') });
+    printJson(admin.verifyBackup(backupPath));
+    return true;
+  }
+  if (command === 'verify') {
+    const backupPath = option('--from');
+    if (!backupPath) throw new Error('verify requires --from <backup.sqlite>');
+    printJson(admin.verifyBackup(backupPath));
+    return true;
+  }
+  if (command === 'restore') {
+    const backupPath = option('--from');
+    const confirmedTarget = option('--confirm-target');
+    if (!backupPath) throw new Error('restore requires --from <backup.sqlite>');
+    printJson(await admin.restoreBackup({ backupPath, confirmedTarget }));
+    return true;
+  }
+  throw new Error(`unknown command: ${command}`);
+}
+
 function profileTable(profiles) {
   return profiles.map((profile, index) => ({
     Nr: index + 1,
@@ -77,12 +110,46 @@ async function deleteProfile(prompt, admin) {
   }
 }
 
+async function restoreBackup(prompt, admin) {
+  console.log('\nRestore ersetzt die aktive Profildatenbank vollständig.');
+  console.log('Der vNext-Server muss beendet sein. Vorher wird automatisch ein Sicherheitsbackup erstellt.');
+  const backupPath = (await prompt.question('Pfad zum Backup: ')).trim();
+  if (!backupPath) {
+    console.log('Abgebrochen – kein Backup angegeben.');
+    return;
+  }
+  const verification = admin.verifyBackup(backupPath);
+  console.log(`Backup geprüft: Schema ${verification.schemaVersion}, SHA-256 ${verification.sha256}`);
+  const confirmation = (await prompt.question(`\nZum Wiederherstellen den vollständigen Zielpfad eingeben:\n${admin.databasePath}\n> `)).trim();
+  if (confirmation !== admin.databasePath) {
+    console.log('Abgebrochen – keine Daten wurden geändert.');
+    return;
+  }
+  try {
+    const result = await admin.restoreBackup({ backupPath, confirmedTarget: confirmation });
+    console.log(`\nRestore erfolgreich: ${result.databasePath}`);
+    console.log(`Schema/Integrität: ${result.schemaVersion}/${result.integrity}`);
+    if (result.safetyBackupPath) console.log(`Sicherheitsbackup: ${result.safetyBackupPath}`);
+  } catch (error) {
+    if (error.code === 'DATABASE_IN_USE') {
+      console.log('\nRestore blockiert: Der vNext-Server verwendet die Zieldatenbank noch.');
+      console.log('Server beenden und den Restore erneut starten.');
+      return;
+    }
+    throw error;
+  }
+}
+
 async function main() {
   const databasePath = option(
     '--profile-database',
     process.env.VNEXT_PROFILE_DATABASE || path.join(__dirname, '..', 'data', 'highnoon.sqlite')
   );
-  const admin = new ProfileAdmin({ databasePath });
+  const admin = new ProfileAdmin({
+    databasePath,
+    backupDirectory: option('--backup-directory')
+  });
+  if (await runCommand(admin)) return;
   const prompt = readline.createInterface({ input: stdin, output: stdout });
   console.log('\nSolitaire HighNoon – Profilverwaltung');
   console.log(`Datenbank: ${admin.databasePath}`);
@@ -93,6 +160,7 @@ async function main() {
       console.log('3  Profil sicher löschen');
       console.log('4  Manuelles Backup erstellen');
       console.log('5  Datenbankintegrität prüfen');
+      console.log('6  Backup wiederherstellen');
       console.log('0  Beenden');
       const choice = (await prompt.question('\nAuswahl: ')).trim();
       if (choice === '0') break;
@@ -109,6 +177,8 @@ async function main() {
         console.log(`\nBackup erstellt: ${await admin.createBackup()}`);
       } else if (choice === '5') {
         console.log(`\nIntegritätsprüfung: ${admin.integrityCheck().join(', ')}`);
+      } else if (choice === '6') {
+        await restoreBackup(prompt, admin);
       } else {
         console.log('Ungültige Auswahl.');
       }

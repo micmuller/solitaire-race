@@ -12,7 +12,7 @@ const { createManagedBot } = require('../bot/managedBot');
 const { SPEEDS, normalizeSpeed } = require('../bot/runner');
 const { LobbyStore } = require('./lobbyStore');
 const { MatchSession, normalizeProgressLimit } = require('./matchSession');
-const { ProfileStore, boundedLimit } = require('./profileStore');
+const { ProfileStore, boundedLimit, boundedOffset } = require('./profileStore');
 
 const MAX_BODY_BYTES = 64 * 1024;
 const OBSERVER_ID = 'observer';
@@ -91,10 +91,11 @@ function bearerToken(request) {
   return match?.[1] || null;
 }
 
-function sessionCredential(body) {
-  return typeof body?.sessionToken === 'string' && body.sessionToken.length > 0
+function sessionCredential(request, body) {
+  return bearerToken(request)
+    || (typeof body?.sessionToken === 'string' && body.sessionToken.length > 0
     ? body.sessionToken
-    : body?.sessionId;
+    : body?.sessionId);
 }
 
 function serveWebAsset(urlPath, response) {
@@ -412,8 +413,14 @@ function createVNextServer({
     }
     if (request.method === 'GET' && url.pathname === '/vnext/profiles/me/matches') {
       try {
+        const limit = boundedLimit(url.searchParams.get('limit'));
+        const offset = boundedOffset(url.searchParams.get('offset'));
+        const sessionToken = bearerToken(request);
+        const total = profileStore.matchHistoryCount(sessionToken);
+        const matches = profileStore.matchHistory(sessionToken, limit, offset);
         sendJson(response, 200, {
-          matches: profileStore.matchHistory(bearerToken(request), boundedLimit(url.searchParams.get('limit')))
+          matches,
+          page: { limit, offset, returned: matches.length, total, hasMore: offset + matches.length < total }
         });
       } catch (error) {
         sendJson(response, error.statusCode || 500, { error: error.message });
@@ -421,8 +428,13 @@ function createVNextServer({
       return;
     }
     if (request.method === 'GET' && url.pathname === '/vnext/leaderboard') {
+      const limit = boundedLimit(url.searchParams.get('limit'));
+      const offset = boundedOffset(url.searchParams.get('offset'));
+      const total = profileStore.leaderboardCount();
+      const players = profileStore.leaderboard(limit, offset);
       sendJson(response, 200, {
-        players: profileStore.leaderboard(boundedLimit(url.searchParams.get('limit')))
+        players,
+        page: { limit, offset, returned: players.length, total, hasMore: offset + players.length < total }
       });
       return;
     }
@@ -431,12 +443,12 @@ function createVNextServer({
         const body = await readJson(request);
         const player = lobby.createOrUpdatePlayer({
           sessionId: body.sessionId,
-          sessionToken: body.sessionToken,
+          sessionToken: bearerToken(request) || body.sessionToken,
           nickname: body.nickname
         });
         log('LOBBY_SESSION', { playerId: player.playerId, nickname: player.nickname });
         sendJson(response, 200, {
-          player,
+          player: lobby.publicPlayer(player),
           ...(player.sessionId?.startsWith('hs_') ? { sessionToken: player.sessionId } : {})
         });
       } catch (error) {
@@ -461,7 +473,7 @@ function createVNextServer({
         const progressLimitMinutes = normalizeProgressLimit(body.progressLimitMinutes);
         const session = new MatchSession({ matchId, seed, mode, progressLimitMinutes, clockActive: false });
         sessions.set(matchId, session);
-        const game = lobby.createGame({ sessionId: sessionCredential(body), matchId, seed, mode, name: body.name, progressLimitMinutes });
+        const game = lobby.createGame({ sessionId: sessionCredential(request, body), matchId, seed, mode, name: body.name, progressLimitMinutes });
         log('LOBBY_GAME_CREATED', {
           gameId: game.gameId,
           matchId,
@@ -491,7 +503,7 @@ function createVNextServer({
     if (request.method === 'POST' && lobbyPath?.[2] === '/join') {
       try {
         const body = await readJson(request);
-        const joined = lobby.joinGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: sessionCredential(body) });
+        const joined = lobby.joinGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: sessionCredential(request, body) });
         const joinedSession = sessions.get(joined.matchId);
         joinedSession?.activateClock();
         if (joinedSession) scheduleProgressTimer(joinedSession);
@@ -519,7 +531,7 @@ function createVNextServer({
       try {
         const body = await readJson(request);
         const gameId = decodeURIComponent(lobbyPath[1]);
-        const game = lobby.leaveGame({ gameId, sessionId: sessionCredential(body) });
+        const game = lobby.leaveGame({ gameId, sessionId: sessionCredential(request, body) });
         const waitingSession = sessions.get(game.matchId);
         waitingSession?.pauseClock();
         if (waitingSession) scheduleProgressTimer(waitingSession);
@@ -542,7 +554,7 @@ function createVNextServer({
     if (request.method === 'DELETE' && lobbyPath && !lobbyPath[2]) {
       try {
         const body = await readJson(request);
-        const game = lobby.deleteWaitingGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: sessionCredential(body) });
+        const game = lobby.deleteWaitingGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: sessionCredential(request, body) });
         const deleted = {
           kind: 'lobbyDelete',
           matchId: game.matchId,
@@ -564,7 +576,7 @@ function createVNextServer({
       const matchId = decodeURIComponent(lobbyMatchPath[1]);
       try {
         const body = await readJson(request);
-        const game = lobby.endGameByMatch({ matchId, sessionId: sessionCredential(body) });
+        const game = lobby.endGameByMatch({ matchId, sessionId: sessionCredential(request, body) });
         stopBot(matchId, 'p1');
         stopBot(matchId, 'p2');
         const ended = {
@@ -715,7 +727,7 @@ function createVNextServer({
       }
       try {
         const body = await readJson(request);
-        lobby.requireHostForMatch({ matchId: session.matchId, sessionId: sessionCredential(body) });
+        lobby.requireHostForMatch({ matchId: session.matchId, sessionId: sessionCredential(request, body) });
         const seed = typeof body.seed === 'string' && body.seed.length > 0 ? body.seed : session.header.seed;
         const mode = typeof body.mode === 'string' && body.mode.length > 0 ? body.mode : session.header.mode;
         if (!MODES.includes(mode)) {

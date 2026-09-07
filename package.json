@@ -1,12 +1,13 @@
 {
   "name": "solitaire-race",
-  "version": "1.1.0-alpha.21",
+  "version": "1.1.0-alpha.22",
   "description": "",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "start:vnext": "node vnext/server/cli.js",
     "admin:profiles": "node vnext/server/adminCli.js",
+    "drill:profile-restore": "node vnext/server/profileRestoreDrill.js",
     "test": "node --test",
     "test:vnext": "node --test vnext/test/*.test.js",
     "test:replay": "node --test vnext/test/replay.test.js",

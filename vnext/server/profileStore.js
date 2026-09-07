@@ -8,6 +8,7 @@ const { normalizeNickname } = require('./lobbyStore');
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
+const MAX_OFFSET = 100_000;
 const MATCH_KINDS = Object.freeze(['human-vs-human', 'human-vs-bot', 'bot-vs-bot']);
 
 function nowIso() {
@@ -17,6 +18,11 @@ function nowIso() {
 function boundedLimit(value, fallback = DEFAULT_LIMIT) {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? Math.min(parsed, MAX_LIMIT) : fallback;
+}
+
+function boundedOffset(value) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? Math.min(parsed, MAX_OFFSET) : 0;
 }
 
 function tokenHash(token) {
@@ -234,18 +240,19 @@ class ProfileStore {
     return row ? publicPlayer(row) : null;
   }
 
-  leaderboard(limit) {
+  leaderboard(limit, offset = 0) {
     return this.database.prepare(`
       SELECT player_id, nickname, games_played, games_won, total_score, best_score,
              last_game_at, created_at, last_seen_at,
              ROW_NUMBER() OVER (
-               ORDER BY games_won DESC, total_score DESC, best_score DESC, nickname COLLATE NOCASE ASC
+               ORDER BY games_won DESC, total_score DESC, best_score DESC,
+                        nickname COLLATE NOCASE ASC, player_id ASC
              ) AS rank
       FROM players
       WHERE games_played > 0
       ORDER BY rank
-      LIMIT ?
-    `).all(boundedLimit(limit)).map((row) => ({
+      LIMIT ? OFFSET ?
+    `).all(boundedLimit(limit), boundedOffset(offset)).map((row) => ({
       rank: Number(row.rank),
       playerId: row.player_id,
       nickname: row.nickname,
@@ -253,7 +260,11 @@ class ProfileStore {
     }));
   }
 
-  matchHistory(sessionToken, limit) {
+  leaderboardCount() {
+    return Number(this.database.prepare('SELECT COUNT(*) AS count FROM players WHERE games_played > 0').get().count);
+  }
+
+  matchHistory(sessionToken, limit, offset = 0) {
     const player = this.requirePlayer(sessionToken);
     return this.database.prepare(`
       SELECT r.result_key, r.match_id, r.seed, r.mode, r.match_kind, r.ended_reason, r.winner_seat,
@@ -262,8 +273,8 @@ class ProfileStore {
       JOIN match_results r ON r.result_key = pr.result_key
       WHERE pr.player_id = ?
       ORDER BY r.ended_at DESC, r.result_key DESC
-      LIMIT ?
-    `).all(player.playerId, boundedLimit(limit)).map((row) => ({
+      LIMIT ? OFFSET ?
+    `).all(player.playerId, boundedLimit(limit), boundedOffset(offset)).map((row) => ({
       resultId: row.result_key,
       matchId: row.match_id,
       seed: row.seed,
@@ -276,6 +287,13 @@ class ProfileStore {
       won: Boolean(row.won),
       endedAt: row.ended_at
     }));
+  }
+
+  matchHistoryCount(sessionToken) {
+    const player = this.requirePlayer(sessionToken);
+    return Number(this.database.prepare(`
+      SELECT COUNT(*) AS count FROM match_player_results WHERE player_id = ?
+    `).get(player.playerId).count);
   }
 
   recordMatch({ resultId, matchId, seed, mode, matchKind = 'human-vs-human', endedReason, winner, players, endedAt = this.clock() }) {
@@ -349,4 +367,4 @@ class ProfileStore {
   }
 }
 
-module.exports = { MATCH_KINDS, ProfileStore, boundedLimit, tokenHash };
+module.exports = { MATCH_KINDS, ProfileStore, boundedLimit, boundedOffset, tokenHash };

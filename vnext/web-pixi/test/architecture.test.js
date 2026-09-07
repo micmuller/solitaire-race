@@ -466,20 +466,26 @@ test('production build is an installable web app scoped to the Pixi route',()=>{
   assert.equal(manifest.display,'standalone');
   assert.equal(manifest.icons.length,3);
   assert.match(main,/navigator\.serviceWorker\.register\('\/vnext\/pixi\/service-worker\.js'/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.0/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.1/);
   assert.match(server,/application\/manifest\+json/);
 });
 
-test('stable Pixi release metadata is consistently versioned as 0.3.0',()=>{
+test('stable Pixi release metadata is consistently versioned as 0.3.1',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
   const worker=fs.readFileSync(path.join(root,'public/service-worker.js'),'utf8');
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'0.3.0');
-  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.3\.0'/);
-  assert.match(html,/class="version-chip">v0\.3\.0/);
-  assert.match(html,/PixiJS 8 · 0\.3\.0/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.0/);
+  assert.equal(pkg.version,'0.3.1');
+  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.3\.1'/);
+  assert.match(html,/class="version-chip">v0\.3\.1/);
+  assert.match(html,/PixiJS 8 · 0\.3\.1/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.1/);
+});
+
+test('profile credentials use authorization headers instead of lobby request bodies',()=>{
+  const protocol=fs.readFileSync(path.resolve(root,'../web/protocol-client.mjs'),'utf8');
+  assert.match(protocol,/authorization: `Bearer \$\{credential\}`/);
+  assert.doesNotMatch(protocol,/JSON\.stringify\(\{ sessionId, sessionToken/);
 });
 
 test('profile overlay saves a nickname through the protected session without reloading',()=>{
@@ -515,7 +521,7 @@ test('bot match creation declares persistent match type and authenticates the hu
   const protocol=fs.readFileSync(path.resolve(root,'../web/protocol-client.mjs'),'utf8');
   assert.match(main,/if\(!versus\)await ensurePlayer\(\)/);
   assert.match(main,/matchKind:versus\?'bot-vs-bot':'human-vs-bot'/);
-  assert.match(main,/sessionToken:versus\?undefined:lobbyPlayer\.sessionId/);
+  assert.match(main,/sessionToken:versus\?undefined:profileSessionToken\(\)/);
   assert.match(main,/if\(!activeGame\)return returnToLobby\(\)/);
   assert.match(main,/ensurePlayer\(\)\.then\(refreshLobby\)/);
   assert.match(main,/refreshProfileAfterFinish\(key\)/);

@@ -83,6 +83,13 @@ function foundationEnvelope(matchId, clientId, seq, baseRev) {
   };
 }
 
+function authenticatedJson(sessionToken) {
+  return {
+    authorization: `Bearer ${sessionToken}`,
+    'content-type': 'application/json'
+  };
+}
+
 function takeCard(state, cardId) {
   const zones = [];
   for (const player of Object.values(state.players)) {
@@ -560,12 +567,13 @@ test('vNext lobby API creates a host game and lets a nickname join as P2', async
   });
   assert.equal(guestResponse.status, 200);
   const guest = await guestResponse.json();
+  assert.doesNotMatch(JSON.stringify(host.player), /hs_/);
+  assert.doesNotMatch(JSON.stringify(guest.player), /hs_/);
 
   const createResponse = await fetch(`${httpBase}/vnext/lobby/games`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: authenticatedJson(host.sessionToken),
     body: JSON.stringify({
-      sessionId: host.player.sessionId,
       name: 'Test Lobby',
       seed: 'LOBBY-HTTP-SEED',
       mode: 'shared'
@@ -577,15 +585,17 @@ test('vNext lobby API creates a host game and lets a nickname join as P2', async
   assert.equal(created.game.status, 'waiting');
   assert.equal(created.game.players.p1.nickname, 'Host iPad');
   assert.equal(app.sessions.has(created.matchId), true);
+  assert.doesNotMatch(JSON.stringify(created), /hs_/);
 
   const gamesBeforeJoin = await fetch(`${httpBase}/vnext/lobby/games`).then((response) => response.json());
+  assert.doesNotMatch(JSON.stringify(gamesBeforeJoin), /hs_/);
   assert.equal(gamesBeforeJoin.games.length, 1);
   assert.equal(gamesBeforeJoin.games[0].players.p2, null);
 
   const joinResponse = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/join`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: guest.player.sessionId })
+    headers: authenticatedJson(guest.sessionToken),
+    body: JSON.stringify({})
   });
   assert.equal(joinResponse.status, 200);
   const joined = await joinResponse.json();
@@ -593,6 +603,7 @@ test('vNext lobby API creates a host game and lets a nickname join as P2', async
   assert.equal(joined.matchId, created.matchId);
   assert.equal(joined.game.status, 'active');
   assert.equal(joined.game.players.p2.nickname, 'Guest iPad');
+  assert.doesNotMatch(JSON.stringify(joined), /hs_/);
 });
 
 test('vNext lobby API allows only p1 to end a lobby game', async (t) => {
@@ -613,9 +624,8 @@ test('vNext lobby API allows only p1 to end a lobby game', async (t) => {
   }).then((response) => response.json());
   const created = await fetch(`${httpBase}/vnext/lobby/games`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: authenticatedJson(host.sessionToken),
     body: JSON.stringify({
-      sessionId: host.player.sessionId,
       name: 'End Lobby',
       seed: 'END-HTTP-SEED',
       mode: 'split'
@@ -623,21 +633,21 @@ test('vNext lobby API allows only p1 to end a lobby game', async (t) => {
   }).then((response) => response.json());
   await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/join`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: guest.player.sessionId })
+    headers: authenticatedJson(guest.sessionToken),
+    body: JSON.stringify({})
   });
 
   const guestEnd = await fetch(`${httpBase}/vnext/lobby/matches/${encodeURIComponent(created.matchId)}/end`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: guest.player.sessionId })
+    headers: authenticatedJson(guest.sessionToken),
+    body: JSON.stringify({})
   });
   assert.equal(guestEnd.status, 403);
 
   const hostEnd = await fetch(`${httpBase}/vnext/lobby/matches/${encodeURIComponent(created.matchId)}/end`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: host.player.sessionId })
+    headers: authenticatedJson(host.sessionToken),
+    body: JSON.stringify({})
   });
   assert.equal(hostEnd.status, 200);
   const ended = await hostEnd.json();
@@ -665,9 +675,8 @@ test('completed lobby round restarts its progress clock when both seats remain o
   }).then((response) => response.json());
   const created = await fetch(`${httpBase}/vnext/lobby/games`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: authenticatedJson(host.sessionToken),
     body: JSON.stringify({
-      sessionId: host.player.sessionId,
       name: 'Clock Restart',
       seed: 'CLOCK-FIRST',
       mode: 'split',
@@ -676,8 +685,8 @@ test('completed lobby round restarts its progress clock when both seats remain o
   }).then((response) => response.json());
   await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/join`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: guest.player.sessionId })
+    headers: authenticatedJson(guest.sessionToken),
+    body: JSON.stringify({})
   });
 
   const p1 = await connect(`${wsBase}/vnext?matchId=${created.matchId}&clientId=p1&clientType=ios`);
@@ -705,8 +714,8 @@ test('completed lobby round restarts its progress clock when both seats remain o
   const p2Restarted = p2.next();
   const restarted = await fetch(`${httpBase}/vnext/matches/${created.matchId}/restart`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: host.player.sessionId, seed: 'CLOCK-SECOND', mode: 'split' })
+    headers: authenticatedJson(host.sessionToken),
+    body: JSON.stringify({ seed: 'CLOCK-SECOND', mode: 'split' })
   }).then((response) => response.json());
 
   assert.equal(restarted.game.status, 'active');
@@ -741,8 +750,8 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
   }).then((response) => response.json());
   const created = await fetch(`${httpBase}/vnext/lobby/games`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: host.player.sessionId, name: 'Lifecycle', seed: 'FLOW-SEED', mode: 'split' })
+    headers: authenticatedJson(host.sessionToken),
+    body: JSON.stringify({ name: 'Lifecycle', seed: 'FLOW-SEED', mode: 'split' })
   }).then((response) => response.json());
 
   const p1 = await connect(`${wsBase}/vnext?matchId=${created.matchId}&clientId=p1&clientType=web`);
@@ -758,8 +767,8 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
 
   const guestDelete = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}`, {
     method: 'DELETE',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: guest.player.sessionId })
+    headers: authenticatedJson(guest.sessionToken),
+    body: JSON.stringify({})
   });
   assert.equal(guestDelete.status, 403);
 
@@ -767,8 +776,8 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
   const iosStartPromise = iosObserver.next();
   const joined = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/join`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: guest.player.sessionId })
+    headers: authenticatedJson(guest.sessionToken),
+    body: JSON.stringify({})
   }).then((response) => response.json());
   assert.equal(joined.game.status, 'active');
   assert.equal((await p1StartPromise).kind, 'lobbyStart');
@@ -780,8 +789,8 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
 
   const unauthorizedRestart = await fetch(`${httpBase}/vnext/matches/${created.matchId}/restart`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: guest.player.sessionId, seed: 'NOPE', mode: 'shared' })
+    headers: authenticatedJson(guest.sessionToken),
+    body: JSON.stringify({ seed: 'NOPE', mode: 'shared' })
   });
   assert.equal(unauthorizedRestart.status, 403);
 
@@ -790,8 +799,8 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
   const iosRestartPromise = iosObserver.next();
   const restarted = await fetch(`${httpBase}/vnext/matches/${created.matchId}/restart`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: host.player.sessionId, seed: 'FLOW-RESTART', mode: 'shared' })
+    headers: authenticatedJson(host.sessionToken),
+    body: JSON.stringify({ seed: 'FLOW-RESTART', mode: 'shared' })
   }).then((response) => response.json());
   assert.equal(restarted.state.seed, 'FLOW-RESTART');
   assert.equal(restarted.state.mode, 'shared');
@@ -816,8 +825,8 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
   const iosWaitingPromise = iosObserver.next();
   const left = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}/leave`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: guest.player.sessionId })
+    headers: authenticatedJson(guest.sessionToken),
+    body: JSON.stringify({})
   }).then((response) => response.json());
   assert.equal(left.game.status, 'waiting');
   assert.equal((await p1WaitingPromise).kind, 'lobbyWaiting');
@@ -828,8 +837,8 @@ test('lobby lifecycle gates start, authorizes restart and deletes waiting games'
   const iosDeletePromise = iosObserver.next();
   const deleted = await fetch(`${httpBase}/vnext/lobby/games/${encodeURIComponent(created.game.gameId)}`, {
     method: 'DELETE',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: host.player.sessionId })
+    headers: authenticatedJson(host.sessionToken),
+    body: JSON.stringify({})
   }).then((response) => response.json());
   assert.equal(deleted.kind, 'lobbyDelete');
   assert.equal((await p1DeletePromise).reason, 'HOST_DELETED');

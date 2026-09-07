@@ -17,7 +17,7 @@ import { inviteUrl, readLaunchParams } from '../../web/lobby.mjs';
 import { gameForMatch, guestSessionCandidate, interactionAllowed, resignDecision, resignResultCopy, retryableSequenceReject, sameTableauSelection, seedForHostedGame, waitingMatchMessage } from './bridge/match-context.js';
 import { buildErrorReport, copyDiagnosticText, describeOpponent } from './diagnostics/error-report.js';
 
-export const WEB_PIXI_CLIENT_VERSION = '0.3.0';
+export const WEB_PIXI_CLIENT_VERSION = '0.3.1';
 const PROTOCOL_VERSION = '2.5.2';
 const $ = (selector) => document.querySelector(selector);
 const all = (selector) => [...document.querySelectorAll(selector)];
@@ -88,7 +88,7 @@ function setStockSide(next) { stockSide=next==='right'?'right':'left'; localStor
 function setRoute(matchId, role) { const url=new URL(location.href); url.search=''; url.searchParams.set('matchId',matchId); url.searchParams.set('role',role); history.replaceState({},'',url); }
 function clearRoute() { const url=new URL(location.href); url.searchParams.delete('matchId'); url.searchParams.delete('match'); url.searchParams.delete('role'); history.replaceState({},'',url); }
 function closeMatchDialogs() { for(const id of ['game-over','restart-dialog']){const dialog=$(`#${id}`);if(dialog?.open)dialog.close();} }
-function lobbySessionId(matchId=client?.matchId) { return lobbyPlayer?.sessionId||sessionStorage.getItem(matchSessionKey(matchId))||storageGet(STORAGE.session); }
+function lobbySessionId(matchId=client?.matchId) { return sessionStorage.getItem(matchSessionKey(matchId))||profileSessionToken(); }
 function resetGameOver() { clearTimeout(gameOverTimer);gameOverTimer=null;gameOverQueued=null;celebrated=null;board.stopCelebration?.();closeMatchDialogs(); }
 function participantNames() {
   if(activeGame?.players)return {p1:activeGame.players.p1?.nickname||'Spieler 1',p2:activeGame.players.p2?.nickname||'Offener Platz'};
@@ -172,8 +172,9 @@ async function prepareMatchContext(matchId, role) {
   const nickname=($('#menu-nickname').value.trim()||'HighNoon')+(sessionId?'':' P2');
   const result=await createLobbySession(baseUrl,{sessionToken:sessionId||undefined,nickname});
   lobbyPlayer=result.player;
-  sessionStorage.setItem(sessionKey,lobbyPlayer.sessionId);
-  const joined=await joinLobbyGame(baseUrl,game.gameId,{sessionToken:lobbyPlayer.sessionId});
+  const guestToken=result.sessionToken||sessionId;
+  sessionStorage.setItem(sessionKey,guestToken);
+  const joined=await joinLobbyGame(baseUrl,game.gameId,{sessionToken:guestToken});
   if(joined.role!=='p2')throw new Error('P2 konnte keinen eigenen Lobby-Sitz erhalten. Bitte Lobby aktualisieren und erneut verbinden.');
   activeGame=joined.game;
 }
@@ -248,7 +249,7 @@ async function saveProfileNickname({input=$('#profile-nickname'),button=$('#prof
   button.disabled=true;message.textContent='Wird gespeichert …';
   try{
     const result=await updateProfileNickname(baseUrl,{sessionToken,nickname}),player=result.player;
-    lobbyPlayer={...lobbyPlayer,...player,sessionId:sessionToken,publicSessionId:player.sessionId};
+    lobbyPlayer={...lobbyPlayer,...player,publicSessionId:player.sessionId};
     if(activeGame?.players){for(const seat of ['p1','p2'])if(activeGame.players[seat]?.playerId===player.playerId)activeGame.players[seat].nickname=player.nickname;}
     localStorage.setItem(STORAGE.nickname,player.nickname);localStorage.setItem(STORAGE.publicSession,player.sessionId);$('#profile-nickname').value=player.nickname;$('#menu-nickname').value=player.nickname;message.textContent='Nickname gespeichert.';updateMeta();showToast('Nickname gespeichert');
   }catch(error){message.textContent=error.message;showToast(error.message,'error');}
@@ -258,17 +259,17 @@ function lobbyRow(game, sessionId, publicSessionId) {
   const owns=(seat)=>seat?.publicSessionId===publicSessionId||seat?.sessionId===sessionId,ownHost=owns(game.players.p1),ownGuest=owns(game.players.p2);
   const row=document.createElement('div'); row.className='lobby-game'; const label=document.createElement('span'); label.textContent=`${game.name} · ${game.players.p1?.nickname||'P1'} vs ${game.players.p2?.nickname||'offen'} · ${game.mode} · Uhr ${game.progressLimitMinutes?`${game.progressLimitMinutes} min`:'aus'}`;
   const button=document.createElement('button'); button.textContent=ownHost?'Als P1 öffnen':ownGuest?'Als P2 öffnen':'Als P2 beitreten'; button.disabled=game.status==='finished'||Boolean(game.players.p2&&!ownGuest&&!ownHost);
-  button.onclick=async()=>{try{await ensurePlayer(); activeKind='human'; if(ownHost||ownGuest){activeGame=game;await connect(game.matchId,ownHost?'p1':'p2');return;} const joined=await joinLobbyGame(baseUrl,game.gameId,{sessionToken:lobbyPlayer.sessionId}); activeGame=joined.game; await connect(joined.matchId,joined.role);}catch(e){showToast(e.message,'error')}};
+  button.onclick=async()=>{try{await ensurePlayer(); activeKind='human'; if(ownHost||ownGuest){activeGame=game;await connect(game.matchId,ownHost?'p1':'p2');return;} const joined=await joinLobbyGame(baseUrl,game.gameId,{sessionToken:profileSessionToken()}); activeGame=joined.game; await connect(joined.matchId,joined.role);}catch(e){showToast(e.message,'error')}};
   row.append(label,button); return row;
 }
 async function refreshLobby(){ const result=await listLobbyGames(baseUrl), sessionId=lobbyPlayer?.sessionId||profileSessionToken(),publicSessionId=lobbyPlayer?.publicSessionId||storageGet(STORAGE.publicSession), list=$('#menu-lobby-games'); list.replaceChildren();for(const game of result.games||[])list.append(lobbyRow(game,sessionId,publicSessionId));if(!list.children.length)list.textContent='Keine offenen Spiele.'; }
-async function hostLobby({ name=$('#menu-game-name').value.trim(), requestedSeed='', selectedMode=mode, technicalSeed=false, progressLimitMinutes=progressLimitValue() }={}){ try{await ensurePlayer(); const seed=seedForHostedGame({requestedSeed,technical:technicalSeed,generateSeed:generateRandomSeed}); const created=await createLobbyGame(baseUrl,{sessionToken:lobbyPlayer.sessionId,name:name||'HighNoon',seed,mode:selectedMode,progressLimitMinutes}); $('#menu-seed').value=seed;sessionStorage.setItem(matchSessionKey(created.matchId),lobbyPlayer.sessionId); activeGame=created.game; activeKind='human'; setMode(selectedMode); await connect(created.matchId,'p1'); status('Warte auf P2','Lobby');}catch(e){showToast(e.message,'error')} }
-async function hostBot(versus=false,speed='medium',selectedMode=mode,progressLimitMinutes=progressLimitValue()){ try{activeGame=null;setMode(selectedMode); if(!versus)await ensurePlayer(); const match=await createMatch(baseUrl,generateRandomSeed(),mode,progressLimitMinutes,{matchKind:versus?'bot-vs-bot':'human-vs-bot',sessionToken:versus?undefined:lobbyPlayer.sessionId}); activeKind=versus?'bot-versus':'bot'; if(versus){await startBot(baseUrl,match.matchId,{clientId:'p1',speed});await startBot(baseUrl,match.matchId,{clientId:'p2',speed});await connect(match.matchId,'observer');}else{await connect(match.matchId,'p1');await startBot(baseUrl,match.matchId,{clientId:'p2',speed});}}catch(e){showToast(e.message,'error')} }
+async function hostLobby({ name=$('#menu-game-name').value.trim(), requestedSeed='', selectedMode=mode, technicalSeed=false, progressLimitMinutes=progressLimitValue() }={}){ try{await ensurePlayer(); const sessionToken=profileSessionToken(),seed=seedForHostedGame({requestedSeed,technical:technicalSeed,generateSeed:generateRandomSeed}); const created=await createLobbyGame(baseUrl,{sessionToken,name:name||'HighNoon',seed,mode:selectedMode,progressLimitMinutes}); $('#menu-seed').value=seed;sessionStorage.setItem(matchSessionKey(created.matchId),sessionToken); activeGame=created.game; activeKind='human'; setMode(selectedMode); await connect(created.matchId,'p1'); status('Warte auf P2','Lobby');}catch(e){showToast(e.message,'error')} }
+async function hostBot(versus=false,speed='medium',selectedMode=mode,progressLimitMinutes=progressLimitValue()){ try{activeGame=null;setMode(selectedMode); if(!versus)await ensurePlayer(); const match=await createMatch(baseUrl,generateRandomSeed(),mode,progressLimitMinutes,{matchKind:versus?'bot-vs-bot':'human-vs-bot',sessionToken:versus?undefined:profileSessionToken()}); activeKind=versus?'bot-versus':'bot'; if(versus){await startBot(baseUrl,match.matchId,{clientId:'p1',speed});await startBot(baseUrl,match.matchId,{clientId:'p2',speed});await connect(match.matchId,'observer');}else{await connect(match.matchId,'p1');await startBot(baseUrl,match.matchId,{clientId:'p2',speed});}}catch(e){showToast(e.message,'error')} }
 function startDemo(){ client?.close?.();activeGame=null;activeKind='preview';client={clientId:'p1',matchId:'demo-4-2',current:structuredClone(DEMO_CURRENT),close(){}}; board.setLocalId('p1'); renderCurrent(client.current,'snapshot'); overlayOpen($('#menu-overlay'),false); $('#connection-dot').classList.remove('online'); status('Nur visuelle Ansicht – kein Match wurde eröffnet','Demo'); }
-async function doRestart(newSeed){ if(!client||client.matchId.startsWith('demo'))return startDemo(); if(!lobbyPlayer){showToast('Restart benötigt ein gehostetes Lobby-Spiel','error');return;} try{await restartMatch(baseUrl,client.matchId,newSeed?generateRandomSeed():client.current.state.seed,client.current.state.mode,{sessionToken:lobbyPlayer.sessionId});overlayOpen($('#menu-overlay'),false);}catch(e){showToast(e.message,'error')} }
+async function doRestart(newSeed){ if(!client||client.matchId.startsWith('demo'))return startDemo(); if(!lobbyPlayer){showToast('Restart benötigt ein gehostetes Lobby-Spiel','error');return;} try{await restartMatch(baseUrl,client.matchId,newSeed?generateRandomSeed():client.current.state.seed,client.current.state.mode,{sessionToken:lobbySessionId()});overlayOpen($('#menu-overlay'),false);}catch(e){showToast(e.message,'error')} }
 function returnToLobby(){ const matchId=client?.matchId;if(client&&!client.matchId.startsWith('demo'))stopBots(baseUrl,client.matchId).catch(()=>{});client?.close?.();client=null;activeGame=null;activeKind='human';selection=null;stockClickQueue.clear();resetGameOver();board.clearTransient();if(matchId)sessionStorage.removeItem(matchSessionKey(matchId));clearRoute();openMenuTab('lobby');overlayOpen($('#menu-overlay'),true);$('#connection-dot').classList.remove('online');ensurePlayer().then(refreshLobby).catch(()=>{}); }
-async function leaveOrDelete(){if(!activeGame||!lobbyPlayer)return showToast('Kein Lobby-Sitz aktiv','error');try{if(client?.clientId==='p1'&&activeGame.status==='waiting')await deleteLobbyGame(baseUrl,activeGame.gameId,{sessionToken:lobbyPlayer.sessionId});else if(client?.clientId==='p2')await leaveLobbyGame(baseUrl,activeGame.gameId,{sessionToken:lobbyPlayer.sessionId});else return showToast('Nur wartender Host oder P2 kann den Sitz freigeben','error');returnToLobby();}catch(e){showToast(e.message,'error')}}
-async function endGame(){if(!client||!lobbyPlayer)return showToast('Nur der Lobby-Host kann beenden','error');try{await endLobbyMatch(baseUrl,client.matchId,{sessionToken:lobbyPlayer.sessionId});returnToLobby();}catch(e){showToast(e.message,'error')}}
+async function leaveOrDelete(){if(!activeGame||!lobbyPlayer)return showToast('Kein Lobby-Sitz aktiv','error');const sessionToken=lobbySessionId();try{if(client?.clientId==='p1'&&activeGame.status==='waiting')await deleteLobbyGame(baseUrl,activeGame.gameId,{sessionToken});else if(client?.clientId==='p2')await leaveLobbyGame(baseUrl,activeGame.gameId,{sessionToken});else return showToast('Nur wartender Host oder P2 kann den Sitz freigeben','error');returnToLobby();}catch(e){showToast(e.message,'error')}}
+async function endGame(){if(!client||!lobbyPlayer)return showToast('Nur der Lobby-Host kann beenden','error');try{await endLobbyMatch(baseUrl,client.matchId,{sessionToken:lobbySessionId()});returnToLobby();}catch(e){showToast(e.message,'error')}}
 async function reconnect(){ if(!client||client.matchId.startsWith('demo'))return; const id=client.matchId,role=client.clientId;client.close();await new Promise(r=>setTimeout(r,100));await connect(id,role,{route:false,reconnect:true});overlayOpen($('#menu-overlay'),false); }
 
 async function restartAfterResign(){if(!client)return;const sessionToken=lobbySessionId();try{await restartMatch(baseUrl,client.matchId,generateRandomSeed(),client.current.state.mode,{sessionToken});}catch(error){showToast(error.message,'error');}}

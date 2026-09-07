@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { ProfileStore, tokenHash } = require('../server/profileStore');
+const { ProfileStore, boundedOffset, tokenHash } = require('../server/profileStore');
 const { createVNextServer } = require('../server');
 
 const silentLogger = { log() {}, error() {} };
@@ -85,6 +85,11 @@ test('ProfileStore records authoritative results exactly once and ranks the lead
   });
   assert.equal(store.playerById(bob.player.playerId).stats.gamesWon, 0);
   assert.deepEqual(store.leaderboard(10).map((entry) => entry.nickname), ['Alice', 'Bob']);
+  assert.deepEqual(store.leaderboard(1, 1).map((entry) => entry.nickname), ['Bob']);
+  assert.equal(store.leaderboardCount(), 2);
+  assert.equal(store.matchHistoryCount(alice.sessionToken), 1);
+  assert.equal(boundedOffset('-1'), 0);
+  assert.equal(boundedOffset('12'), 12);
   assert.deepEqual(store.matchHistory(alice.sessionToken, 10), [{
     resultId: result.resultId,
     matchId: result.matchId,
@@ -135,11 +140,17 @@ test('profile HTTP API protects private reads and persists lobby results across 
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ nickname: 'Persistent Guest' })
   }).then((response) => response.json());
+  assert.match(host.sessionToken, /^hs_/);
+  assert.match(guest.sessionToken, /^hs_/);
+  assert.doesNotMatch(JSON.stringify(host.player), /hs_/);
+  assert.doesNotMatch(JSON.stringify(guest.player), /hs_/);
   const created = await fetch(`${baseUrl}/vnext/lobby/games`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      authorization: `Bearer ${host.sessionToken}`,
+      'content-type': 'application/json'
+    },
     body: JSON.stringify({
-      sessionId: host.player.sessionId,
       name: 'Persistent Match',
       seed: 'PERSISTENT-SEED',
       mode: 'split'
@@ -147,13 +158,16 @@ test('profile HTTP API protects private reads and persists lobby results across 
   }).then((response) => response.json());
   await fetch(`${baseUrl}/vnext/lobby/games/${created.game.gameId}/join`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: guest.player.sessionId })
+    headers: {
+      authorization: `Bearer ${guest.sessionToken}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({})
   });
   const hostRename = await fetch(`${baseUrl}/vnext/profiles/me`, {
     method: 'PATCH',
     headers: {
-      authorization: `Bearer ${host.player.sessionId}`,
+      authorization: `Bearer ${host.sessionToken}`,
       'content-type': 'application/json'
     },
     body: JSON.stringify({ nickname: 'Persistent Host Renamed' })
@@ -161,6 +175,7 @@ test('profile HTTP API protects private reads and persists lobby results across 
   assert.equal(hostRename.status, 200);
   const gamesAfterRename = await fetch(`${baseUrl}/vnext/lobby/games`).then((response) => response.json());
   assert.equal(gamesAfterRename.games[0].players.p1.nickname, 'Persistent Host Renamed');
+  assert.doesNotMatch(JSON.stringify(gamesAfterRename), /hs_/);
   app.lobby.markMatchFinished(created.matchId, {
     players: { p1: { score: 21 }, p2: { score: 13 } },
     winner: 'p1',
@@ -169,20 +184,24 @@ test('profile HTTP API protects private reads and persists lobby results across 
 
   const unauthorized = await fetch(`${baseUrl}/vnext/profiles/me`);
   assert.equal(unauthorized.status, 401);
-  const history = await fetch(`${baseUrl}/vnext/profiles/me/matches`, {
-    headers: { authorization: `Bearer ${host.player.sessionId}` }
+  const history = await fetch(`${baseUrl}/vnext/profiles/me/matches?limit=1&offset=0`, {
+    headers: { authorization: `Bearer ${host.sessionToken}` }
   }).then((response) => response.json());
   assert.equal(history.matches.length, 1);
   assert.equal(history.matches[0].endedReason, 'resign');
-  const leaderboard = await fetch(`${baseUrl}/vnext/leaderboard`).then((response) => response.json());
-  assert.deepEqual(leaderboard.players.map((entry) => entry.nickname), ['Persistent Host Renamed', 'Persistent Guest']);
+  assert.deepEqual(history.page, { limit: 1, offset: 0, returned: 1, total: 1, hasMore: false });
+  const leaderboard = await fetch(`${baseUrl}/vnext/leaderboard?limit=1&offset=1`).then((response) => response.json());
+  assert.deepEqual(leaderboard.page, { limit: 1, offset: 1, returned: 1, total: 2, hasMore: false });
+  assert.deepEqual(leaderboard.players.map((entry) => entry.nickname), ['Persistent Guest']);
+  const fullLeaderboard = await fetch(`${baseUrl}/vnext/leaderboard`).then((response) => response.json());
+  assert.deepEqual(fullLeaderboard.players.map((entry) => entry.nickname), ['Persistent Host Renamed', 'Persistent Guest']);
   await app.close();
 
   const restarted = createVNextServer({ logger: silentLogger, profileDatabasePath: databasePath });
   const restartedAddress = await restarted.start({ port: 0 });
   t.after(() => restarted.close());
   const profileResponse = await fetch(`http://127.0.0.1:${restartedAddress.port}/vnext/profiles/me`, {
-    headers: { authorization: `Bearer ${host.player.sessionId}` }
+    headers: { authorization: `Bearer ${host.sessionToken}` }
   });
   assert.equal(profileResponse.status, 200);
   const profile = await profileResponse.json();
