@@ -1,4 +1,4 @@
-const CACHE_NAME='solitaire-highnoon-pixi-v0.3.1';
+const CACHE_NAME='solitaire-highnoon-pixi-v0.3.2';
 const APP_SHELL=['./','./manifest.webmanifest','./icons/app-icon-192.png','./icons/app-icon-512.png','./icons/app-icon-maskable-512.png','./icons/apple-touch-icon.png'];
 
 self.addEventListener('install',(event)=>{

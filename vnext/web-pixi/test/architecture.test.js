@@ -466,20 +466,20 @@ test('production build is an installable web app scoped to the Pixi route',()=>{
   assert.equal(manifest.display,'standalone');
   assert.equal(manifest.icons.length,3);
   assert.match(main,/navigator\.serviceWorker\.register\('\/vnext\/pixi\/service-worker\.js'/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.1/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.2/);
   assert.match(server,/application\/manifest\+json/);
 });
 
-test('stable Pixi release metadata is consistently versioned as 0.3.1',()=>{
+test('stable Pixi release metadata is consistently versioned as 0.3.2',()=>{
   const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
   const main=fs.readFileSync(path.join(root,'src/main.js'),'utf8');
   const worker=fs.readFileSync(path.join(root,'public/service-worker.js'),'utf8');
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'0.3.1');
-  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.3\.1'/);
-  assert.match(html,/class="version-chip">v0\.3\.1/);
-  assert.match(html,/PixiJS 8 · 0\.3\.1/);
-  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.1/);
+  assert.equal(pkg.version,'0.3.2');
+  assert.match(main,/WEB_PIXI_CLIENT_VERSION = '0\.3\.2'/);
+  assert.match(html,/class="version-chip">v0\.3\.2/);
+  assert.match(html,/PixiJS 8 · 0\.3\.2/);
+  assert.match(worker,/solitaire-highnoon-pixi-v0\.3\.2/);
 });
 
 test('profile credentials use authorization headers instead of lobby request bodies',()=>{
