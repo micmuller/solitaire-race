@@ -43,7 +43,7 @@
 
       <div id="menu-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="menu-title">
         <section class="panel menu-panel">
-          <header class="menu-header"><div><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2></div><div class="menu-header-meta"><span id="menu-context">Kein aktives Spiel</span><span class="version-chip">v0.3.3</span><button class="close" data-close aria-label="Menü schließen">×</button></div></header>
+          <header class="menu-header"><div><p class="eyebrow">SPIELMENÜ</p><h2 id="menu-title">HighNoon</h2></div><div class="menu-header-meta"><span id="menu-context">Kein aktives Spiel</span><span class="version-chip">v0.3.9</span><button class="close" data-close aria-label="Menü schließen">×</button></div></header>
           <nav class="menu-tabs" aria-label="Menübereiche" role="tablist">
             <button class="menu-tab active" role="tab" data-menu-tab="lobby"><span aria-hidden="true">⌂</span>Lobby</button><button class="menu-tab" role="tab" data-menu-tab="settings"><span aria-hidden="true"><i class="settings-gear">⚙︎</i></span>Einstellungen</button><button class="menu-tab" role="tab" data-menu-tab="game"><span aria-hidden="true">♠</span>Spiel</button><button class="menu-tab" role="tab" data-menu-tab="new-game"><span aria-hidden="true">★</span>Neues Spiel</button><button class="menu-tab" role="tab" data-menu-tab="bot"><span aria-hidden="true">♟</span>Bot</button><button class="menu-tab" role="tab" data-menu-tab="share"><span aria-hidden="true">➶</span>Teilen</button><button class="menu-tab" role="tab" data-menu-tab="leaderboard"><span aria-hidden="true">♛</span>Leaderboard</button><button class="menu-tab" role="tab" data-menu-tab="info"><span aria-hidden="true">i</span>Info &amp; Diagnose</button>
           </nav>
@@ -54,7 +54,7 @@
               <p id="menu-save-status" class="field-note" aria-live="polite">Gilt sofort für dieses Profil.</p>
               <div class="menu-actions"><button id="menu-new-game" class="primary">Neuen Tisch eröffnen</button><button id="menu-refresh-games">Aktualisieren</button></div>
               <div class="segmented" aria-label="Spielmodus"><button data-mode="split" aria-pressed="true">Split</button><button data-mode="shared" aria-pressed="false">Shared</button></div>
-              <div class="menu-actions"><button id="menu-lobby-host-bot">Human vs Bot</button><button id="menu-lobby-bot-versus">Bot vs Bot · Schnell</button><button id="demo-game">Visuelle Demo</button></div>
+              <div class="menu-actions"><button id="menu-lobby-host-bot">Human vs Bot</button><button id="menu-lobby-bot-versus">Bot vs Bot · Schnell</button><button id="demo-game">Visuelle Demo</button><button id="preview-deal">Austeilen-Vorschau</button></div>
               <div id="menu-lobby-games" class="lobby-list" aria-label="Offene Spiele"></div>
             </section>
             <section class="menu-pane" data-menu-panel="settings" hidden>
@@ -87,9 +87,10 @@
               <button id="technical-start">Technisch starten</button>
             </section>
             <section class="menu-pane" data-menu-panel="bot" hidden>
-              <div class="pane-heading"><p class="eyebrow">TRAINING</p><h3>Bot-Spiel</h3><p>Spiele gegen den Bot oder beobachte zwei Bots bei einer Testpartie.</p></div>
+              <div class="pane-heading"><p class="eyebrow">TRAINING</p><h3>Bot-Spiel <button class="bot-info-button" popovertarget="bot-help" aria-label="Informationen zu Bot-Spielstärken">ⓘ</button></h3></div>
               <label>Spielmodus <select id="bot-mode"><option value="split">Split</option><option value="shared">Shared</option></select></label>
-              <label>Geschwindigkeit <select id="bot-speed"><option value="easy">Easy</option><option value="medium" selected>Mittel</option><option value="hard">Schwer</option></select></label>
+              <label>Spielstärke <select id="bot-speed"><option value="easy">Leicht</option><option value="medium" selected>Mittel</option><option value="hard">Schwer</option></select></label>
+              <div id="bot-help" popover role="dialog" aria-labelledby="bot-help-title"><h3 id="bot-help-title">Bot-Spielstärken</h3><p>Spiele gegen den Bot oder beobachte zwei Bots bei einer Testpartie.</p><p>Leicht übersieht gelegentlich Chancen. Mittel plant das Freispielen, Schwer auch Folgezüge. Alle Stufen spielen ohne taktisches Aussitzen der Fortschrittsuhr.</p><button popovertarget="bot-help" popovertargetaction="hide">Schließen</button></div>
               <div class="preference-group bot-view-group"><span>Bot-vs-Bot-Darstellung</span><div class="segmented"><button data-bot-view="observer" aria-pressed="true">Schnell</button><button data-bot-view="visual" aria-pressed="false">Visuell</button></div></div>
               <p id="bot-view-note" class="field-note bot-view-note">Beide Bots laufen schnell auf dem Server; Pixi beobachtet das Match nur.</p>
               <div class="menu-actions vertical"><button id="menu-host-bot">Match mit Bot</button><button id="menu-bot-versus" class="primary">Bot vs Bot schnell starten</button><button id="stop-bots">Bot stoppen</button></div>
@@ -110,7 +111,7 @@
             <section class="menu-pane" data-menu-panel="info" hidden>
               <div class="pane-heading"><p class="eyebrow">SYSTEMSTATUS</p><h3>Info &amp; Diagnose</h3><p>Technische Daten für die Fehlersuche. Der Bericht enthält keine Spielzüge anderer Partien.</p></div>
               <div class="diagnostic-action"><div><strong>Spielerprofil</strong><p>Nickname, Statistik und die letzten abgeschlossenen Spiele anzeigen.</p></div><button id="info-open-profile">Profil öffnen</button></div>
-              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protokoll</dt><dd>2.5.2</dd><dt>Webclient</dt><dd>PixiJS 8 · 0.3.3</dd><dt>Match-ID</dt><dd id="info-match">–</dd><dt>Rolle</dt><dd id="info-role">–</dd><dt>Gegner/Bot</dt><dd id="info-opponent">–</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>State-Hash</dt><dd id="info-hash">–</dd></dl>
+              <dl class="info-grid"><dt>Server</dt><dd id="info-server">–</dd><dt>Protokoll</dt><dd>2.5.2</dd><dt>Webclient</dt><dd>PixiJS 8 · 0.3.9</dd><dt>Match-ID</dt><dd id="info-match">–</dd><dt>Rolle</dt><dd id="info-role">–</dd><dt>Gegner/Bot</dt><dd id="info-opponent">–</dd><dt>Revision</dt><dd id="info-revision">–</dd><dt>State-Hash</dt><dd id="info-hash">–</dd></dl>
               <div class="diagnostic-action"><div><strong>Fehlerbericht</strong><p>Version, Match-Kontext und letzte lokale Ereignisse in die Zwischenablage kopieren.</p></div><button id="copy-error-report" class="primary">Fehlerbericht kopieren</button></div>
               <textarea id="error-report-output" class="diagnostic-report" readonly hidden aria-label="Fehlerbericht zum manuellen Kopieren"></textarea>
             </section>
@@ -120,7 +121,7 @@
 
       <div id="profile-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="profile-title" hidden>
         <section class="panel profile-panel">
-          <header class="profile-header"><div><p class="eyebrow">SPIELERPROFIL</p><h2 id="profile-title">HighNoon</h2><p class="profile-id">Spieler-ID <span id="profile-player-id">–</span></p></div><span class="version-chip">Pixi 0.3.3</span><button class="close" data-close aria-label="Profil schließen">×</button></header>
+          <header class="profile-header"><div><p class="eyebrow">SPIELERPROFIL</p><h2 id="profile-title">HighNoon</h2><p class="profile-id">Spieler-ID <span id="profile-player-id">–</span></p></div><span class="version-chip">Pixi 0.3.9</span><button class="close" data-close aria-label="Profil schließen">×</button></header>
           <section class="profile-card"><label>Nickname <span class="fallback"><input id="profile-nickname" maxlength="32" autocomplete="nickname" /><button id="profile-save-nickname" class="primary">Speichern</button></span></label><p id="profile-save-status" class="field-note" aria-live="polite">Änderungen werden sofort für dieses Profil gespeichert.</p></section>
           <section class="profile-stats" aria-label="Spielerstatistik"><div><small>Spiele</small><strong id="profile-games">0</strong></div><div><small>Siege</small><strong id="profile-wins">0</strong></div><div><small>Punkte</small><strong id="profile-points">0</strong></div><div><small>Bestscore</small><strong id="profile-best-score">0</strong></div></section>
           <section class="profile-history-section" aria-labelledby="profile-history-title"><div class="profile-section-heading"><div><p class="eyebrow">CHRONIK</p><h3 id="profile-history-title">Letzte Spiele</h3></div><span id="profile-context">Rolle – · kein Match</span></div><ol id="profile-history" aria-live="polite"><li class="profile-history-empty">Noch keine abgeschlossenen Spiele.</li></ol></section>

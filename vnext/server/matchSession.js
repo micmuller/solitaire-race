@@ -75,10 +75,13 @@ function validateEnvelope(session, actorId, envelope) {
 }
 
 class MatchSession {
-  constructor({ matchId, seed, mode, startedAt = new Date().toISOString(), progressLimitMinutes = 0, clockActive = true, now = Date.now }) {
+  constructor({ matchId, seed, mode, startedAt = new Date().toISOString(), progressLimitMinutes = 0, clockActive = true, dealDurationMs = 0, now = Date.now }) {
     if (typeof matchId !== 'string' || matchId.length === 0) throw new TypeError('matchId is required');
     this.matchId = matchId;
     this.now = now;
+    this.dealDurationMs = dealDurationMs === 1800 ? 1800 : 0;
+    this.dealGeneration = 0;
+    this.dealEndsAt = null;
     this.progressLimitMinutes = normalizeProgressLimit(progressLimitMinutes);
     this.clockActive = Boolean(clockActive && this.progressLimitMinutes);
     this.deadlines = { p1: null, p2: null };
@@ -87,6 +90,23 @@ class MatchSession {
     this.lastAcceptedSeq = { p1: -1, p2: -1 };
     this.steps = [];
     if (this.clockActive) this.resetDeadlines();
+    if (clockActive) this.beginDeal();
+  }
+
+  beginDeal() {
+    if (!this.dealDurationMs || this.current.state.status !== 'active') return;
+    this.pauseClock();
+    this.dealGeneration += 1;
+    this.dealEndsAt = this.now() + this.dealDurationMs;
+  }
+
+  finishDealIfDue() {
+    if (this.dealEndsAt === null || this.now() < this.dealEndsAt) return null;
+    const startAt = this.dealEndsAt;
+    this.dealEndsAt = null;
+    this.clockActive = Boolean(this.progressLimitMinutes && this.current.state.status === 'active');
+    if (this.clockActive) this.deadlines = { p1: startAt + this.progressLimitMinutes * 60000, p2: startAt + this.progressLimitMinutes * 60000 };
+    return snapshot(this, 'DEAL_READY');
   }
 
   resetDeadlines() {
@@ -100,22 +120,26 @@ class MatchSession {
       running: this.clockActive && this.current.state.status === 'active',
       limitSeconds: this.progressLimitMinutes * 60,
       serverNow: this.now(),
+      ...(this.dealEndsAt !== null ? { dealId: `${this.matchId}:${this.dealGeneration}`, dealEndsAt: this.dealEndsAt } : {}),
       deadlines: { ...this.deadlines }
     };
   }
 
   activateClock() {
+    if (this.dealDurationMs) { if (this.dealEndsAt === null) this.beginDeal(); return; }
     if (!this.progressLimitMinutes || this.current.state.status !== 'active') return;
     this.clockActive = true;
     this.resetDeadlines();
   }
 
   pauseClock() {
+    this.dealEndsAt = null;
     this.clockActive = false;
     this.deadlines = { p1: null, p2: null };
   }
 
   expireIfDue() {
+    this.finishDealIfDue();
     if (!this.clockActive || !this.progressLimitMinutes || this.current.state.status !== 'active') return null;
     const now = this.now();
     const expired = PLAYER_IDS.filter((playerId) => this.deadlines[playerId] <= now)
@@ -148,6 +172,8 @@ class MatchSession {
     this.steps = [];
     if (this.clockActive) this.resetDeadlines();
     else this.deadlines = { p1: null, p2: null };
+    this.dealEndsAt = null;
+    if (clockActive) this.beginDeal();
     return snapshot(this, 'RESTART');
   }
 
@@ -162,6 +188,11 @@ class MatchSession {
     const envelopeError = validateEnvelope(this, actorId, envelope);
     if (envelopeError) {
       return { response: reject(this, actorId, envelopeError), broadcast: false };
+    }
+
+    this.finishDealIfDue();
+    if (this.dealEndsAt !== null) {
+      return { response: snapshot(this, 'DEALING'), broadcast: false };
     }
 
     const expectedSeq = this.lastAcceptedSeq[actorId] + 1;

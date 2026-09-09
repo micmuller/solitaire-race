@@ -4,11 +4,12 @@ const crypto = require('node:crypto');
 const { ProtocolClient, createMatch } = require('../client/protocolClient');
 const { canonicalize } = require('../core');
 const { candidateSignature, generateActionCandidates } = require('./actionGenerator');
+const { rankCandidates, normalizeDifficulty, progressKey, shouldReserveProgress } = require('./strategy');
 
 const SPEEDS = Object.freeze({
   easy: { minMs: 2500, maxMs: 3500 },
   medium: { minMs: 1200, maxMs: 1800 },
-  hard: { minMs: 500, maxMs: 800 },
+  hard: { minMs: 900, maxMs: 1300 },
   slow: { minMs: 900, maxMs: 1200 },
   normal: { minMs: 250, maxMs: 400 },
   fast: { minMs: 0, maxMs: 0 }
@@ -45,8 +46,11 @@ function speedDelay(speed, actionCount, clientId) {
 }
 
 class BotActor {
-  constructor({ client, maxRejectsPerState = 256, recentWindow = 12 }) {
+  constructor({ client, difficulty = 'medium', now = Date.now, maxRejectsPerState = 256, recentWindow = 12 }) {
     this.client = client;
+    this.difficulty = normalizeDifficulty(difficulty);
+    this.now = now;
+    this.waitingForClock = false;
     this.maxRejectsPerState = maxRejectsPerState;
     this.recentWindow = recentWindow;
     this.rejects = 0;
@@ -59,17 +63,24 @@ class BotActor {
 
   rejectedSet() {
     const key = `${this.client.current.rev}:${this.client.current.stateHash}`;
+    if (!this.rejectedByState.has(key)) this.rejectedByState.clear();
     if (!this.rejectedByState.has(key)) this.rejectedByState.set(key, new Set());
     return this.rejectedByState.get(key);
   }
 
   nextCandidate() {
+    const progress = progressKey(this.client.current);
+    if (this.lastProgress !== undefined && this.lastProgress !== progress) this.recentAccepted = [];
+    this.lastProgress = progress;
     const rejected = this.rejectedSet();
-    const candidates = generateActionCandidates(this.client.current, this.client.clientId);
-    return candidates.find((candidate) => {
+    const candidates = rankCandidates(this.client.current, this.client.clientId,
+      generateActionCandidates(this.client.current, this.client.clientId), this.difficulty);
+    const available = candidates.filter((candidate) => {
       const signature = candidateSignature(candidate);
       return !rejected.has(signature) && !this.isRecentLoop(candidate, signature);
-    }) || null;
+    });
+    this.waitingForClock = shouldReserveProgress(this.client.current, this.client.clientId, available, this.difficulty, this.now());
+    return this.waitingForClock ? null : available[0] || null;
   }
 
   isRecentLoop(candidate, signature) {
@@ -87,6 +98,7 @@ class BotActor {
   async step() {
     const candidate = this.nextCandidate();
     if (!candidate) {
+      if (this.waitingForClock) { this.noCandidate = false; return { status: 'WAITING_FOR_CLOCK' }; }
       this.noCandidate = true;
       return { status: 'NO_CANDIDATE' };
     }
@@ -109,6 +121,8 @@ class BotActor {
   report() {
     return {
       clientId: this.client.clientId,
+      difficulty: this.difficulty,
+      waitingForClock: this.waitingForClock,
       acks: this.acks,
       rejects: this.rejects,
       snapshots: this.snapshots,
@@ -152,13 +166,14 @@ async function runHumanVsBot({
   mode = 'split',
   clientId = 'p2',
   speed = 'easy',
+  difficulty = normalizeSpeed(speed),
   maxActions = 200
 }) {
   const url = baseUrl.replace(/\/$/, '');
   const normalizedSpeed = normalizeSpeed(speed);
   const match = matchId ? { matchId, seed, mode } : await createMatch(url, { seed, mode });
   const client = new ProtocolClient({ baseUrl: url, matchId: match.matchId, clientId });
-  const bot = new BotActor({ client });
+  const bot = new BotActor({ client, difficulty });
   try {
     await client.connect();
     for (let actionCount = 0; actionCount < maxActions && !bot.noCandidate; actionCount += 1) {
@@ -189,6 +204,7 @@ async function runBotVsBot({
   seed = 'BOT-VS-BOT-001',
   mode = 'split',
   speed = 'fast',
+  difficulty = normalizeSpeed(speed),
   maxActions = 200
 }) {
   const url = baseUrl.replace(/\/$/, '');
@@ -196,7 +212,7 @@ async function runBotVsBot({
   const match = await createMatch(url, { seed, mode });
   const p1 = new ProtocolClient({ baseUrl: url, matchId: match.matchId, clientId: 'p1' });
   const p2 = new ProtocolClient({ baseUrl: url, matchId: match.matchId, clientId: 'p2' });
-  const bots = [new BotActor({ client: p1 }), new BotActor({ client: p2 })];
+  const bots = [new BotActor({ client: p1, difficulty }), new BotActor({ client: p2, difficulty })];
   try {
     await Promise.all([p1.connect(), p2.connect()]);
     let stopReason = 'MAX_ACTIONS';

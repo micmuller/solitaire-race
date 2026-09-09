@@ -78,3 +78,6 @@ dialog { color:#f0dfbd; background:#21130d; border:1px solid #b4823e; border-rad
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 @keyframes score-pulse { 50% { color:#fff0b0; text-shadow:0 0 16px #ffb44c; transform:scale(1.16); } }
 @keyframes clock-danger { to { filter:brightness(1.5); } }
+.bot-info-button { min-width: 44px; min-height: 44px; padding: 4px; font-size: 20px; vertical-align: middle; }
+#bot-help { max-width: min(360px, calc(100vw - 48px)); padding: 20px; border: 1px solid #b58a45; border-radius: 12px; background: #251a12; color: #f4e3c4; line-height: 1.5; }
+#bot-help::backdrop { background: #0006; }

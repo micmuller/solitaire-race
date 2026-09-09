@@ -13,6 +13,18 @@ const current=()=>({
   }}
 });
 
+test('visual bot difficulty changes decisions at the same authoritative state',()=>{
+  const state=current();
+  state.state.players.p1.waste=[card('eight','H',8)];
+  state.state.players.p1.tableau[0]=[card('hidden','C',9,true),card('six','H',6)];
+  state.state.players.p1.tableau[1]=[card('seven','S',7)];
+  state.state.players.p1.tableau[2]=[card('nine','S',9)];
+  const make=speed=>new VisualBotController({getCurrent:()=>state,sendIntent:async()=>{},speed});
+  assert.notEqual(make('easy').nextCandidate(state).payload.source.zone,'tableau');
+  assert.equal(make('medium').nextCandidate(state).payload.source.index,0);
+  assert.equal(make('hard').nextCandidate(state).payload.source.index,0);
+});
+
 test('visual client bot prioritizes a foundation intent and stays deterministic',()=>{
   const first=generateVisualBotCandidates(current(),'p1');
   const second=generateVisualBotCandidates(current(),'p1');
@@ -63,4 +75,31 @@ test('visual client bot skips rejected intents and continues after a recovery sn
   controller.wait=async()=>{};
   await controller.start();
   assert.deepEqual(sent,['foundationMove','draw','foundationMove']);
+});
+
+test('clock adds no idle ticks',async()=>{
+  const state=current();
+  state.progressClock={enabled:true,running:true,serverNow:0,deadlines:{p1:120000,p2:120000}};
+  state.clockReceivedAt=Date.now();
+  const statuses=[];let ticks=0,sent=0;
+  const controller=new VisualBotController({getCurrent:()=>state,speed:'hard',onStatus:s=>statuses.push(s),
+    sendIntent:async()=>{sent++;state.state.status='finished';return {kind:'ack'};}});
+  controller.wait=async()=>{if(++ticks===2)state.progressClock.serverNow=108000;};
+  await controller.start();
+  assert.equal(statuses.some(s=>s.includes('taktische Pause')),false);
+  assert.equal(ticks,1);
+  assert.equal(sent,1);
+});
+
+test('stop during normal cadence sends no action',async()=>{
+  const state=current();
+  state.progressClock={enabled:true,running:true,serverNow:0,deadlines:{p1:120000,p2:120000}};
+  state.clockReceivedAt=Date.now();
+  let sent=0;
+  const controller=new VisualBotController({getCurrent:()=>state,speed:'hard',
+    sendIntent:async()=>{sent++;},onStatus:s=>{if(s.includes('taktische Pause'))controller.stop();}});
+  controller.wait=async()=>{controller.stop();};
+  await controller.start();
+  assert.equal(sent,0);
+  assert.equal(controller.running,false);
 });

@@ -10,7 +10,7 @@ function sleep(ms) {
 function createManagedBot({ baseUrl, matchId, clientId = 'p2', speed = 'normal', maxActions = 1000, logger = console }) {
   const normalizedSpeed = normalizeSpeed(speed);
   let client = new ProtocolClient({ baseUrl, matchId, clientId });
-  const actor = new BotActor({ client });
+  const actor = new BotActor({ client, difficulty: normalizedSpeed });
   const startedAt = new Date().toISOString();
   const report = { matchId, clientId, speed: normalizedSpeed, maxActions, startedAt, status: 'starting', actionCount: 0 };
   let stopped = false;
@@ -27,6 +27,8 @@ function createManagedBot({ baseUrl, matchId, clientId = 'p2', speed = 'normal',
         if (stopped) break;
         try {
           const result = await actor.step();
+          report.waitingForClock = result.status === 'WAITING_FOR_CLOCK';
+          if (report.waitingForClock) { report.lastResult = result.status; await sleep(50); continue; }
           actionCount += 1;
           consecutiveFailures = 0;
           report.actionCount = actionCount;

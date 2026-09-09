@@ -134,14 +134,14 @@ export class ProtocolClient {
   }
 }
 
-export async function createMatch(baseUrl, seed, mode, progressLimitMinutes = 0, { matchKind, sessionToken } = {}) {
+export async function createMatch(baseUrl, seed, mode, progressLimitMinutes = 0, { matchKind, sessionToken, dealAnimation = false } = {}) {
   const response = await fetch(`${baseUrl}/vnext/matches`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       ...(sessionToken ? { authorization: `Bearer ${sessionToken}` } : {})
     },
-    body: JSON.stringify({ seed, mode, progressLimitMinutes, ...(matchKind ? { matchKind } : {}) })
+    body: JSON.stringify({ seed, mode, progressLimitMinutes, ...(dealAnimation ? { dealAnimation: true } : {}), ...(matchKind ? { matchKind } : {}) })
   });
   if (!response.ok) throw new Error(`Matcherstellung fehlgeschlagen (${response.status})`);
   return response.json();
@@ -194,7 +194,7 @@ export async function listLobbyGames(baseUrl) {
   return response.json();
 }
 
-export async function createLobbyGame(baseUrl, { sessionId, sessionToken, name, seed, mode, progressLimitMinutes = 0 }) {
+export async function createLobbyGame(baseUrl, { sessionId, sessionToken, name, seed, mode, progressLimitMinutes = 0, dealAnimation = false }) {
   const credential = sessionToken || sessionId;
   const response = await fetch(`${baseUrl}/vnext/lobby/games`, {
     method: 'POST',
@@ -202,7 +202,7 @@ export async function createLobbyGame(baseUrl, { sessionId, sessionToken, name, 
       'content-type': 'application/json',
       ...(credential ? { authorization: `Bearer ${credential}` } : {})
     },
-    body: JSON.stringify({ name, seed, mode, progressLimitMinutes })
+    body: JSON.stringify({ name, seed, mode, progressLimitMinutes, ...(dealAnimation ? { dealAnimation: true } : {}) })
   });
   if (!response.ok) throw new Error(`Lobby-Spiel konnte nicht erstellt werden (${response.status})`);
   return response.json();

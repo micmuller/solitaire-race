@@ -2,6 +2,7 @@ import { Container, Graphics, Rectangle, Sprite, Text, Texture } from 'pixi.js';
 import { computeLayout, pilePositions } from '../layout/layout-engine.js';
 import { TOKENS } from '../theme/tokens.js';
 import { TransitionController } from '../animation/transition-controller.js';
+import { dealPlan, dealFrame } from '../animation/deal-plan.js';
 import { RetainedCardStore } from './retained-card-store.js';
 import { nearestDropTarget } from '../input/drop-target.js';
 import { cardAnimationScaleFor, celebrationProfileFor, normalizeCardAnimationMode } from './renderer-profile.js';
@@ -356,7 +357,7 @@ export class BoardScene {
     });
   }
 
-  setCardAnimationMode(value) { this.cardAnimationMode=normalizeCardAnimationMode(value); }
+  setCardAnimationMode(value) { this.finishDeal(); this.cardAnimationMode=normalizeCardAnimationMode(value); }
 
   updateCard(view, placement, neutralInteraction = false) {
     const redrawn=view.update(placement.card, placement.width, placement.height, placement.compact, {
@@ -431,6 +432,7 @@ export class BoardScene {
   }
 
   applyState(current, { source = 'snapshot', force = false } = {}) {
+    this.finishDeal();
     this.current = current;
     const state = current.state;
     const localId = this.localId || 'p1';
@@ -560,12 +562,54 @@ export class BoardScene {
   }
 
   setLocalId(id) { this.localId = id === 'observer' ? 'p1' : id; this.readOnly = id === 'observer'; }
+  animateDeal(maxDuration = 1434) {
+    this.finishDeal();
+    if (!this.current || this.cardMotionScale() === 0) return false;
+    const localId = this.localId || 'p1', other = localId === 'p1' ? 'p2' : 'p1';
+    const plan = dealPlan(this.collectPlacements(this.current.state, localId, other), {
+      [localId]: this.layout.local.stock, [other]: this.layout.opponent.stock
+    });
+    if (!plan.length) return false;
+    this.dealPlacements = plan.map(item => item.placement);
+    for (const { placement, origin } of plan) {
+      const view = this.cards.get(placement.card.cardId);
+      this.updateCard(view, { ...placement, card: { ...placement.card, faceDown: true } });
+      view.position.set(origin.x, origin.y);
+      view.zIndex = 1100;
+    }
+    const duration = Math.min(maxDuration, Math.max(...plan.map(item => item.delay + item.duration)));
+    this.transitions.tween('deal:sequence', duration, ({ progress }) => {
+      for (const item of plan) {
+        const { placement: p, origin } = item, view = this.cards.get(p.card.cardId);
+        const frame = dealFrame(progress * 1434, item.delay, item.duration);
+        view.zIndex = frame.progress === 1 ? p.z : 1200 + item.delay;
+        view.position.set(origin.x + (p.x - origin.x) * frame.eased,
+          origin.y + (p.y - origin.y) * frame.eased - Math.sin(frame.progress * Math.PI) * p.height * .16);
+        view.rotation = Math.sin(frame.progress * Math.PI) * (p.compact ? -.035 : .035);
+        if (frame.progress === 1) this.updateCard(view, p);
+      }
+    }, () => this.finishDeal());
+    return true;
+  }
+
+  finishDeal() {
+    if (!this.dealPlacements) return;
+    this.transitions.cancel('deal:sequence');
+    for (const p of this.dealPlacements) {
+      const view = this.cards.get(p.card.cardId);
+      if (!view) continue;
+      this.updateCard(view, p); view.position.set(p.x, p.y);
+      view.rotation = 0; view.scale.set(1); view.zIndex = p.z;
+    }
+    this.dealPlacements = null;
+  }
+
   hasActiveTransitions() { return this.transitions.size > 0; }
   setStockSide(side) { this.stockSide=side==='right'?'right':'left'; if(this.current)this.applyState(this.current,{source:'snapshot',force:true}); else if(this.layout)this.resize(this.layout.width,this.layout.height); }
   containsStockPoint(point) { return pointInsideRect(point,this.targets.find((target)=>target.zone==='stock')); }
   setSelection(selection) { this.selection = selection; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
   setPending(value) { this.pending = value; if(value&&this.dropHandoff)return; if (this.current) this.applyState(this.current, { source: 'local', force: true }); }
-  clearTransient() { this.drag = null; this.dropHandoff = null; this.selection = null; this.pending = false; this.lastTap = null; this.suppressTapUntil = 0; this.dropCue.clear(); this.transitions.cancelAndSnap(() => { for (const [id,p] of this.positions) { const view=this.cards.get(id); if(view){view.position.set(p.x,p.y);view.scale.set(1);view.rotation=0;view.hoverLift=0;} } }); }
+  clearTransient() { this.finishDeal(); this.drag = null; this.dropHandoff = null; this.selection = null; this.pending = false; this.lastTap = null; this.suppressTapUntil = 0; this.dropCue.clear(); this.transitions.cancelAndSnap(() => { for (const [id,p] of this.positions) { const view=this.cards.get(id); if(view){view.position.set(p.x,p.y);view.scale.set(1);view.rotation=0;view.hoverLift=0;} } }); }
   cancelInteraction() {
     const deferredCurrent=this.current!==this.renderedCurrent?this.current:null;
     const preserveActiveAlpha=this.dropHandoff?.source?.zone!=='waste';

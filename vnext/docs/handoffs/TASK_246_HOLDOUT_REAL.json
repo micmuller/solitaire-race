@@ -1,0 +1,153 @@
+[
+  {
+    "mode": "split",
+    "timing": "real",
+    "pair": [
+      "easy",
+      "medium"
+    ],
+    "games": 24,
+    "wins": [
+      2,
+      22
+    ],
+    "unfinished": 0,
+    "points": [
+      2575,
+      1512
+    ],
+    "hidden": [
+      131,
+      149
+    ],
+    "reasons": {
+      "inactivity": 24
+    }
+  },
+  {
+    "mode": "split",
+    "timing": "real",
+    "pair": [
+      "medium",
+      "hard"
+    ],
+    "games": 24,
+    "wins": [
+      4,
+      20
+    ],
+    "unfinished": 0,
+    "points": [
+      2501,
+      2423
+    ],
+    "hidden": [
+      135,
+      132
+    ],
+    "reasons": {
+      "inactivity": 22,
+      "completed": 2
+    }
+  },
+  {
+    "mode": "split",
+    "timing": "real",
+    "pair": [
+      "easy",
+      "hard"
+    ],
+    "games": 24,
+    "wins": [
+      2,
+      22
+    ],
+    "unfinished": 0,
+    "points": [
+      2286,
+      1534
+    ],
+    "hidden": [
+      118,
+      169
+    ],
+    "reasons": {
+      "inactivity": 24
+    }
+  },
+  {
+    "mode": "shared",
+    "timing": "real",
+    "pair": [
+      "easy",
+      "medium"
+    ],
+    "games": 24,
+    "wins": [
+      2,
+      22
+    ],
+    "unfinished": 0,
+    "points": [
+      739,
+      621
+    ],
+    "hidden": [
+      309,
+      317
+    ],
+    "reasons": {
+      "inactivity": 24
+    }
+  },
+  {
+    "mode": "shared",
+    "timing": "real",
+    "pair": [
+      "medium",
+      "hard"
+    ],
+    "games": 24,
+    "wins": [
+      6,
+      18
+    ],
+    "unfinished": 0,
+    "points": [
+      877,
+      980
+    ],
+    "hidden": [
+      287,
+      291
+    ],
+    "reasons": {
+      "inactivity": 24
+    }
+  },
+  {
+    "mode": "shared",
+    "timing": "real",
+    "pair": [
+      "easy",
+      "hard"
+    ],
+    "games": 24,
+    "wins": [
+      2,
+      22
+    ],
+    "unfinished": 0,
+    "points": [
+      706,
+      575
+    ],
+    "hidden": [
+      325,
+      333
+    ],
+    "reasons": {
+      "inactivity": 24
+    }
+  }
+]

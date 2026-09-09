@@ -129,7 +129,8 @@ class ProtocolClient {
       const isRestart = response.kind === 'snapshot' && response.reason === 'RESTART';
       if (isRestart) this.nextSeq = 0;
       if (!this.current || response.rev >= this.current.rev || isRestart) {
-        this.current = { rev: response.rev, state: response.state, stateHash: response.stateHash };
+        this.current = { rev: response.rev, state: response.state, stateHash: response.stateHash,
+          progressClock: response.progressClock || null, clockReceivedAt: Date.now() };
         this.emit({ type: 'state', source: response.kind, current: this.current });
       }
     }

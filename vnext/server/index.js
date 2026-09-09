@@ -240,6 +240,15 @@ function createVNextServer({
 
   function scheduleProgressTimer(session) {
     clearProgressTimer(session.matchId);
+    if (session.dealEndsAt !== null) {
+      const timer = setTimeout(() => {
+        progressTimers.delete(session.matchId);
+        const ready = session.finishDealIfDue();
+        if (ready) broadcast(session.matchId, ready);
+        scheduleProgressTimer(session);
+      }, Math.max(0, session.dealEndsAt - Date.now()));
+      timer.unref?.(); progressTimers.set(session.matchId, timer); return;
+    }
     const clock = session.progressClock();
     if (!clock.running) return;
     const deadlines = Object.values(clock.deadlines).filter(Number.isFinite);
@@ -471,7 +480,7 @@ function createVNextServer({
         }
         const matchId = `m-${crypto.randomUUID()}`;
         const progressLimitMinutes = normalizeProgressLimit(body.progressLimitMinutes);
-        const session = new MatchSession({ matchId, seed, mode, progressLimitMinutes, clockActive: false });
+        const session = new MatchSession({ matchId, seed, mode, progressLimitMinutes, clockActive: false, dealDurationMs: body.dealAnimation === true ? 1800 : 0 });
         sessions.set(matchId, session);
         const game = lobby.createGame({ sessionId: sessionCredential(request, body), matchId, seed, mode, name: body.name, progressLimitMinutes });
         log('LOBBY_GAME_CREATED', {
@@ -506,6 +515,7 @@ function createVNextServer({
         const joined = lobby.joinGame({ gameId: decodeURIComponent(lobbyPath[1]), sessionId: sessionCredential(request, body) });
         const joinedSession = sessions.get(joined.matchId);
         joinedSession?.activateClock();
+        if (joinedSession && joinedSession.dealEndsAt !== null) broadcast(joined.matchId, { ...joinedSession.initialSnapshot(), reason: 'DEAL_START' });
         if (joinedSession) scheduleProgressTimer(joinedSession);
         log('LOBBY_GAME_JOINED', {
           gameId: joined.game.gameId,
@@ -611,7 +621,7 @@ function createVNextServer({
         const human = matchKind === 'human-vs-bot' ? profileStore.requirePlayer(sessionToken) : null;
         const matchId = `m-${crypto.randomUUID()}`;
         const progressLimitMinutes = normalizeProgressLimit(body.progressLimitMinutes);
-        const session = new MatchSession({ matchId, seed: body.seed, mode: body.mode, progressLimitMinutes });
+        const session = new MatchSession({ matchId, seed: body.seed, mode: body.mode, progressLimitMinutes, dealDurationMs: body.dealAnimation === true ? 1800 : 0 });
         sessions.set(matchId, session);
         if (matchKind) {
           directMatches.set(matchId, {

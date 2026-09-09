@@ -1,9 +1,10 @@
+import strategy from '../../../bot/strategy.js';
 const RED_SUITS = new Set(['D', 'H']);
 
 const SPEEDS = Object.freeze({
   easy: { minMs: 2500, maxMs: 3500 },
   medium: { minMs: 1200, maxMs: 1800 },
-  hard: { minMs: 500, maxMs: 800 }
+  hard: { minMs: 900, maxMs: 1300 }
 });
 
 function zone(zoneName, owner, index) {
@@ -43,12 +44,7 @@ function canMoveToTableau(cards, target) {
 }
 
 function stableHash(value) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
+  return strategy.attentionHash(value);
 }
 
 export function visualBotDelay(speed, actionCount, clientId = 'p1') {
@@ -136,19 +132,26 @@ export class VisualBotController {
 
   rejectedSet(current) {
     const key = `${current.rev}:${current.stateHash}`;
+    if (!this.rejectedByState.has(key)) this.rejectedByState.clear();
     if (!this.rejectedByState.has(key)) this.rejectedByState.set(key, new Set());
     return this.rejectedByState.get(key);
   }
 
   nextCandidate(current) {
+    const progress = strategy.progressKey(current);
+    if (this.lastProgress !== undefined && this.lastProgress !== progress) this.recentAccepted = [];
+    this.lastProgress = progress;
     const rejected = this.rejectedSet(current);
-    return generateVisualBotCandidates(current, this.clientId).find((candidate) => {
+    const available = strategy.rankCandidates(current, this.clientId,
+      generateVisualBotCandidates(current, this.clientId), this.speed).filter((candidate) => {
       const signature = candidateSignature(candidate);
       if (rejected.has(signature)) return false;
       if (candidate.kind !== 'tableauMove') return true;
       return !this.recentAccepted.includes(signature)
         && !this.recentAccepted.includes(candidateSignature(inverseTableauMove(candidate)));
-    }) || null;
+    });
+    this.waitingForClock = strategy.shouldReserveProgress(current, this.clientId, available, this.speed);
+    return this.waitingForClock ? null : available[0] || null;
   }
 
   rememberAccepted(candidate) {
@@ -194,6 +197,7 @@ export class VisualBotController {
         const latest = this.getCurrent();
         if (!latest || latest.state.status === 'finished') break;
         const candidate = this.nextCandidate(latest);
+        if (this.waitingForClock) { this.onStatus('P1-Client-Bot: Karten werden ausgeteilt'); continue; }
         if (!candidate) { this.onStatus('P1-Client-Bot findet keinen weiteren Zug');break; }
         this.onStatus(`P1-Client-Bot: ${candidate.kind}`);
         const response = await this.sendIntent(candidate.kind, candidate.payload);

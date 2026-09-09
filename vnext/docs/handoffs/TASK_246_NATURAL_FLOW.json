@@ -1,0 +1,154 @@
+[
+  {
+    "mode": "split",
+    "timing": "real",
+    "pair": [
+      "easy",
+      "medium"
+    ],
+    "games": 8,
+    "wins": [
+      6,
+      2
+    ],
+    "unfinished": 0,
+    "points": [
+      697,
+      990
+    ],
+    "hidden": [
+      65,
+      46
+    ],
+    "reasons": {
+      "inactivity": 7,
+      "completed": 1
+    }
+  },
+  {
+    "mode": "split",
+    "timing": "real",
+    "pair": [
+      "medium",
+      "hard"
+    ],
+    "games": 8,
+    "wins": [
+      4,
+      4
+    ],
+    "unfinished": 0,
+    "points": [
+      806,
+      1070
+    ],
+    "hidden": [
+      62,
+      38
+    ],
+    "reasons": {
+      "completed": 1,
+      "inactivity": 7
+    }
+  },
+  {
+    "mode": "split",
+    "timing": "real",
+    "pair": [
+      "easy",
+      "hard"
+    ],
+    "games": 8,
+    "wins": [
+      8,
+      0
+    ],
+    "unfinished": 0,
+    "points": [
+      591,
+      1028
+    ],
+    "hidden": [
+      92,
+      27
+    ],
+    "reasons": {
+      "inactivity": 8
+    }
+  },
+  {
+    "mode": "shared",
+    "timing": "real",
+    "pair": [
+      "easy",
+      "medium"
+    ],
+    "games": 8,
+    "wins": [
+      6,
+      2
+    ],
+    "unfinished": 0,
+    "points": [
+      599,
+      499
+    ],
+    "hidden": [
+      88,
+      93
+    ],
+    "reasons": {
+      "inactivity": 8
+    }
+  },
+  {
+    "mode": "shared",
+    "timing": "real",
+    "pair": [
+      "medium",
+      "hard"
+    ],
+    "games": 8,
+    "wins": [
+      5,
+      3
+    ],
+    "unfinished": 0,
+    "points": [
+      479,
+      672
+    ],
+    "hidden": [
+      94,
+      78
+    ],
+    "reasons": {
+      "inactivity": 8
+    }
+  },
+  {
+    "mode": "shared",
+    "timing": "real",
+    "pair": [
+      "easy",
+      "hard"
+    ],
+    "games": 8,
+    "wins": [
+      7,
+      1
+    ],
+    "unfinished": 0,
+    "points": [
+      456,
+      452
+    ],
+    "hidden": [
+      99,
+      89
+    ],
+    "reasons": {
+      "inactivity": 8
+    }
+  }
+]

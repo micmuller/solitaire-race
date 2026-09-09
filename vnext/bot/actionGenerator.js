@@ -1,6 +1,6 @@
 'use strict';
 
-const crypto = require('node:crypto');
+const { attentionHash } = require('./strategy');
 
 const RED_SUITS = new Set(['D', 'H']);
 
@@ -57,16 +57,13 @@ function canMoveToTableau(cards, target) {
 }
 
 function stableTieKey(seed, botId, rev, index) {
-  return crypto
-    .createHash('sha256')
-    .update(`${seed}|${botId}|${rev}|${index}`)
-    .digest('hex');
+  return attentionHash(`${seed}|${botId}|${rev}|${index}`);
 }
 
 function orderedCandidates(candidates, { seed, botId, rev }) {
   return candidates
     .map((candidate, index) => ({ ...candidate, tieKey: stableTieKey(seed, botId, rev, index) }))
-    .sort((a, b) => a.priority - b.priority || a.tieKey.localeCompare(b.tieKey) || a.index - b.index)
+    .sort((a, b) => a.priority - b.priority || a.tieKey - b.tieKey || a.index - b.index)
     .map(({ priority, index, tieKey, ...candidate }) => candidate);
 }
 

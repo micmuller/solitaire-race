@@ -13,6 +13,59 @@ const { MatchSession } = require('../server/matchSession');
 
 const silentLogger = { log() {}, error() {} };
 
+test('lobby deal begins on second player join and publishes common readiness', {timeout:10000}, async () => {
+  const app=createVNextServer({logger:silentLogger});
+  const address=await app.start({port:0,host:'127.0.0.1'});
+  const base=`http://127.0.0.1:${address.port}`;
+  const post=async(path,body,token)=> (await fetch(base+path,{method:'POST',headers:{'content-type':'application/json',...(token?{authorization:`Bearer ${token}`}:{})},body:JSON.stringify(body)})).json();
+  let peer;
+  try {
+    const host=await post('/vnext/lobby/sessions',{nickname:'Deal Host'});
+    const guest=await post('/vnext/lobby/sessions',{nickname:'Deal Guest'});
+    const game=await post('/vnext/lobby/games',{name:'Deal',seed:'DEAL',mode:'split',dealAnimation:true},host.sessionToken);
+    peer=await connect(`${base.replace('http','ws')}/vnext?matchId=${game.matchId}&clientId=p1&clientType=web`);
+    assert.equal((await peer.next()).progressClock.dealId,undefined);
+    await post(`/vnext/lobby/games/${game.game.gameId}/join`,{},guest.sessionToken);
+    const start=await peer.next(),lifecycle=await peer.next();
+    assert.equal(start.reason,'DEAL_START');
+    assert.equal(lifecycle.kind,'lobbyStart');
+    assert.equal(start.progressClock.dealEndsAt,lifecycle.progressClock.dealEndsAt);
+    assert.equal(start.progressClock.running,false);
+    const ready=await peer.next();
+    assert.equal(ready.reason,'DEAL_READY');
+    assert.equal(ready.rev,0);
+    assert.equal(ready.progressClock.enabled,false);
+  } finally {peer?.socket.terminate();await app.close();}
+});
+
+test('opt-in deal broadcasts readiness and repeats on restart without spending clock time', {timeout:10000}, async () => {
+  const server=createVNextServer({logger:silentLogger});
+  const address=await server.start({port:0,host:'127.0.0.1'});
+  const base=`http://127.0.0.1:${address.port}`;
+  let peer;
+  try {
+    const created=await (await fetch(`${base}/vnext/matches`,{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({seed:'DEAL-LIVE',mode:'shared',progressLimitMinutes:2,dealAnimation:true})})).json();
+    peer=await connect(`${base.replace('http','ws')}/vnext?matchId=${created.matchId}&clientId=p1`);
+    const initial=await peer.next();
+    assert.equal(initial.progressClock.running,false);
+    const id=initial.progressClock.dealId;
+    peer.socket.send(JSON.stringify(drawEnvelope(created.matchId,'p1',0,0)));
+    const blocked=await peer.next();
+    assert.equal(blocked.reason,'DEALING');
+    assert.equal(blocked.stateHash,initial.stateHash);
+    const ready=await peer.next();
+    assert.equal(ready.reason,'DEAL_READY');
+    assert.equal(ready.progressClock.deadlines.p1,initial.progressClock.dealEndsAt+120000);
+    peer.socket.send(JSON.stringify(drawEnvelope(created.matchId,'p1',0,0)));
+    assert.equal((await peer.next()).kind,'ack');
+    const restarted=await (await fetch(`${base}/vnext/matches/${created.matchId}/restart`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({seed:'DEAL-LIVE',mode:'shared'})})).json();
+    assert.equal(restarted.reason,'RESTART');
+    assert.notEqual(restarted.progressClock.dealId,id);
+    assert.equal(restarted.progressClock.running,false);
+  } finally { peer?.socket.terminate(); await server.close(); }
+});
+
 function connect(url) {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(url);

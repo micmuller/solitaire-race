@@ -1,0 +1,155 @@
+[
+  {
+    "mode": "split",
+    "timing": "equal-no-clock",
+    "pair": [
+      "easy",
+      "medium"
+    ],
+    "games": 24,
+    "wins": [
+      4,
+      0
+    ],
+    "unfinished": 20,
+    "points": [
+      3724,
+      3782
+    ],
+    "hidden": [
+      109,
+      88
+    ],
+    "reasons": {
+      "action-limit": 20,
+      "completed": 4
+    }
+  },
+  {
+    "mode": "split",
+    "timing": "equal-no-clock",
+    "pair": [
+      "medium",
+      "hard"
+    ],
+    "games": 24,
+    "wins": [
+      1,
+      5
+    ],
+    "unfinished": 18,
+    "points": [
+      4085,
+      4537
+    ],
+    "hidden": [
+      99,
+      83
+    ],
+    "reasons": {
+      "completed": 6,
+      "action-limit": 18
+    }
+  },
+  {
+    "mode": "split",
+    "timing": "equal-no-clock",
+    "pair": [
+      "easy",
+      "hard"
+    ],
+    "games": 24,
+    "wins": [
+      2,
+      2
+    ],
+    "unfinished": 20,
+    "points": [
+      3631,
+      4208
+    ],
+    "hidden": [
+      109,
+      69
+    ],
+    "reasons": {
+      "action-limit": 20,
+      "completed": 4
+    }
+  },
+  {
+    "mode": "shared",
+    "timing": "equal-no-clock",
+    "pair": [
+      "easy",
+      "medium"
+    ],
+    "games": 24,
+    "wins": [
+      0,
+      0
+    ],
+    "unfinished": 24,
+    "points": [
+      1560,
+      1620
+    ],
+    "hidden": [
+      280,
+      283
+    ],
+    "reasons": {
+      "action-limit": 24
+    }
+  },
+  {
+    "mode": "shared",
+    "timing": "equal-no-clock",
+    "pair": [
+      "medium",
+      "hard"
+    ],
+    "games": 24,
+    "wins": [
+      0,
+      0
+    ],
+    "unfinished": 24,
+    "points": [
+      1966,
+      2114
+    ],
+    "hidden": [
+      253,
+      245
+    ],
+    "reasons": {
+      "action-limit": 24
+    }
+  },
+  {
+    "mode": "shared",
+    "timing": "equal-no-clock",
+    "pair": [
+      "easy",
+      "hard"
+    ],
+    "games": 24,
+    "wins": [
+      0,
+      0
+    ],
+    "unfinished": 24,
+    "points": [
+      1892,
+      1937
+    ],
+    "hidden": [
+      268,
+      267
+    ],
+    "reasons": {
+      "action-limit": 24
+    }
+  }
+]
