@@ -35,6 +35,6 @@
   },
   "homepage": "https://github.com/micmuller/solitaire-race#readme",
   "dependencies": {
-    "ws": "^8.18.3"
+    "ws": "8.21.3"
   }
 }
