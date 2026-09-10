@@ -1,0 +1,12 @@
+[Unit]
+Description=HighNoon scoped container isolation
+Before=docker.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/highnoon-isolation
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

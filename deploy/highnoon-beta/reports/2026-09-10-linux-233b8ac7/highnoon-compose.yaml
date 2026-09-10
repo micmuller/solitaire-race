@@ -1,0 +1,81 @@
+name: highnoon-beta
+x-common: &common
+  platform: linux/amd64
+  pull_policy: never
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 128
+  logging:
+    driver: local
+    options:
+      max-size: 10m
+      max-file: "3"
+services:
+  app:
+    <<: *common
+    image: ${HIGHNOON_APP_IMAGE:?Set immutable local image ID or digest}
+    user: "1000:1000"
+    cpus: 0.85
+    mem_limit: 896m
+    memswap_limit: 896m
+    stop_grace_period: 30s
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3011"
+      PUBLIC_URL: https://solitairehighnoon-test.stillorbit.net
+      VNEXT_PROFILE_DATABASE: /data/highnoon.sqlite
+      NODE_OPTIONS: --max-old-space-size=640
+    volumes:
+      - type: bind
+        source: /srv/micnet-data/highnoon-beta/sqlite
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/micnet/backups/highnoon-beta
+        target: /backups
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=1000,gid=1000,mode=1770
+    networks:
+      app:
+        mac_address: "02:42:48:4e:00:03"
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3011/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+  origin:
+    <<: *common
+    image: ${HIGHNOON_ORIGIN_IMAGE:?Set immutable local image ID or digest}
+    user: "101:101"
+    cpus: 0.15
+    mem_limit: 128m
+    memswap_limit: 128m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=101,gid=101,mode=1770
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      app:
+        mac_address: "02:42:48:4e:00:02"
+      edge:
+        mac_address: "02:42:48:4e:00:01"
+        aliases: [highnoon-beta-origin]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+networks:
+  app:
+    name: highnoon-beta-app
+    internal: true
+  edge:
+    name: cloudflare-test-edge
+    external: true

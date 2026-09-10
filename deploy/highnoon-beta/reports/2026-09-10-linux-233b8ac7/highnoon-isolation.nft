@@ -1,0 +1,21 @@
+table bridge highnoon_guard {
+ chain forward {
+  type filter hook forward priority -150; policy accept;
+  ether saddr { 02:42:48:4e:00:01, 02:42:48:4e:00:02, 02:42:48:4e:00:03 } ct state established,related counter accept
+  ether saddr 02:42:48:4e:00:02 ether daddr 02:42:48:4e:00:03 ether type ip ip protocol tcp tcp dport 3011 counter accept
+  ether saddr { 02:42:48:4e:00:01, 02:42:48:4e:00:02, 02:42:48:4e:00:03 } ether type { ip, ip6 } counter drop
+ }
+}
+table inet highnoon_host_guard {
+ chain forward {
+  type filter hook forward priority -150; policy accept;
+  ether saddr { 02:42:48:4e:00:01, 02:42:48:4e:00:02, 02:42:48:4e:00:03 } ct state established,related counter accept
+  ether saddr 02:42:48:4e:00:02 ether daddr 02:42:48:4e:00:03 ether type ip ip protocol tcp tcp dport 3011 counter accept
+  ether saddr { 02:42:48:4e:00:01, 02:42:48:4e:00:02, 02:42:48:4e:00:03 } counter drop
+ }
+ chain input {
+  type filter hook input priority -150; policy accept;
+  ether saddr { 02:42:48:4e:00:01, 02:42:48:4e:00:02, 02:42:48:4e:00:03 } ct state established,related counter accept
+  ether saddr { 02:42:48:4e:00:01, 02:42:48:4e:00:02, 02:42:48:4e:00:03 } counter drop
+ }
+}
