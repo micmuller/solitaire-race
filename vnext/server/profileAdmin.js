@@ -54,7 +54,7 @@ class ProfileAdmin {
     const resolved = path.resolve(databasePath);
     if (!fs.existsSync(resolved)) throw new Error(`database not found: ${resolved}`);
     const database = new DatabaseSync(resolved, { readOnly });
-    database.exec('PRAGMA foreign_keys = ON;');
+    database.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     const schema = database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'players'").get();
     if (!schema) {
       database.close();

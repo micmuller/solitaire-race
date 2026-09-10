@@ -63,7 +63,7 @@ class ProfileStore {
     this.idFactory = idFactory;
     this.tokenFactory = tokenFactory;
     this.database = new DatabaseSync(databasePath);
-    this.database.exec('PRAGMA foreign_keys = ON;');
+    this.database.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
     if (databasePath !== ':memory:') this.database.exec('PRAGMA journal_mode = WAL;');
     this.migrate();
   }

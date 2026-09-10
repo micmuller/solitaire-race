@@ -127,3 +127,19 @@ test('database lock blocks profile deletion while the server owns the database',
   );
   assert.notEqual(admin.profileDetails(alice.player.playerId), null);
 });
+
+
+test('Linux lock detects PID reuse after container restart', { skip: process.platform !== 'linux' }, (t) => {
+  const { databasePath } = fixture(t);
+  const release = acquireDatabaseLock(databasePath, 'old container');
+  const record = readDatabaseLock(databasePath);
+  assert.ok(record.processIdentity);
+  assert.equal(record.active, true);
+  fs.writeFileSync(record.lockPath, JSON.stringify({ ...record, processIdentity: 'previous-boot:1' }));
+  assert.equal(readDatabaseLock(databasePath).active, false);
+  const releaseNew = acquireDatabaseLock(databasePath, 'new container');
+  release();
+  assert.equal(readDatabaseLock(databasePath).active, true);
+  releaseNew();
+  assert.equal(readDatabaseLock(databasePath), null);
+});

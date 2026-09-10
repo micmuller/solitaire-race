@@ -1,0 +1,8 @@
+[Unit]
+Description=HighNoon beta consistent SQLite backup
+Requires=docker.service
+After=docker.service
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/srv/micnet/stacks/highnoon/backup.sh

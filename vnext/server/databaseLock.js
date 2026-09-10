@@ -18,12 +18,27 @@ function processIsRunning(pid) {
   }
 }
 
+// Linux PID 1 is reused on container restarts. PID alone cannot identify
+// the process that created a persisted lock. Old/non-Linux locks keep the
+// conservative PID-only behavior. Never share this DB across PID namespaces.
+function processIdentity(pid) {
+  if (process.platform !== 'linux') return null;
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    const boot = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+    return `${boot}:${fields[19]}`;
+  } catch { return null; }
+}
+
 function readDatabaseLock(databasePath) {
   if (!databasePath || databasePath === ':memory:') return null;
   const lockPath = databaseLockPath(databasePath);
   try {
     const record = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
-    return { ...record, lockPath, active: processIsRunning(record.pid) };
+    const currentIdentity = processIdentity(record.pid);
+    const sameProcess = !record.processIdentity || !currentIdentity || record.processIdentity === currentIdentity;
+    return { ...record, lockPath, active: processIsRunning(record.pid) && sameProcess };
   } catch (error) {
     if (error.code === 'ENOENT') return null;
     return { lockPath, active: false, invalid: true };
@@ -35,7 +50,7 @@ function acquireDatabaseLock(databasePath, owner) {
   const lockPath = databaseLockPath(databasePath);
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
   const nonce = crypto.randomUUID();
-  const record = { owner, pid: process.pid, nonce, startedAt: new Date().toISOString() };
+  const record = { owner, pid: process.pid, nonce, processIdentity: processIdentity(process.pid), startedAt: new Date().toISOString() };
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {

@@ -1,0 +1,10 @@
+**/node_modules
+**/.git
+**/.DS_Store
+**/dist
+vnext/data
+**/*.sqlite*
+**/*.lock
+**/.env*
+**/*.pem
+**/*.key
