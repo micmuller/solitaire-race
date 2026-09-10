@@ -5,6 +5,29 @@ keine Internetfreigabe und kein bereits abgenommenes Container-Image.
 Grundlage: Michaels Übergabe `linux_handover.md` vom 10.09.2026.
 Produktzuordnung: Solitaire-vNext = Solitaire HighNoon, bestehender Slot highnoon.
 
+## Korrekturkandidat nach Bobs Linux-Abnahme
+
+Der erste Kandidat 2b17913 wurde auf Linux gebaut, aber NICHT freigegeben:
+App healthy, Backend 127/127 und Pixi 99/99 laut Bob; Origin scheiterte am
+schreibgeschützten /var/cache/nginx/fastcgi_temp. Beide Beta-Container sind laut
+Bob gestoppt, FinanceHub/Tunnel unverändert. Bobs vollständiger Abnahmebericht
+bleibt ausserhalb des Repositorys bei Michael.
+
+Korrektur: fastcgi_temp_path, uwsgi_temp_path und scgi_temp_path liegen nun wie
+die anderen temporären Dateien auf /tmp. Alle Sicherheits-/Ressourcenlimits
+bleiben bestehen. build.sh führt vor Artefakt-Export automatisch smoke.sh aus:
+echtes nonroot/read-only `nginx -t`, isolierter App-/Origin-Start und HTTP/PWA/
+WebSocket-Prüfung. Der Test verwendet nur ein eigenes internes Netz und tmpfs,
+keine Beta-Daten, keine Host-Ports, kein gemeinsames Edge-Netz. smoke.log wird
+mit dem Artefakt gehasht. Bei Fehler entsteht kein freigegebenes Exportpaket.
+
+Bob: neuen Commit separat auschecken, dieselben verifizierten Base-Digests aus
+dem Bericht verwenden und in ein NEUES SHA-Releaseverzeichnis bauen. Nur nach
+PASS des Build-Smokes die installierte Image-Auswahl aktualisieren und die
+unterbrochene Host-Abnahme fortsetzen. Alte Artefakte bleiben abgelehnte
+Kandidaten. Der neue Smoke ersetzt weder Netzwerkisolation noch NAS-/iOS-UAT.
+Codex kann diesen Docker-Test auf dem Mac ohne Docker weiterhin nicht ausführen.
+
 ## Ergebnis und Zuständigkeiten
 
 Codex liefert Dockerfiles, Compose, Nginx-Konfiguration, konsistente Backup- und

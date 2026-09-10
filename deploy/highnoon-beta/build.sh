@@ -14,11 +14,17 @@ docker buildx build --platform linux/amd64 --load --build-arg "NODE_IMAGE=$NODE_
 docker buildx build --platform linux/amd64 --load --build-arg "NGINX_IMAGE=$NGINX_IMAGE" --build-arg "SOURCE_REVISION=$revision" -f deploy/highnoon-beta/Dockerfile.origin -t "highnoon-origin:$revision" .
 app=$(docker image inspect --format '{{.Id}}' "highnoon-app:$revision")
 origin=$(docker image inspect --format '{{.Id}}' "highnoon-origin:$revision")
+# Reject images that cannot actually start with the production restrictions.
+if ! bash deploy/highnoon-beta/smoke.sh "$app" "$origin" > "$output/smoke.log" 2>&1; then
+  cat "$output/smoke.log" >&2
+  exit 1
+fi
+cat "$output/smoke.log"
 docker image inspect "$app" "$origin" > "$output/images.json"
 printf 'HIGHNOON_APP_IMAGE=%s\nHIGHNOON_ORIGIN_IMAGE=%s\n' "$app" "$origin" > "$output/images.env"
 printf '%s\n' "$revision" > "$output/SOURCE_REVISION"
 printf '%s\n%s\n' "$NODE_IMAGE" "$NGINX_IMAGE" > "$output/BASE_IMAGES"
 docker save -o "$output/images.tar" "$app" "$origin"
 cp -R deploy/highnoon-beta "$output/deployment"
-(cd "$output" && shasum -a 256 images.tar images.json images.env SOURCE_REVISION BASE_IMAGES > SHA256SUMS)
+(cd "$output" && shasum -a 256 images.tar images.json images.env SOURCE_REVISION BASE_IMAGES smoke.log > SHA256SUMS)
 echo "Built candidate at $output; native amd64 acceptance still required."

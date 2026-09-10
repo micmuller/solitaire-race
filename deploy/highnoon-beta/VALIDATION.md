@@ -19,3 +19,15 @@ Nicht lokal geprüft: Docker-Build, Registry-Digests, Nginx-Konfiguration zur La
 Linux-Prozessidentität, Container-Limits/Verbrauch, amd64, Host-Netz-Isolation,
 NAS-Kopie/Restore, Cloudflare-Policy sowie externe PWA-/iOS-Abnahme.
 Keine öffentliche Freigabe. Vollständige Checkliste in HANDOVER_BOB.md.
+
+## Nach Bobs Linux-Abnahme: Origin-Korrektur
+
+Bobs separat übermittelter Abnahmebericht bestätigt native Builds und 127 Backend-
+sowie 99 Pixi-Tests. Laufzeitfehler im Origin reproduziert: fastcgi_temp auf
+read-only Root. Drei zusätzliche Nginx-Temp-Pfade nach /tmp verlegt.
+
+Neuer echter Docker-Regressions-/Starttest smoke.sh ist automatisch in build.sh
+integriert, inklusive HTTP/PWA/Config und WebSocket-Snapshot durch den Proxy.
+Lokal: Bash-Syntax, eingebettete Node-Syntax und git diff --check geprüft.
+Docker-Ausführung dieses Korrekturkandidaten steht bei Bob aus. Keine Aussage,
+dass der neue Container hier gestartet oder auf Linux bereits abgenommen wurde.
