@@ -1,0 +1,21 @@
+{
+  "app": {
+    "counts": {
+      "LOW": 73,
+      "HIGH": 62,
+      "MEDIUM": 96,
+      "UNKNOWN": 6,
+      "CRITICAL": 5
+    },
+    "uniqueCVEs": 121,
+    "wsFindings": []
+  },
+  "origin": {
+    "counts": {
+      "HIGH": 7,
+      "MEDIUM": 1
+    },
+    "uniqueCVEs": 8,
+    "wsFindings": []
+  }
+}

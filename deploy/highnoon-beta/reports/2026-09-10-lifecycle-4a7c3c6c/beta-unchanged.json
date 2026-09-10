@@ -1,0 +1,42 @@
+{
+  "before": {
+    "highnoon-beta-app-1": {
+      "image": "sha256:0dcb2e20b8007b2512c363ccd093d183f9c6aa3e2feb82311e52684e12e66553",
+      "pid": 750981,
+      "startedAt": "2026-09-10T14:02:37.467260142Z",
+      "running": true,
+      "oomKilled": false,
+      "restartCount": 0,
+      "ports": {}
+    },
+    "highnoon-beta-origin-1": {
+      "image": "sha256:194ce99b70c716eabaab036e8d0daefd00f3e7e59363dc2144ef3c4bc8917547",
+      "pid": 751125,
+      "startedAt": "2026-09-10T14:02:43.286441442Z",
+      "running": true,
+      "oomKilled": false,
+      "restartCount": 0,
+      "ports": {}
+    }
+  },
+  "after": {
+    "highnoon-beta-app-1": {
+      "image": "sha256:0dcb2e20b8007b2512c363ccd093d183f9c6aa3e2feb82311e52684e12e66553",
+      "pid": 750981,
+      "startedAt": "2026-09-10T14:02:37.467260142Z",
+      "running": true,
+      "oomKilled": false,
+      "restartCount": 0,
+      "ports": {}
+    },
+    "highnoon-beta-origin-1": {
+      "image": "sha256:194ce99b70c716eabaab036e8d0daefd00f3e7e59363dc2144ef3c4bc8917547",
+      "pid": 751125,
+      "startedAt": "2026-09-10T14:02:43.286441442Z",
+      "running": true,
+      "oomKilled": false,
+      "restartCount": 0,
+      "ports": {}
+    }
+  }
+}

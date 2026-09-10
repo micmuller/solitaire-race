@@ -1,0 +1,152 @@
+[vNext] SERVER_STARTED appVersion="1.1.0-alpha.27" protocolVersion="2.5.2" url="http://0.0.0.0:3011" publicUrl="https://solitairehighnoon-test.stillorbit.net"
+[vNext] MATCH_CREATED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" mode="split" progressLimitMinutes=0 rev=0 hash="840b7cdb5397"
+[vNext] MATCH_CREATED matchId="m-a114eb10-b40d-4985-8dd1-711dd43a0799" mode="split" progressLimitMinutes=0 rev=0 hash="840b7cdb5397"
+[vNext] WS_CONNECTED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" peers=1
+[vNext] SNAPSHOT_SENT matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="840b7cdb5397"
+[vNext] WS_CONNECTED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p2" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p2" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="840b7cdb5397"
+[vNext] WS_CONNECTED matchId="m-a114eb10-b40d-4985-8dd1-711dd43a0799" clientId="p1" peers=1
+[vNext] SNAPSHOT_SENT matchId="m-a114eb10-b40d-4985-8dd1-711dd43a0799" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="840b7cdb5397"
+[vNext] WS_ERROR matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" code="WS_ERR_TOO_MANY_BUFFERED_PARTS"
+[vNext] WS_DISCONNECTED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" peers=1
+[vNext] ACTION_RECEIVED matchId="m-a114eb10-b40d-4985-8dd1-711dd43a0799" clientId="p1" seq=0 baseRev=0 action="draw"
+[vNext] ACTION_ACK matchId="m-a114eb10-b40d-4985-8dd1-711dd43a0799" clientId="p1" seq=0 action="draw" rev=1 hash="6f8dff29accb"
+[vNext] ACTION_RECEIVED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p2" seq=0 baseRev=0 action="draw"
+[vNext] ACTION_ACK matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p2" seq=0 action="draw" rev=1 hash="29aaf6f6fab5"
+[vNext] WS_CONNECTED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=1 hash="29aaf6f6fab5"
+[vNext] ACTION_RECEIVED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" seq=0 baseRev=1 action="draw"
+[vNext] ACTION_ACK matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" seq=0 action="draw" rev=2 hash="045abc67cce3"
+[vNext] WS_REPLACED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1"
+[vNext] WS_CONNECTED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=2 hash="045abc67cce3"
+[vNext] WS_DISCONNECTED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" peers=2
+[vNext] ACTION_RECEIVED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" seq=1 baseRev=2 action="draw"
+[vNext] ACTION_ACK matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" seq=1 action="draw" rev=3 hash="cffc98561c38"
+[vNext] WS_DISCONNECTED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p2" peers=1
+[vNext] WS_DISCONNECTED matchId="m-1216e6c8-4315-4e24-b86f-fd0470b683bc" clientId="p1" peers=0
+[vNext] WS_DISCONNECTED matchId="m-a114eb10-b40d-4985-8dd1-711dd43a0799" clientId="p1" peers=0
+[vNext] MATCH_CREATED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" mode="split" progressLimitMinutes=0 rev=0 hash="840b7cdb5397"
+[vNext] MATCH_CREATED matchId="m-a928a8f0-8103-44e5-b747-ce1793d622a8" mode="split" progressLimitMinutes=0 rev=0 hash="840b7cdb5397"
+[vNext] WS_CONNECTED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" peers=1
+[vNext] SNAPSHOT_SENT matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="840b7cdb5397"
+[vNext] WS_CONNECTED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p2" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p2" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="840b7cdb5397"
+[vNext] WS_CONNECTED matchId="m-a928a8f0-8103-44e5-b747-ce1793d622a8" clientId="p1" peers=1
+[vNext] SNAPSHOT_SENT matchId="m-a928a8f0-8103-44e5-b747-ce1793d622a8" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="840b7cdb5397"
+[vNext] WS_ERROR matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" code="WS_ERR_INVALID_UTF8"
+[vNext] WS_DISCONNECTED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" peers=1
+[vNext] ACTION_RECEIVED matchId="m-a928a8f0-8103-44e5-b747-ce1793d622a8" clientId="p1" seq=0 baseRev=0 action="draw"
+[vNext] ACTION_ACK matchId="m-a928a8f0-8103-44e5-b747-ce1793d622a8" clientId="p1" seq=0 action="draw" rev=1 hash="6f8dff29accb"
+[vNext] ACTION_RECEIVED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p2" seq=0 baseRev=0 action="draw"
+[vNext] ACTION_ACK matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p2" seq=0 action="draw" rev=1 hash="29aaf6f6fab5"
+[vNext] WS_CONNECTED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=1 hash="29aaf6f6fab5"
+[vNext] ACTION_RECEIVED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" seq=0 baseRev=1 action="draw"
+[vNext] ACTION_ACK matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" seq=0 action="draw" rev=2 hash="045abc67cce3"
+[vNext] WS_REPLACED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1"
+[vNext] WS_CONNECTED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=2 hash="045abc67cce3"
+[vNext] WS_DISCONNECTED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" peers=2
+[vNext] ACTION_RECEIVED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" seq=1 baseRev=2 action="draw"
+[vNext] ACTION_ACK matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" seq=1 action="draw" rev=3 hash="cffc98561c38"
+[vNext] WS_DISCONNECTED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p2" peers=1
+[vNext] WS_DISCONNECTED matchId="m-ec21b972-160b-49df-ace0-2820ccaef459" clientId="p1" peers=0
+[vNext] WS_DISCONNECTED matchId="m-a928a8f0-8103-44e5-b747-ce1793d622a8" clientId="p1" peers=0
+[vNext] MATCH_CREATED matchId="m-bc740528-b355-468a-b9cb-005914034da4" mode="split" progressLimitMinutes=0 rev=0 hash="840b7cdb5397"
+[vNext] MATCH_CREATED matchId="m-464f4d97-17a2-4692-8812-3c90a2faf1b5" mode="split" progressLimitMinutes=0 rev=0 hash="840b7cdb5397"
+[vNext] WS_CONNECTED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" peers=1
+[vNext] SNAPSHOT_SENT matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="840b7cdb5397"
+[vNext] WS_CONNECTED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p2" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p2" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="840b7cdb5397"
+[vNext] WS_CONNECTED matchId="m-464f4d97-17a2-4692-8812-3c90a2faf1b5" clientId="p1" peers=1
+[vNext] SNAPSHOT_SENT matchId="m-464f4d97-17a2-4692-8812-3c90a2faf1b5" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="840b7cdb5397"
+[vNext] WS_DISCONNECTED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" peers=1
+[vNext] ACTION_RECEIVED matchId="m-464f4d97-17a2-4692-8812-3c90a2faf1b5" clientId="p1" seq=0 baseRev=0 action="draw"
+[vNext] ACTION_ACK matchId="m-464f4d97-17a2-4692-8812-3c90a2faf1b5" clientId="p1" seq=0 action="draw" rev=1 hash="6f8dff29accb"
+[vNext] ACTION_RECEIVED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p2" seq=0 baseRev=0 action="draw"
+[vNext] ACTION_ACK matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p2" seq=0 action="draw" rev=1 hash="29aaf6f6fab5"
+[vNext] WS_CONNECTED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=1 hash="29aaf6f6fab5"
+[vNext] ACTION_RECEIVED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" seq=0 baseRev=1 action="draw"
+[vNext] ACTION_ACK matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" seq=0 action="draw" rev=2 hash="045abc67cce3"
+[vNext] WS_REPLACED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1"
+[vNext] WS_CONNECTED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=2 hash="045abc67cce3"
+[vNext] WS_DISCONNECTED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" peers=2
+[vNext] ACTION_RECEIVED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" seq=1 baseRev=2 action="draw"
+[vNext] ACTION_ACK matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" seq=1 action="draw" rev=3 hash="cffc98561c38"
+[vNext] WS_DISCONNECTED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p2" peers=1
+[vNext] WS_DISCONNECTED matchId="m-bc740528-b355-468a-b9cb-005914034da4" clientId="p1" peers=0
+[vNext] WS_DISCONNECTED matchId="m-464f4d97-17a2-4692-8812-3c90a2faf1b5" clientId="p1" peers=0
+[vNext] LOBBY_SESSION playerId="pl-c6268e03-2f8e-4f31-b5d7-e155083b645e" nickname="WS-Fix-Host"
+[vNext] LOBBY_SESSION playerId="pl-2d2d1003-5235-425f-8fc8-b91ca9434bc5" nickname="WS-Fix-Guest"
+[vNext] LOBBY_GAME_CREATED gameId="g-6ff56f39-3a6f-41a2-b399-998a2ac3beab" matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" mode="split" progressLimitMinutes=0 host="WS-Fix-Host" rev=0 hash="e480cf4aeb84"
+[vNext] LOBBY_GAME_JOINED gameId="g-6ff56f39-3a6f-41a2-b399-998a2ac3beab" matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" role="p2" guest="WS-Fix-Guest"
+[vNext] WS_CONNECTED matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p1" peers=1
+[vNext] SNAPSHOT_SENT matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="e480cf4aeb84"
+[vNext] WS_CONNECTED matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p2" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p2" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="e480cf4aeb84"
+[vNext] ACTION_RECEIVED matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p1" seq=0 baseRev=0 action="draw"
+[vNext] ACTION_ACK matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p1" seq=0 action="draw" rev=1 hash="f3b034d97dd2"
+[vNext] ACTION_RECEIVED matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p2" seq=0 baseRev=0 action="draw"
+[vNext] ACTION_ACK matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p2" seq=0 action="draw" rev=2 hash="40bb43a87bc0"
+[vNext] WS_DISCONNECTED matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p2" peers=1
+[vNext] WS_CONNECTED matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p2" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p2" transport="websocket" reason="INITIAL_CONNECT" rev=2 hash="40bb43a87bc0"
+[vNext] ACTION_RECEIVED matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p2" seq=1 baseRev=2 action="resign"
+[vNext] ACTION_ACK matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p2" seq=1 action="resign" rev=3 hash="ccefa1e5afe0"
+[vNext] MATCH_CREATED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" mode="split" progressLimitMinutes=0 rev=0 hash="990d81846eb2"
+[vNext] WS_CONNECTED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="observer" peers=1
+[vNext] SNAPSHOT_SENT matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="observer" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="990d81846eb2"
+[vNext] BOT_ORPHAN_STOP_SCHEDULED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" bots=["p2"] graceMs=10000
+[vNext] BOT_STARTED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" speed="fast" maxActions=20
+[vNext] WS_CONNECTED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" peers=2
+[vNext] SNAPSHOT_SENT matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="990d81846eb2"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=0 baseRev=0 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=0 action="draw" rev=1 hash="d74ef2b956d0"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=1 baseRev=1 action="tableauMove"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=1 action="tableauMove" rev=2 hash="d6fc30d3c1bb"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=2 baseRev=2 action="tableauMove"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=2 action="tableauMove" rev=3 hash="85257f42eb0f"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=3 baseRev=3 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=3 action="draw" rev=4 hash="4799193cebb1"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=4 baseRev=4 action="tableauMove"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=4 action="tableauMove" rev=5 hash="30016f03dce5"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=5 baseRev=5 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=5 action="draw" rev=6 hash="3f2b0d1ec751"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=6 baseRev=6 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=6 action="draw" rev=7 hash="4bb5de9e8526"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=7 baseRev=7 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=7 action="draw" rev=8 hash="7ac5f40910c9"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=8 baseRev=8 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=8 action="draw" rev=9 hash="7d241c6e7f7a"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=9 baseRev=9 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=9 action="draw" rev=10 hash="b9902b4c7470"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=10 baseRev=10 action="foundationMove"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=10 action="foundationMove" rev=11 hash="7951118292f6"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=11 baseRev=11 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=11 action="draw" rev=12 hash="3a78229b4830"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=12 baseRev=12 action="tableauMove"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=12 action="tableauMove" rev=13 hash="60cfa45631de"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=13 baseRev=13 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=13 action="draw" rev=14 hash="da369efa18aa"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=14 baseRev=14 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=14 action="draw" rev=15 hash="2083d7fe3928"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=15 baseRev=15 action="foundationMove"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=15 action="foundationMove" rev=16 hash="dbad90167a8c"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=16 baseRev=16 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=16 action="draw" rev=17 hash="069935caa451"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=17 baseRev=17 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=17 action="draw" rev=18 hash="6d8eb24b0071"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=18 baseRev=18 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=18 action="draw" rev=19 hash="62a25737d4c4"
+[vNext] ACTION_RECEIVED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=19 baseRev=19 action="draw"
+[vNext] ACTION_ACK matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" seq=19 action="draw" rev=20 hash="7e1f931079e5"
+[vNext] BOT_ORPHAN_STOP_CANCELLED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf"
+[vNext] WS_DISCONNECTED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="p2" peers=1
+[vNext] WS_DISCONNECTED matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p1" peers=1
+[vNext] WS_DISCONNECTED matchId="m-967c8179-cf96-4017-afdf-915ab7e391ac" clientId="p2" peers=0
+[vNext] WS_DISCONNECTED matchId="m-777c91a0-b00f-4935-86b2-2eeeab49dbdf" clientId="observer" peers=0
+(node:1) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)

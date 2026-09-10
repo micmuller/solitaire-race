@@ -1,0 +1,30 @@
+{
+  "app": {
+    "reference": "highnoon-app:4a7c3c6c4e3dd7df5ac92276e7aa909d9a4fd5cc",
+    "imageId": "sha256:5a72a486b4fb672058419fa57e5b65777213885db3d04acdf845525acbb1d66d",
+    "scanConfigDigest": "sha256:35386e60664258f6212e21a427d73e906b0b811f79c8cc572e085f613a321bd0",
+    "rootfsMatches": true,
+    "platform": "linux/amd64",
+    "revision": "4a7c3c6c4e3dd7df5ac92276e7aa909d9a4fd5cc"
+  },
+  "origin": {
+    "reference": "highnoon-origin:4a7c3c6c4e3dd7df5ac92276e7aa909d9a4fd5cc",
+    "imageId": "sha256:b54a145a980d52fd017df5c98a6af661689c8340cbefc4a6a169072ca2bb8245",
+    "scanConfigDigest": "sha256:781fc9256897c7dac19db79b78f5536cd13db26f07c06e7cb40972df4f3e9bd8",
+    "rootfsMatches": true,
+    "platform": "linux/amd64",
+    "revision": "4a7c3c6c4e3dd7df5ac92276e7aa909d9a4fd5cc"
+  }
+}
+2026-09-10T16:09:26Z	INFO	[vuln] Vulnerability scanning is enabled
+2026-09-10T16:09:27Z	INFO	Detected OS	family="debian" version="12.14"
+2026-09-10T16:09:27Z	INFO	[debian] Detecting vulnerabilities...	os_version="12" pkg_num=88
+2026-09-10T16:09:27Z	INFO	Number of language-specific files	num=1
+2026-09-10T16:09:27Z	INFO	[node-pkg] Detecting vulnerabilities...
+2026-09-10T16:09:27Z	WARN	Using severities from other vendors for some vulnerabilities. Read https://trivy.dev/docs/v0.74/guide/scanner/vulnerability#severity-selection for details.
+2026-09-10T16:09:30Z	INFO	[vuln] Vulnerability scanning is enabled
+2026-09-10T16:09:30Z	INFO	Detected OS	family="alpine" version="3.24.1"
+2026-09-10T16:09:30Z	WARN	This OS version is not on the EOL list	family="alpine" version="3.24"
+2026-09-10T16:09:30Z	INFO	[alpine] Detecting vulnerabilities...	os_version="3.24" repository="3.24" pkg_num=71
+2026-09-10T16:09:30Z	INFO	Number of language-specific files	num=0
+2026-09-10T16:09:30Z	WARN	Using severities from other vendors for some vulnerabilities. Read https://trivy.dev/docs/v0.74/guide/scanner/vulnerability#severity-selection for details.

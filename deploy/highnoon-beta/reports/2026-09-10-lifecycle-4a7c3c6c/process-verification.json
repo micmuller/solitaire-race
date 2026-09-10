@@ -1,0 +1,21 @@
+{
+  "before": {
+    "image": "sha256:5a72a486b4fb672058419fa57e5b65777213885db3d04acdf845525acbb1d66d",
+    "pid": 842349,
+    "startedAt": "2026-09-10T16:09:15.94278281Z",
+    "running": true,
+    "oomKilled": false,
+    "restartCount": 0,
+    "ports": {}
+  },
+  "afterAllRegression": {
+    "image": "sha256:5a72a486b4fb672058419fa57e5b65777213885db3d04acdf845525acbb1d66d",
+    "pid": 842349,
+    "startedAt": "2026-09-10T16:09:15.94278281Z",
+    "running": true,
+    "oomKilled": false,
+    "restartCount": 0,
+    "ports": {}
+  },
+  "sameProcess": true
+}

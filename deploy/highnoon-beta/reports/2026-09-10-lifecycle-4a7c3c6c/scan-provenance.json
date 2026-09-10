@@ -1,0 +1,18 @@
+{
+  "app": {
+    "reference": "highnoon-app:4a7c3c6c4e3dd7df5ac92276e7aa909d9a4fd5cc",
+    "imageId": "sha256:5a72a486b4fb672058419fa57e5b65777213885db3d04acdf845525acbb1d66d",
+    "scanConfigDigest": "sha256:35386e60664258f6212e21a427d73e906b0b811f79c8cc572e085f613a321bd0",
+    "rootfsMatches": true,
+    "platform": "linux/amd64",
+    "revision": "4a7c3c6c4e3dd7df5ac92276e7aa909d9a4fd5cc"
+  },
+  "origin": {
+    "reference": "highnoon-origin:4a7c3c6c4e3dd7df5ac92276e7aa909d9a4fd5cc",
+    "imageId": "sha256:b54a145a980d52fd017df5c98a6af661689c8340cbefc4a6a169072ca2bb8245",
+    "scanConfigDigest": "sha256:781fc9256897c7dac19db79b78f5536cd13db26f07c06e7cb40972df4f3e9bd8",
+    "rootfsMatches": true,
+    "platform": "linux/amd64",
+    "revision": "4a7c3c6c4e3dd7df5ac92276e7aa909d9a4fd5cc"
+  }
+}

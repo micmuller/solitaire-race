@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "scope": "normal gameplay through candidate origin; fragment probe excluded",
+  "wsVersion": "8.21.3",
+  "twoPlayerDraws": 2,
+  "reconnectRevision": 2,
+  "history": [
+    {
+      "seat": "p1",
+      "won": true
+    },
+    {
+      "seat": "p2",
+      "won": false
+    }
+  ],
+  "botAcksObserved": 20,
+  "onlineBackup": {
+    "backupDirectory": "/backups/2026-09-10T16-09-20-781Z-I9x1Fb",
+    "sha256": "7aff34d9302d8086a0c708c8646c1e4048109d656ae33950a2e6130510f17e63"
+  },
+  "backupIntegrity": [
+    "ok"
+  ]
+}

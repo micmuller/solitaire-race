@@ -1,0 +1,40 @@
+TAP version 13
+# Subtest: real server isolates fragments and preserves other peers
+ok 1 - real server isolates fragments and preserves other peers
+  ---
+  duration_ms: 337.481927
+  type: 'test'
+  ...
+# Subtest: real server isolates invalid-utf8 and preserves other peers
+ok 2 - real server isolates invalid-utf8 and preserves other peers
+  ---
+  duration_ms: 189.979197
+  type: 'test'
+  ...
+# Subtest: real server isolates transport-close and preserves other peers
+ok 3 - real server isolates transport-close and preserves other peers
+  ---
+  duration_ms: 212.773945
+  type: 'test'
+  ...
+# Subtest: ws rejects excessive empty fragments with production defaults
+ok 4 - ws rejects excessive empty fragments with production defaults
+  ---
+  duration_ms: 19.480235
+  type: 'test'
+  ...
+# Subtest: ws resets fragment budget between completed messages
+ok 5 - ws resets fragment budget between completed messages
+  ---
+  duration_ms: 30.262916
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 802.256964
