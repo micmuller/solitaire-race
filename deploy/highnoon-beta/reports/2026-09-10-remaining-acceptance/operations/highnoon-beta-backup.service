@@ -1,0 +1,11 @@
+[Unit]
+Description=HighNoon verified SQLite backup and NAS copy
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/highnoon-nas-backup
+TimeoutStartSec=15min
+UMask=0077
+Nice=10

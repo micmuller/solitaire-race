@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "source": "NAS readback",
+  "snapshotSHA256": "cf27b54800829a56eeab2fcb5659fd29d7eba0c1e3ad82404c6f7392fcd03c78",
+  "integrity": "ok",
+  "foreignKeyViolations": 0,
+  "tables": {
+    "schema_migrations": 2,
+    "players": 3,
+    "player_sessions": 3,
+    "match_results": 1,
+    "match_player_results": 2
+  },
+  "health": "200\n{\"status\":\"ok\",\"appVersion\":\"1.1.0-alpha.27\",\"protocolVersion\":\"2.5.2\",\"matches\":0,\"lobbyGames\":0,\"profileDatabase\":\"ok\"}\n",
+  "image": "sha256:0dcb2e20b8007b2512c363ccd093d183f9c6aa3e2feb82311e52684e12e66553",
+  "liveDatabaseTouched": false,
+  "scratchRoot": "/srv/micnet/releases/highnoon-acceptance-evidence/restore-_qxuryy_",
+  "recoveryDurationSeconds": 7.031,
+  "timingScope": "Already-downloaded NAS package to isolated app health; includes second overwrite/safety-backup test, excludes NAS transfer and browser login",
+  "safetyBackupCreated": true
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "component": "app",
+    "liveImage": "sha256:0dcb2e20b8007b2512c363ccd093d183f9c6aa3e2feb82311e52684e12e66553",
+    "scannerConfigDigest": "sha256:c03c422725e709972cb883d1ee658ef1134c90b74d8b3478c88dec17b0c3e4c1",
+    "rootfsMatches": true
+  },
+  {
+    "component": "origin",
+    "liveImage": "sha256:194ce99b70c716eabaab036e8d0daefd00f3e7e59363dc2144ef3c4bc8917547",
+    "scannerConfigDigest": "sha256:86348b8b51098bc71bdca140afcec9304d5f6cda2644a0626d73297268eaaff2",
+    "rootfsMatches": true
+  }
+]

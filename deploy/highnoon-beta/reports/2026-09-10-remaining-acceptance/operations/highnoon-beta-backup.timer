@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily HighNoon backup (Europe/Zurich)
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 Europe/Zurich
+Persistent=true
+RandomizedDelaySec=120
+Unit=highnoon-beta-backup.service
+
+[Install]
+WantedBy=timers.target

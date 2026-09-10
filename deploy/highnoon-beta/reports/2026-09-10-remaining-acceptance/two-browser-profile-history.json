@@ -1,0 +1,92 @@
+[
+  {
+    "name": "BOB-UAT-Host",
+    "meStatus": 200,
+    "historyStatus": 200,
+    "profile": {
+      "player": {
+        "playerId": "pl-1bb7919b-355d-4f51-884b-4eb6d175888e",
+        "sessionId": "ps-f1f0e79b-0e2e-4254-9bd9-1144cb2751e2",
+        "nickname": "BOB-UAT-Host",
+        "stats": {
+          "gamesPlayed": 1,
+          "gamesWon": 1,
+          "totalScore": 0,
+          "bestScore": 0,
+          "lastGameAt": "2026-09-10T14:52:38.282Z"
+        },
+        "createdAt": "2026-09-10T14:45:31.056Z",
+        "lastSeenAt": "2026-09-10T14:53:33.591Z"
+      }
+    },
+    "history": {
+      "matches": [
+        {
+          "resultId": "mr-cc5af54f-186d-4c88-962d-66a034704fe7",
+          "matchId": "m-6bdc5550-5821-4958-bd0c-fa879f8b5b46",
+          "seed": "HN-MTVN3ZN4-1EKFBZD",
+          "mode": "split",
+          "matchKind": "human-vs-human",
+          "endedReason": "resign",
+          "winner": "p1",
+          "seat": "p1",
+          "score": 0,
+          "won": true,
+          "endedAt": "2026-09-10T14:52:38.282Z"
+        }
+      ],
+      "page": {
+        "limit": 25,
+        "offset": 0,
+        "returned": 1,
+        "total": 1,
+        "hasMore": false
+      }
+    }
+  },
+  {
+    "name": "BOB-UAT-Guest",
+    "meStatus": 200,
+    "historyStatus": 200,
+    "profile": {
+      "player": {
+        "playerId": "pl-283b27e7-f9c4-450c-9c14-0ff7eba5cc6a",
+        "sessionId": "ps-72aa1c2b-0eb0-4159-86ad-a3dd406d6a7f",
+        "nickname": "BOB-UAT-Guest",
+        "stats": {
+          "gamesPlayed": 1,
+          "gamesWon": 0,
+          "totalScore": 0,
+          "bestScore": 0,
+          "lastGameAt": "2026-09-10T14:52:38.282Z"
+        },
+        "createdAt": "2026-09-10T14:45:31.256Z",
+        "lastSeenAt": "2026-09-10T14:53:33.624Z"
+      }
+    },
+    "history": {
+      "matches": [
+        {
+          "resultId": "mr-cc5af54f-186d-4c88-962d-66a034704fe7",
+          "matchId": "m-6bdc5550-5821-4958-bd0c-fa879f8b5b46",
+          "seed": "HN-MTVN3ZN4-1EKFBZD",
+          "mode": "split",
+          "matchKind": "human-vs-human",
+          "endedReason": "resign",
+          "winner": "p1",
+          "seat": "p2",
+          "score": 0,
+          "won": false,
+          "endedAt": "2026-09-10T14:52:38.282Z"
+        }
+      ],
+      "page": {
+        "limit": 25,
+        "offset": 0,
+        "returned": 1,
+        "total": 1,
+        "hasMore": false
+      }
+    }
+  }
+]

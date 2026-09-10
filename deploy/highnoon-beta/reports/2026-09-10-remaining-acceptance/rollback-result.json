@@ -1,0 +1,43 @@
+{
+  "status": "PASS",
+  "scope": "App-only scratch switch between retained candidates, schema v2 in both; no schema migration tested; old broken Nginx intentionally NOT used",
+  "steps": [
+    {
+      "step": "rollback",
+      "image": "sha256:b73faa2f6b5d99efb3c6e690ddbd341621a569ed9f80ca478a9e8efc1bfb251a",
+      "health": {
+        "status": "ok",
+        "appVersion": "1.1.0-alpha.27",
+        "protocolVersion": "2.5.2",
+        "matches": 0,
+        "lobbyGames": 0,
+        "profileDatabase": "ok"
+      },
+      "profileCounts": {
+        "players": 3,
+        "results": 1,
+        "playerResults": 2
+      },
+      "seconds": 1.218
+    },
+    {
+      "step": "upgrade-return",
+      "image": "sha256:0dcb2e20b8007b2512c363ccd093d183f9c6aa3e2feb82311e52684e12e66553",
+      "health": {
+        "status": "ok",
+        "appVersion": "1.1.0-alpha.27",
+        "protocolVersion": "2.5.2",
+        "matches": 0,
+        "lobbyGames": 0,
+        "profileDatabase": "ok"
+      },
+      "profileCounts": {
+        "players": 3,
+        "results": 1,
+        "playerResults": 2
+      },
+      "seconds": 1.218
+    }
+  ],
+  "liveBetaTouched": false
+}

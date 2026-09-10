@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "scope": "Isolated NAS-restored scratch container, same app image and restart policy",
+  "trigger": "SIGKILL to verified host PID; NOT docker kill; no manual docker start",
+  "restartCountBefore": 0,
+  "restartCountAfter": 1,
+  "health": {
+    "status": "ok",
+    "appVersion": "1.1.0-alpha.27",
+    "protocolVersion": "2.5.2",
+    "matches": 0,
+    "lobbyGames": 0,
+    "profileDatabase": "ok"
+  },
+  "recoverySeconds": 0.604,
+  "expectedLimitation": "Active matches/lobbies are memory-only and vanish; persisted profiles/history remain"
+}

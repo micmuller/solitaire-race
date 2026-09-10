@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "lastSuccessfulBackup": "2026-09-10T15:16:44.729Z",
+  "verifiedAt": "2026-09-10T15:16:45.014974+00:00",
+  "source": "/srv/micnet/backups/highnoon-beta/2026-09-10T15-16-44-730Z-bRVWvO",
+  "nasDaily": "2026-09-10",
+  "nasMonthly": "2026-09",
+  "sha256": "cf27b54800829a56eeab2fcb5659fd29d7eba0c1e3ad82404c6f7392fcd03c78",
+  "restoreInput": "/srv/micnet/backups/highnoon-nas-restore/2026-09-10T15-16-44-730Z-bRVWvO",
+  "dailyKeep": 30,
+  "monthlyKeep": 12
+}

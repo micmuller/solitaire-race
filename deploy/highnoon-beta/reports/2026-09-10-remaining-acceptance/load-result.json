@@ -1,0 +1,10 @@
+{
+  "start": "2026-09-10T14:34:27.818Z",
+  "durationSeconds": 1800,
+  "rounds": 60,
+  "playerAcks": 2382,
+  "botObservedAcks": 3600,
+  "errors": [],
+  "end": "2026-09-10T15:04:28.476Z",
+  "status": "PASS"
+}

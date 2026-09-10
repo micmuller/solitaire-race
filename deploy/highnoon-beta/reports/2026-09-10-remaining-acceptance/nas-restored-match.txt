@@ -1,0 +1,15 @@
+SOLITAIRE HIGHNOON
+BOB-UAT-Host
+0
+·
+Bot
+4
+SPLIT
+BOB-UAT-Host
+0
+Status
+draw bestätigt
+rev 4
+hash ed187c1820f3
+draw bestätigt
+Revision 4. P1 hat 23 Karten im Stock, 1 im Waste und 0 Punkte. Gegner 4 Punkte.

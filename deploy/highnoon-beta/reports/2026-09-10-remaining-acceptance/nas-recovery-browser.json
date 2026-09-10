@@ -1,0 +1,12 @@
+[
+  {
+    "name": "BOB-UAT-Host",
+    "profile": "SPIELERPROFIL\n\nBOB-UAT-Host\n\nSpieler-ID pl-1bb7919b-355d-4f51-884b-4eb6d175888e\n\nPixi 0.3.9\n\u00d7\nNickname\nSpeichern\n\n\u00c4nderungen werden sofort f\u00fcr dieses Profil gespeichert.\n\nSPIELE\n1\nSIEGE\n1\nPUNKTE\n0\nBESTSCORE\n0\n\nCHRONIK\n\nLetzte Spiele\nRolle \u2013 \u00b7 kein Match\nGegner aufgegeben \u00b7 Gewonnen\nHuman vs Human \u00b7 Split \u00b7 0 Punkte \u00b7 10.09.26, 16:52\nLeaderboard \u00f6ffnen",
+    "failedResources": []
+  },
+  {
+    "name": "BOB-UAT-Guest",
+    "profile": "SPIELERPROFIL\n\nBOB-UAT-Guest\n\nSpieler-ID pl-283b27e7-f9c4-450c-9c14-0ff7eba5cc6a\n\nPixi 0.3.9\n\u00d7\nNickname\nSpeichern\n\n\u00c4nderungen werden sofort f\u00fcr dieses Profil gespeichert.\n\nSPIELE\n1\nSIEGE\n0\nPUNKTE\n0\nBESTSCORE\n0\n\nCHRONIK\n\nLetzte Spiele\nRolle \u2013 \u00b7 kein Match\nAufgegeben \u00b7 Verloren\nHuman vs Human \u00b7 Split \u00b7 0 Punkte \u00b7 10.09.26, 16:52\nLeaderboard \u00f6ffnen",
+    "failedResources": []
+  }
+]

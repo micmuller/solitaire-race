@@ -1,0 +1,86 @@
+{
+  "observedAt": "2026-09-10T15:14:52.035847+00:00",
+  "containers": [
+    {
+      "name": "highnoon-beta-app-1",
+      "image": "sha256:0dcb2e20b8007b2512c363ccd093d183f9c6aa3e2feb82311e52684e12e66553",
+      "health": "healthy",
+      "oomKilled": false,
+      "restartCount": 0,
+      "cgroupLifetimeCounters": {
+        "memory.events": {
+          "low": 0,
+          "high": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_kill": 0,
+          "oom_group_kill": 0,
+          "sock_throttled": 0
+        },
+        "cpu.stat": {
+          "usage_usec": 30798513,
+          "user_usec": 27346169,
+          "system_usec": 3452343,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 3296,
+          "nr_throttled": 51,
+          "throttled_usec": 1106277,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        }
+      },
+      "logMatches": {
+        "SQLITE_BUSY": 0,
+        "SQLITE_LOCKED": 0,
+        "database is locked": 0,
+        "out of memory": 0,
+        "uncaught": 0
+      },
+      "macs": {
+        "highnoon-beta-app": "02:42:48:4e:00:03"
+      }
+    },
+    {
+      "name": "highnoon-beta-origin-1",
+      "image": "sha256:194ce99b70c716eabaab036e8d0daefd00f3e7e59363dc2144ef3c4bc8917547",
+      "health": "healthy",
+      "oomKilled": false,
+      "restartCount": 0,
+      "cgroupLifetimeCounters": {
+        "memory.events": {
+          "low": 0,
+          "high": 0,
+          "max": 0,
+          "oom": 0,
+          "oom_kill": 0,
+          "oom_group_kill": 0,
+          "sock_throttled": 0
+        },
+        "cpu.stat": {
+          "usage_usec": 8450599,
+          "user_usec": 5763737,
+          "system_usec": 2686862,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 2558,
+          "nr_throttled": 386,
+          "throttled_usec": 30872119,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        }
+      },
+      "logMatches": {
+        "SQLITE_BUSY": 0,
+        "SQLITE_LOCKED": 0,
+        "database is locked": 0,
+        "out of memory": 0,
+        "uncaught": 0
+      },
+      "macs": {
+        "cloudflare-test-edge": "02:42:48:4e:00:01",
+        "highnoon-beta-app": "02:42:48:4e:00:02"
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "fault": "NAS backup lock held by test; no NAS outage simulated",
+  "detectedFailure": "Result=exit-code\nExecMainStatus=1\n",
+  "recovery": "Result=success\nExecMainStatus=0\n",
+  "externalNotificationTested": false
+}
