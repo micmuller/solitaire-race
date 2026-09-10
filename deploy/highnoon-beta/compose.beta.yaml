@@ -40,7 +40,10 @@ services:
           create_host_path: false
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m,uid=1000,gid=1000,mode=1770
-    networks: [app]
+    # Host firewall contract: do not change these per-network MAC addresses.
+    networks:
+      app:
+        mac_address: "02:42:48:4e:00:03"
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3011/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
@@ -60,8 +63,10 @@ services:
       app:
         condition: service_healthy
     networks:
-      app: {}
+      app:
+        mac_address: "02:42:48:4e:00:02"
       edge:
+        mac_address: "02:42:48:4e:00:01"
         aliases: [highnoon-beta-origin]
     healthcheck:
       test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8080/health"]

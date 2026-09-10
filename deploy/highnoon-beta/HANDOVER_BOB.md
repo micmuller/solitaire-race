@@ -5,7 +5,64 @@ keine Internetfreigabe und kein bereits abgenommenes Container-Image.
 Grundlage: Michaels Übergabe `linux_handover.md` vom 10.09.2026.
 Produktzuordnung: Solitaire-vNext = Solitaire HighNoon, bestehender Slot highnoon.
 
-## Korrekturkandidat nach Bobs Linux-Abnahme
+## Aktueller Host-Vertrag nach Netzwerk-Abnahme
+
+Bobs Übergabe wurde mit Commit a740aea übernommen. Bericht und unveränderter
+Host-Snapshot: [Linux-Abnahme](reports/2026-09-10-linux-233b8ac7/README.md).
+Der dort geprüfte Anwendungskandidat bleibt 233b8ac; der Dokumentationscommit
+und die folgende Vorlagenangleichung sind keine neuen Image-Releases.
+Origin-Fix und isolierter Build-Smoke sind auf Linux bestätigt; Beta läuft laut
+Bob intern. Der Netzwerkblocker wurde hostseitig behoben und nach Recreation
+erneut geprüft. Weitere Ferien-/Backup-/Zugangsabnahmen bleiben offen.
+
+Die Repository-Vorlage compose.beta.yaml übernimmt jetzt die drei festen
+per-Netzwerk-MACs der installierten Compose-Datei:
+
+| Interface | Feste MAC |
+|---|---|
+| Origin / cloudflare-test-edge | 02:42:48:4e:00:01 |
+| Origin / highnoon-beta-app | 02:42:48:4e:00:02 |
+| App / highnoon-beta-app | 02:42:48:4e:00:03 |
+
+Diese Identitäten gehören gemeinsam mit den hostseitigen nftables-Tabellen
+`bridge highnoon_guard` und `inet highnoon_host_guard` zum Betriebsvertrag.
+Sie dürfen nicht unabhängig geändert, entfernt oder für eine zweite Instanz
+wiederverwendet werden. Compose muss per-Netzwerk-MACs unterstützen; Bob hat die
+installierte Variante bereits geprüft. Kein service-weites mac_address verwenden.
+
+Neue Verbindungen von diesen Interfaces sind gesperrt, ausgenommen Origin im
+App-Netz → App TCP 3011. Antworten etablierter Verbindungen bleiben erlaubt.
+ARP und Docker-DNS funktionieren laut Host-Abnahme. Die Sperren betreffen IPv4
+und IPv6; der neue Origin→App-Pfad ist explizit IPv4. Kein externer App-Egress.
+Andere vertrauenswürdige Edge-Container können den Origin weiterhin ansprechen.
+Dies ersetzt weder Teilnehmer-Authentifizierung noch deren externe Negativtests.
+
+Vor jedem Start/Upgrade/Recreate muss Bob den geladenen Guard und den
+systemd-Vertrag kontrollieren: highnoon-isolation.service sowie Docker-Drop-in
+mit Requires/After und ExecStartPre. Dienststatus allein beweist nicht, dass die
+Regeln noch geladen sind: beide tatsächlichen nft-Tabellen prüfen. Keine alten
+Compose-Vorlagen ohne diese MACs installieren. Fehlt der Guard, Beta gestoppt
+lassen. Host-Dateien im reports-Verzeichnis sind Nachweise, keine automatisch
+anzuwendenden Installer; ihre Pflege bleibt bei Bob. Kein globales nft flush.
+
+Nach Recreation tatsächliche MACs an allen drei Interfaces prüfen und Bobs
+Negativtests wiederholen (Host/FinanceHub, LAN, Internet, Connector-Metrics und
+App→Origin); Connector→Origin→App HTTP/WebSocket muss weiter funktionieren.
+Ein echter Host-/Docker-Neustart wurde laut Bob noch nicht getestet: konfigurierte
+Boot-Reihenfolge nicht mit abgenommener Reboot-Persistenz gleichsetzen.
+
+Das isolierte Build-smoke.sh verwendet absichtlich eigene dynamische MACs,
+ein wegwerfbares internes Netz und tmpfs. Es prüft App/Proxy, NICHT den Host-
+Firewall-Vertrag. Produktions-MACs nicht in parallele Smoke-Container kopieren.
+Für Netzwerk-Abnahme vom Connector-Namespace testen: neue App→Origin-Verbindungen
+sind im installierten Stack absichtlich blockiert.
+
+Für diese Vorlagenangleichung ist kein Image-Neubuild nötig. Bestehende geprüfte
+Image-IDs erhalten. Die aktive Host-Vorlage und laufende Container wurden durch
+Codex nicht verändert. Bob gleicht die Vorlage vor einer späteren Installation
+mit dem Host ab; bestehende Host-Anpassungen nicht blind überschreiben.
+
+## Historischer Korrekturkandidat nach Bobs erster Linux-Abnahme
 
 Der erste Kandidat 2b17913 wurde auf Linux gebaut, aber NICHT freigegeben:
 App healthy, Backend 127/127 und Pixi 99/99 laut Bob; Origin scheiterte am
@@ -122,6 +179,7 @@ prüfen; Befund/Tool/Datum protokollieren. Es werden keine Digests erfunden.
 ## 2. Host vorbereiten und installieren
 
 FinanceHub-Health vorher erfassen. Externes cloudflare-test-edge muss existieren.
+Host-Guard und MAC-Vertrag gemäss aktuellem Abschnitt oben sind Startvoraussetzung.
 Nach Verifikation der Image-UID/GIDs:
 
 ```sh
@@ -130,7 +188,9 @@ sudo install -d -m 0700 -o 1000 -g 1000 /srv/micnet/backups/highnoon-beta
 sudo install -d -m 0750 /srv/micnet/stacks/highnoon /srv/micnet/config/highnoon /srv/micnet/logs/deployments/highnoon
 ```
 
-Compose, backup.sh, restore.sh aus dem immutable deployment-Verzeichnis nach
+Compose zuerst mit installiertem Host-Vertrag vergleichen: nur eine Vorlage mit
+allen drei vereinbarten MACs übernehmen; alte immutable Pakete sind dafür ungeeignet.
+Compose, backup.sh, restore.sh aus dem passenden deployment-Verzeichnis nach
 /srv/micnet/stacks/highnoon/ kopieren (root-owned; Skripte 0750). images.env als
 /srv/micnet/secrets/highnoon-beta.env root:root 0600 installieren. Datei enthält
 nur Image-IDs, keine Login-Secrets. Nicht als Shell-Datei sourcen.
@@ -237,7 +297,9 @@ nur nach gesonderter Entscheidung. Gemeinsames Edge-Netz/Tunnel nicht entfernen.
 - [ ] Verbrauch bleibt im Budget; noch keine gemessene Kapazitätszusage von Codex.
 - [ ] Tägliches Backup, NAS-Checksumme, isolierter NAS-Restore inkl. App-Smoke grün.
 - [ ] Upgrade/Rollback mit Scratch-Daten erfolgreich; RPO/RTO festgehalten.
-- [ ] Keine Host-Ports; Cross-App/Host/LAN-Erreichbarkeit negativ getestet.
+- [ ] Keine Host-Ports; drei MACs entsprechen dem Host-Vertrag; beide nft-Tabellen geladen.
+- [ ] Nach Recreation Cross-App/Host/LAN-Erreichbarkeit negativ und Connector→App positiv getestet.
+- [ ] Reboot-Persistenz separat abgenommen oder ausdrücklich als ungeprüft dokumentiert.
 - [ ] FinanceHub-Health vorher/nachher unverändert.
 - [ ] Teilnehmer und konkrete Zugangspolicy mit Michael festgelegt.
 - [ ] Erst danach Michael: Beta-Route auf http://highnoon-beta-origin:8080 aktivieren.

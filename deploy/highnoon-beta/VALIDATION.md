@@ -31,3 +31,16 @@ integriert, inklusive HTTP/PWA/Config und WebSocket-Snapshot durch den Proxy.
 Lokal: Bash-Syntax, eingebettete Node-Syntax und git diff --check geprüft.
 Docker-Ausführung dieses Korrekturkandidaten steht bei Bob aus. Keine Aussage,
 dass der neue Container hier gestartet oder auf Linux bereits abgenommen wurde.
+
+## Host-Vertrag aus Bobs zweiter Übergabe
+
+Bericht: reports/2026-09-10-linux-233b8ac7/README.md, importiert mit a740aea.
+Laut Bob: Origin-Fix/Build-Smoke PASS, interner Browser/Bot und Connector-
+HTTP/WebSocket PASS; Netzwerkblocker mit MAC-gebundenem Host-Guard behoben,
+Recreation und Negativtests PASS. Das sind Bobs Host-Ergebnisse, keine lokal
+wiederholte Linux-Abnahme. Vollständige offene Gates stehen im Originalbericht.
+
+Compose-Vorlage an die drei berichteten per-Netzwerk-MACs angeglichen. Lokal
+YAML geparst und komplette effektive YAML-Struktur mit Bobs Compose-Snapshot
+verglichen: identisch. git diff --check PASS. Kein Image-Build, Host-Deployment,
+Firewall-Reload, Container-Recreate oder Cloudflare-Freischaltung vorgenommen.
