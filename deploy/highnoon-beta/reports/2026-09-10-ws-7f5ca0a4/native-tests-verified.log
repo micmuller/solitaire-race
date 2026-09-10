@@ -1,0 +1,1420 @@
+
+added 1 package, and audited 2 packages in 495ms
+
+found 0 vulnerabilities
+npm notice
+npm notice New major version of npm available! 10.9.8 -> 12.0.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+npm notice To update run: npm install -g npm@12.0.2
+npm notice
+
+added 29 packages, and audited 30 packages in 2s
+
+10 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+TAP version 13
+# [MOVE_APPLY] matchId=4B4P4 rev=1 kind=toFound cardId=Y-1-♥-1 moveId=- sig=- hash=56480d458369c086 counts=you:stock=0 waste=1 tab=1 fnd=2 | opp:stock=0 waste=0 tab=0 fnd=0
+# [MOVE_APPLY] matchId=ZKALP rev=1 kind=toFound cardId=Y-41-♣-1 moveId=- sig=- hash=cade9f9332b0c591 counts=you:stock=0 waste=0 tab=0 fnd=2 | opp:stock=0 waste=0 tab=0 fnd=0
+# Subtest: reject does not mutate authoritative state; next legal waste->foundation move stays consistent
+ok 1 - reject does not mutate authoritative state; next legal waste->foundation move stays consistent
+  ---
+  duration_ms: 5.08187
+  type: 'test'
+  ...
+# Subtest: server canonicalizes variation-selector card ids in authoritative state and follow-up moves
+ok 2 - server canonicalizes variation-selector card ids in authoritative state and follow-up moves
+  ---
+  duration_ms: 0.798125
+  type: 'test'
+  ...
+# Subtest: version axes are exposed independently
+ok 3 - version axes are exposed independently
+  ---
+  duration_ms: 0.852833
+  type: 'test'
+  ...
+# Subtest: draw is atomic, turns the stock top face-up and increments revision
+ok 4 - draw is atomic, turns the stock top face-up and increments revision
+  ---
+  duration_ms: 4.628923
+  type: 'test'
+  ...
+# Subtest: recycle reverses waste into a face-down stock
+ok 5 - recycle reverses waste into a face-down stock
+  ---
+  duration_ms: 18.428524
+  type: 'test'
+  ...
+# Subtest: flip exposes only the top face-down tableau card
+ok 6 - flip exposes only the top face-down tableau card
+  ---
+  duration_ms: 1.844712
+  type: 'test'
+  ...
+# Subtest: tableauMove moves a valid face-up sequence and preserves order
+ok 7 - tableauMove moves a valid face-up sequence and preserves order
+  ---
+  duration_ms: 1.85036
+  type: 'test'
+  ...
+# Subtest: tableauMove atomically reveals the newly exposed source card
+ok 8 - tableauMove atomically reveals the newly exposed source card
+  ---
+  duration_ms: 1.420651
+  type: 'test'
+  ...
+# Subtest: tableauMove accepts a face-up waste card on a legal target
+ok 9 - tableauMove accepts a face-up waste card on a legal target
+  ---
+  duration_ms: 1.459512
+  type: 'test'
+  ...
+# Subtest: a King can move to an empty tableau
+ok 10 - a King can move to an empty tableau
+  ---
+  duration_ms: 1.192012
+  type: 'test'
+  ...
+# Subtest: only a King-led stack can move to an empty tableau
+ok 11 - only a King-led stack can move to an empty tableau
+  ---
+  duration_ms: 1.558937
+  type: 'test'
+  ...
+# Subtest: foundationMove ignores the client lane hint and resolves deterministically
+ok 12 - foundationMove ignores the client lane hint and resolves deterministically
+  ---
+  duration_ms: 1.823576
+  type: 'test'
+  ...
+# Subtest: foundationMove atomically reveals the newly exposed source card
+ok 13 - foundationMove atomically reveals the newly exposed source card
+  ---
+  duration_ms: 1.24612
+  type: 'test'
+  ...
+# Subtest: foundationMove builds the resolved suit lane in ascending order
+ok 14 - foundationMove builds the resolved suit lane in ascending order
+  ---
+  duration_ms: 1.383131
+  type: 'test'
+  ...
+# Subtest: illegal foundation rank rejects without moving the card
+ok 15 - illegal foundation rank rejects without moving the card
+  ---
+  duration_ms: 1.12639
+  type: 'test'
+  ...
+# Subtest: resign finishes the match and rejects later actions
+ok 16 - resign finishes the match and rejects later actions
+  ---
+  duration_ms: 1.358374
+  type: 'test'
+  ...
+# Subtest: p1 can resign and p2 wins the match
+ok 17 - p1 can resign and p2 wins the match
+  ---
+  duration_ms: 0.796844
+  type: 'test'
+  ...
+# Subtest: final player foundationMove completes the Race match with the finisher as winner
+ok 18 - final player foundationMove completes the Race match with the finisher as winner
+  ---
+  duration_ms: 1.661421
+  type: 'test'
+  ...
+# Subtest: invalid kinds and malformed actions have stable reject codes
+ok 19 - invalid kinds and malformed actions have stable reject codes
+  ---
+  duration_ms: 1.591919
+  type: 'test'
+  ...
+# Subtest: same state and action produce the same next state and hash
+ok 20 - same state and action produce the same next state and hash
+  ---
+  duration_ms: 1.538807
+  type: 'test'
+  ...
+# Subtest: ownership violations reject without mutation or revision change
+ok 21 - ownership violations reject without mutation or revision change
+  ---
+  duration_ms: 0.852309
+  type: 'test'
+  ...
+# Subtest: invalid current hash triggers an AIRBAG snapshot
+ok 22 - invalid current hash triggers an AIRBAG snapshot
+  ---
+  duration_ms: 0.73507
+  type: 'test'
+  ...
+# (node:53) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: bot action generator produces deterministic thin-client intents
+ok 23 - bot action generator produces deterministic thin-client intents
+  ---
+  duration_ms: 3.987066
+  type: 'test'
+  ...
+# Subtest: bot speed profiles are deterministic and strategy-neutral
+ok 24 - bot speed profiles are deterministic and strategy-neutral
+  ---
+  duration_ms: 0.217749
+  type: 'test'
+  ...
+# Subtest: bot actor avoids immediately reversing recent tableau moves
+ok 25 - bot actor avoids immediately reversing recent tableau moves
+  ---
+  duration_ms: 0.691384
+  type: 'test'
+  ...
+# Subtest: bot action log hash ignores wall-clock startedAt only
+ok 26 - bot action log hash ignores wall-clock startedAt only
+  ---
+  duration_ms: 0.387607
+  type: 'test'
+  ...
+# Subtest: bot report formatter prints a readable summary
+ok 27 - bot report formatter prints a readable summary
+  ---
+  duration_ms: 0.299299
+  type: 'test'
+  ...
+# Subtest: server-managed bot can join a web-hosted match as p2
+ok 28 - server-managed bot can join a web-hosted match as p2
+  ---
+  duration_ms: 67.948874
+  type: 'test'
+  ...
+# Subtest: server-managed bot reconnects and continues after its websocket is interrupted
+ok 29 - server-managed bot reconnects and continues after its websocket is interrupted
+  ---
+  duration_ms: 1875.757041
+  type: 'test'
+  ...
+# Subtest: human resign immediately stops the server-managed opponent bot
+ok 30 - human resign immediately stops the server-managed opponent bot
+  ---
+  duration_ms: 23.095898
+  type: 'test'
+  ...
+# Subtest: finished human-vs-bot match is persisted for the authenticated human profile
+ok 31 - finished human-vs-bot match is persisted for the authenticated human profile
+  ---
+  duration_ms: 13.628694
+  type: 'test'
+  ...
+# Subtest: finished bot-vs-bot match is stored as technical history without profile statistics
+ok 32 - finished bot-vs-bot match is stored as technical history without profile statistics
+  ---
+  duration_ms: 5.230842
+  type: 'test'
+  ...
+# Subtest: orphaned human-vs-bot stops after the reconnect grace period
+ok 33 - orphaned human-vs-bot stops after the reconnect grace period
+  ---
+  duration_ms: 203.577804
+  type: 'test'
+  ...
+# Subtest: orphaned bot-vs-bot stops both managed bots when its last observer closes
+ok 34 - orphaned bot-vs-bot stops both managed bots when its last observer closes
+  ---
+  duration_ms: 62.187581
+  type: 'test'
+  ...
+# Subtest: server-managed bot-vs-bot can be observed over websocket
+ok 35 - server-managed bot-vs-bot can be observed over websocket
+  ---
+  duration_ms: 24.249917
+  type: 'test'
+  ...
+# Subtest: bot-vs-bot runs are deterministic for the same seed and mode
+ok 36 - bot-vs-bot runs are deterministic for the same seed and mode
+  ---
+  duration_ms: 88.449749
+  type: 'test'
+  ...
+# Subtest: medium prefers uncovering to a routine waste placement
+ok 37 - medium prefers uncovering to a routine waste placement
+  ---
+  duration_ms: 1.518874
+  type: 'test'
+  ...
+# Subtest: hard accounts for a newly opened opponent foundation opportunity
+ok 38 - hard accounts for a newly opened opponent foundation opportunity
+  ---
+  duration_ms: 0.424115
+  type: 'test'
+  ...
+# Subtest: hidden identities and stock ordering cannot affect strategy ranking
+ok 39 - hidden identities and stock ordering cannot affect strategy ranking
+  ---
+  duration_ms: 6.975124
+  type: 'test'
+  ...
+# Subtest: hard values an already visible next foundation card without mutating state
+ok 40 - hard values an already visible next foundation card without mutating state
+  ---
+  duration_ms: 0.344198
+  type: 'test'
+  ...
+# Subtest: new progress releases old tableau route bans and rejected states stay bounded
+ok 41 - new progress releases old tableau route bans and rejected states stay bounded
+  ---
+  duration_ms: 0.69773
+  type: 'test'
+  ...
+# Subtest: medium and hard draw instead of shuffling a whole king column between empty slots
+ok 42 - medium and hard draw instead of shuffling a whole king column between empty slots
+  ---
+  duration_ms: 0.190707
+  type: 'test'
+  ...
+# Subtest: Node and Pixi choose identical intents for all difficulties including Unicode seeds
+ok 43 - Node and Pixi choose identical intents for all difficulties including Unicode seeds
+  ---
+  duration_ms: 8.156932
+  type: 'test'
+  ...
+# Subtest: clock never blocks natural play
+ok 44 - clock never blocks natural play
+  ---
+  duration_ms: 0.165348
+  type: 'test'
+  ...
+# Subtest: actor plays immediately despite a fresh clock
+ok 45 - actor plays immediately despite a fresh clock
+  ---
+  duration_ms: 0.642144
+  type: 'test'
+  ...
+# (node:69) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: node protocol client times out a lost action response and keeps its sequence
+ok 46 - node protocol client times out a lost action response and keeps its sequence
+  ---
+  duration_ms: 6.992889
+  type: 'test'
+  ...
+# Subtest: two-player simulator converges both thin clients
+ok 47 - two-player simulator converges both thin clients
+  ---
+  duration_ms: 60.898484
+  type: 'test'
+  ...
+# Subtest: client keeps state and sequence on reject, then reuses the sequence
+ok 48 - client keeps state and sequence on reject, then reuses the sequence
+  ---
+  duration_ms: 21.685318
+  type: 'test'
+  ...
+# Subtest: client recovers next sequence after duplicate sequence reject
+ok 49 - client recovers next sequence after duplicate sequence reject
+  ---
+  duration_ms: 20.1788
+  type: 'test'
+  ...
+# Subtest: stale client action is rebased against the latest authoritative state
+ok 50 - stale client action is rebased against the latest authoritative state
+  ---
+  duration_ms: 21.906986
+  type: 'test'
+  ...
+# Subtest: restart snapshot resets both thin clients even when revision goes back to zero
+ok 51 - restart snapshot resets both thin clients even when revision goes back to zero
+  ---
+  duration_ms: 22.946221
+  type: 'test'
+  ...
+# Subtest: p2 resign broadcasts finished state and blocks later actions
+ok 52 - p2 resign broadcasts finished state and blocks later actions
+  ---
+  duration_ms: 18.723868
+  type: 'test'
+  ...
+# Subtest: client rejects malformed or mismatched authoritative responses
+ok 53 - client rejects malformed or mismatched authoritative responses
+  ---
+  duration_ms: 0.132844
+  type: 'test'
+  ...
+# Subtest: greenfield core imports only node built-ins and files inside vnext/core
+ok 54 - greenfield core imports only node built-ins and files inside vnext/core
+  ---
+  duration_ms: 1.382188
+  type: 'test'
+  ...
+# Subtest: deal barrier preserves state, sequence and full clock: split
+ok 55 - deal barrier preserves state, sequence and full clock: split
+  ---
+  duration_ms: 7.969375
+  type: 'test'
+  ...
+# Subtest: deal barrier preserves state, sequence and full clock: shared
+ok 56 - deal barrier preserves state, sequence and full clock: shared
+  ---
+  duration_ms: 3.527814
+  type: 'test'
+  ...
+# Subtest: waiting lobby starts deal only when activated, also without progress clock
+ok 57 - waiting lobby starts deal only when activated, also without progress clock
+  ---
+  duration_ms: 0.800063
+  type: 'test'
+  ...
+# (node:91) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: deployment backup atomically publishes and restores a verified profile snapshot
+ok 58 - deployment backup atomically publishes and restores a verified profile snapshot
+  ---
+  duration_ms: 76.690167
+  type: 'test'
+  ...
+# Subtest: FNV-1a hashes UTF-8 seed bytes
+ok 59 - FNV-1a hashes UTF-8 seed bytes
+  ---
+  duration_ms: 0.748455
+  type: 'test'
+  ...
+# Subtest: Mulberry32 returns a deterministic uint32 stream
+ok 60 - Mulberry32 returns a deterministic uint32 stream
+  ---
+  duration_ms: 0.667938
+  type: 'test'
+  ...
+# Subtest: canonical JSON sorts object keys and preserves array order
+ok 61 - canonical JSON sorts object keys and preserves array order
+  ---
+  duration_ms: 0.48262
+  type: 'test'
+  ...
+# Subtest: stateHash is stable and revision-sensitive
+ok 62 - stateHash is stable and revision-sensitive
+  ---
+  duration_ms: 0.612327
+  type: 'test'
+  ...
+# Subtest: initMatch is deterministic and valid in split mode
+ok 63 - initMatch is deterministic and valid in split mode
+  ---
+  duration_ms: 4.413054
+  type: 'test'
+  ...
+# Subtest: initMatch is deterministic and valid in shared mode
+ok 64 - initMatch is deterministic and valid in shared mode
+  ---
+  duration_ms: 1.703366
+  type: 'test'
+  ...
+# Subtest: golden seed start hashes remain stable
+ok 65 - golden seed start hashes remain stable
+  ---
+  duration_ms: 1.203172
+  type: 'test'
+  ...
+# Subtest: split assigns one deck copy to each player
+ok 66 - split assigns one deck copy to each player
+  ---
+  duration_ms: 0.732047
+  type: 'test'
+  ...
+# Subtest: shared alternates one shuffled double deck across both players
+ok 67 - shared alternates one shuffled double deck across both players
+  ---
+  duration_ms: 0.597691
+  type: 'test'
+  ...
+# Subtest: invalid setup inputs are rejected
+ok 68 - invalid setup inputs are rejected
+  ---
+  duration_ms: 0.356912
+  type: 'test'
+  ...
+# Subtest: invariants detect missing cards
+ok 69 - invariants detect missing cards
+  ---
+  duration_ms: 3.230455
+  type: 'test'
+  ...
+# Subtest: invariants detect duplicate cards
+ok 70 - invariants detect duplicate cards
+  ---
+  duration_ms: 0.670153
+  type: 'test'
+  ...
+# Subtest: invariants detect card metadata that disagrees with cardId
+ok 71 - invariants detect card metadata that disagrees with cardId
+  ---
+  duration_ms: 1.0465
+  type: 'test'
+  ...
+# Subtest: assertInvariants exposes the airbag reject code
+ok 72 - assertInvariants exposes the airbag reject code
+  ---
+  duration_ms: 0.83656
+  type: 'test'
+  ...
+# Subtest: invariants validate active and finished match result fields
+ok 73 - invariants validate active and finished match result fields
+  ---
+  duration_ms: 2.023101
+  type: 'test'
+  ...
+# Subtest: invariants reject player scores that drift from foundations
+ok 74 - invariants reject player scores that drift from foundations
+  ---
+  duration_ms: 1.069793
+  type: 'test'
+  ...
+# (node:141) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ProfileAdmin lists profiles and creates a consistent backup
+ok 75 - ProfileAdmin lists profiles and creates a consistent backup
+  ---
+  duration_ms: 11.375868
+  type: 'test'
+  ...
+# Subtest: ProfileAdmin restores a verified backup atomically and creates a safety backup
+ok 76 - ProfileAdmin restores a verified backup atomically and creates a safety backup
+  ---
+  duration_ms: 9.260352
+  type: 'test'
+  ...
+# Subtest: ProfileAdmin rejects a changed backup and blocks restore while the server owns the database
+ok 77 - ProfileAdmin rejects a changed backup and blocks restore while the server owns the database
+  ---
+  duration_ms: 6.194096
+  type: 'test'
+  ...
+# Subtest: ProfileAdmin backs up then deletes a profile while retaining anonymous match history
+ok 78 - ProfileAdmin backs up then deletes a profile while retaining anonymous match history
+  ---
+  duration_ms: 5.306612
+  type: 'test'
+  ...
+# Subtest: database lock blocks profile deletion while the server owns the database
+ok 79 - database lock blocks profile deletion while the server owns the database
+  ---
+  duration_ms: 2.905132
+  type: 'test'
+  ...
+# Subtest: Linux lock detects PID reuse after container restart
+ok 80 - Linux lock detects PID reuse after container restart
+  ---
+  duration_ms: 2.606057
+  type: 'test'
+  ...
+# (node:152) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ProfileStore persists hashed sessions and authorizes nickname updates
+ok 81 - ProfileStore persists hashed sessions and authorizes nickname updates
+  ---
+  duration_ms: 4.900898
+  type: 'test'
+  ...
+# Subtest: ProfileStore records authoritative results exactly once and ranks the leaderboard
+ok 82 - ProfileStore records authoritative results exactly once and ranks the leaderboard
+  ---
+  duration_ms: 4.480221
+  type: 'test'
+  ...
+# Subtest: profile HTTP API protects private reads and persists lobby results across restart
+ok 83 - profile HTTP API protects private reads and persists lobby results across restart
+  ---
+  duration_ms: 66.417268
+  type: 'test'
+  ...
+# Subtest: all 20 golden seeds have stable split and shared start hashes
+ok 84 - all 20 golden seeds have stable split and shared start hashes
+  ---
+  duration_ms: 18.988168
+  type: 'test'
+  ...
+# Subtest: checked-in golden artifacts exactly match the deterministic generator
+ok 85 - checked-in golden artifacts exactly match the deterministic generator
+  ---
+  duration_ms: 19.637899
+  type: 'test'
+  ...
+# Subtest: golden split ActionLog replays through ack, reject and snapshot
+ok 86 - golden split ActionLog replays through ack, reject and snapshot
+  ---
+  duration_ms: 3.784177
+  type: 'test'
+  ...
+# Subtest: golden shared ActionLog replays through ack, reject and snapshot
+ok 87 - golden shared ActionLog replays through ack, reject and snapshot
+  ---
+  duration_ms: 3.050926
+  type: 'test'
+  ...
+# Subtest: replay fails at the first tampered hash
+ok 88 - replay fails at the first tampered hash
+  ---
+  duration_ms: 2.030116
+  type: 'test'
+  ...
+# Subtest: replay rejects header mismatch before initialization
+ok 89 - replay rejects header mismatch before initialization
+  ---
+  duration_ms: 0.173366
+  type: 'test'
+  ...
+# Subtest: replay rejects malformed and non-contiguous steps deterministically
+ok 90 - replay rejects malformed and non-contiguous steps deterministically
+  ---
+  duration_ms: 1.848539
+  type: 'test'
+  ...
+# Subtest: duplicate sequence is replayed as a stable reject
+ok 91 - duplicate sequence is replayed as a stable reject
+  ---
+  duration_ms: 0.942359
+  type: 'test'
+  ...
+# (node:167) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: lobby deal begins on second player join and publishes common readiness
+ok 92 - lobby deal begins on second player join and publishes common readiness
+  ---
+  duration_ms: 1857.785501
+  type: 'test'
+  ...
+# Subtest: opt-in deal broadcasts readiness and repeats on restart without spending clock time
+ok 93 - opt-in deal broadcasts readiness and repeats on restart without spending clock time
+  ---
+  duration_ms: 1816.429727
+  type: 'test'
+  ...
+# Subtest: MatchSession produces a replayable authoritative ActionLog
+ok 94 - MatchSession produces a replayable authoritative ActionLog
+  ---
+  duration_ms: 3.555125
+  type: 'test'
+  ...
+# Subtest: progress clock ignores stock draws and resets only after revealed tableau progress
+ok 95 - progress clock ignores stock draws and resets only after revealed tableau progress
+  ---
+  duration_ms: 2.834929
+  type: 'test'
+  ...
+# Subtest: simultaneous progress-clock expiry has a stable result and replay
+ok 96 - simultaneous progress-clock expiry has a stable result and replay
+  ---
+  duration_ms: 9.009298
+  type: 'test'
+  ...
+# Subtest: server shell imports no frozen gameplay modules
+ok 97 - server shell imports no frozen gameplay modules
+  ---
+  duration_ms: 0.62562
+  type: 'test'
+  ...
+# Subtest: vNext Web adapter imports neither v1 scripts nor gameplay authority
+ok 98 - vNext Web adapter imports neither v1 scripts nor gameplay authority
+  ---
+  duration_ms: 1.007933
+  type: 'test'
+  ...
+# Subtest: out-of-sync envelope returns an unchanged replayable snapshot
+ok 99 - out-of-sync envelope returns an unchanged replayable snapshot
+  ---
+  duration_ms: 1.494951
+  type: 'test'
+  ...
+# Subtest: independent simultaneous moves are rebased and both accepted
+ok 100 - independent simultaneous moves are rebased and both accepted
+  ---
+  duration_ms: 3.879187
+  type: 'test'
+  ...
+# Subtest: simultaneous duplicate-rank foundation moves use separate lanes without blocking
+ok 101 - simultaneous duplicate-rank foundation moves use separate lanes without blocking
+  ---
+  duration_ms: 5.64471
+  type: 'test'
+  ...
+# Subtest: future base revision still returns an unchanged recovery snapshot
+ok 102 - future base revision still returns an unchanged recovery snapshot
+  ---
+  duration_ms: 0.416886
+  type: 'test'
+  ...
+# Subtest: LobbyStore maps nickname sessions to games and reserves player history fields
+ok 103 - LobbyStore maps nickname sessions to games and reserves player history fields
+  ---
+  duration_ms: 0.468409
+  type: 'test'
+  ...
+# Subtest: LobbyStore lets only p1 end a lobby game by match id
+ok 104 - LobbyStore lets only p1 end a lobby game by match id
+  ---
+  duration_ms: 0.429944
+  type: 'test'
+  ...
+# Subtest: LobbyStore lets only p1 delete an owned waiting game
+ok 105 - LobbyStore lets only p1 delete an owned waiting game
+  ---
+  duration_ms: 0.213055
+  type: 'test'
+  ...
+# Subtest: vNext HTTP and WebSocket shell creates a match and broadcasts authoritative ack
+ok 106 - vNext HTTP and WebSocket shell creates a match and broadcasts authoritative ack
+  ---
+  duration_ms: 32.299565
+  type: 'test'
+  ...
+# Subtest: marked reconnect replaces a stale player socket while duplicate connects stay blocked
+ok 107 - marked reconnect replaces a stale player socket while duplicate connects stay blocked
+  ---
+  duration_ms: 26.032422
+  type: 'test'
+  ...
+# Subtest: vNext lobby API creates a host game and lets a nickname join as P2
+ok 108 - vNext lobby API creates a host game and lets a nickname join as P2
+  ---
+  duration_ms: 8.822006
+  type: 'test'
+  ...
+# Subtest: vNext lobby API allows only p1 to end a lobby game
+ok 109 - vNext lobby API allows only p1 to end a lobby game
+  ---
+  duration_ms: 9.964496
+  type: 'test'
+  ...
+# Subtest: completed lobby round restarts its progress clock when both seats remain occupied
+ok 110 - completed lobby round restarts its progress clock when both seats remain occupied
+  ---
+  duration_ms: 12.486622
+  type: 'test'
+  ...
+# Subtest: lobby lifecycle gates start, authorizes restart and deletes waiting games
+ok 111 - lobby lifecycle gates start, authorizes restart and deletes waiting games
+  ---
+  duration_ms: 16.966085
+  type: 'test'
+  ...
+# Subtest: waste selection maps only the accessible top card
+ok 112 - waste selection maps only the accessible top card
+  ---
+  duration_ms: 3.952653
+  type: 'test'
+  ...
+# Subtest: tableau selection maps the selected suffix without evaluating rules
+ok 113 - tableau selection maps the selected suffix without evaluating rules
+  ---
+  duration_ms: 0.265181
+  type: 'test'
+  ...
+# Subtest: drag source maps to the same waste and tableau selections
+ok 114 - drag source maps to the same waste and tableau selections
+  ---
+  duration_ms: 0.187642
+  type: 'test'
+  ...
+# Subtest: drag source rejects face-down tableau cards
+ok 115 - drag source rejects face-down tableau cards
+  ---
+  duration_ms: 0.14221
+  type: 'test'
+  ...
+# Subtest: selected source maps to structured tableau and foundation intents
+ok 116 - selected source maps to structured tableau and foundation intents
+  ---
+  duration_ms: 0.21746
+  type: 'test'
+  ...
+# Subtest: auto foundation intent chooses the currently legal suit lane
+ok 117 - auto foundation intent chooses the currently legal suit lane
+  ---
+  duration_ms: 0.271537
+  type: 'test'
+  ...
+# Subtest: drop target maps to the existing move intents
+ok 118 - drop target maps to the existing move intents
+  ---
+  duration_ms: 0.215034
+  type: 'test'
+  ...
+# Subtest: authoritative responses map to non-optimistic effect cues
+ok 119 - authoritative responses map to non-optimistic effect cues
+  ---
+  duration_ms: 0.272526
+  type: 'test'
+  ...
+# Subtest: browser protocol client emits restart response before restart state
+ok 120 - browser protocol client emits restart response before restart state
+  ---
+  duration_ms: 0.540064
+  type: 'test'
+  ...
+# Subtest: browser protocol client settles an own ack before rendering its state
+ok 121 - browser protocol client settles an own ack before rendering its state
+  ---
+  duration_ms: 0.545445
+  type: 'test'
+  ...
+# Subtest: browser protocol client rejects a lost action response instead of staying pending forever
+ok 122 - browser protocol client rejects a lost action response instead of staying pending forever
+  ---
+  duration_ms: 21.344449
+  type: 'test'
+  ...
+# Subtest: browser protocol client forwards lobby lifecycle events without changing game state
+ok 123 - browser protocol client forwards lobby lifecycle events without changing game state
+  ---
+  duration_ms: 0.258894
+  type: 'test'
+  ...
+# Subtest: browser protocol client marks only explicit reconnect sockets for takeover
+ok 124 - browser protocol client marks only explicit reconnect sockets for takeover
+  ---
+  duration_ms: 0.57068
+  type: 'test'
+  ...
+# Subtest: lobby urls encode host and invite identities
+ok 125 - lobby urls encode host and invite identities
+  ---
+  duration_ms: 0.42132
+  type: 'test'
+  ...
+# Subtest: web client version is exposed for the header menu
+ok 126 - web client version is exposed for the header menu
+  ---
+  duration_ms: 0.210607
+  type: 'test'
+  ...
+# Subtest: version menu toggles open and closed from the badge state
+ok 127 - version menu toggles open and closed from the badge state
+  ---
+  duration_ms: 0.142924
+  type: 'test'
+  ...
+# Subtest: random seed generator creates stable readable seed format
+ok 128 - random seed generator creates stable readable seed format
+  ---
+  duration_ms: 0.19136
+  type: 'test'
+  ...
+# Subtest: web lobby exposes the approved menu defaults and synchronized mode controls
+ok 129 - web lobby exposes the approved menu defaults and synchronized mode controls
+  ---
+  duration_ms: 0.761968
+  type: 'test'
+  ...
+# Subtest: ws rejects excessive empty fragments with production defaults
+ok 130 - ws rejects excessive empty fragments with production defaults
+  ---
+  duration_ms: 20.56173
+  type: 'test'
+  ...
+# Subtest: ws resets fragment budget between completed messages
+ok 131 - ws resets fragment budget between completed messages
+  ---
+  duration_ms: 24.512454
+  type: 'test'
+  ...
+# Subtest: retained display store reuses stable card ids and prunes missing cards
+ok 132 - retained display store reuses stable card ids and prunes missing cards
+  ---
+  duration_ms: 1.115492
+  type: 'test'
+  ...
+# Subtest: card visuals are redrawn only when a visible property changes
+ok 133 - card visuals are redrawn only when a visible property changes
+  ---
+  duration_ms: 0.216679
+  type: 'test'
+  ...
+# Subtest: overlay and pending reasons independently lock canvas input
+ok 134 - overlay and pending reasons independently lock canvas input
+  ---
+  duration_ms: 0.1302
+  type: 'test'
+  ...
+# Subtest: only a sole pending lock may collect another stock click
+ok 135 - only a sole pending lock may collect another stock click
+  ---
+  duration_ms: 0.115457
+  type: 'test'
+  ...
+# Subtest: stock click queue preserves each bounded click in FIFO count order
+ok 136 - stock click queue preserves each bounded click in FIFO count order
+  ---
+  duration_ms: 0.191748
+  type: 'test'
+  ...
+# Subtest: quality profiles and reduced motion are deterministic
+ok 137 - quality profiles and reduced motion are deterministic
+  ---
+  duration_ms: 0.115843
+  type: 'test'
+  ...
+# Subtest: card animation preference follows quality and always respects reduced motion
+ok 138 - card animation preference follows quality and always respects reduced motion
+  ---
+  duration_ms: 0.222448
+  type: 'test'
+  ...
+# Subtest: iPad and touch-mode iPadOS Safari use the canvas renderer fallback
+ok 139 - iPad and touch-mode iPadOS Safari use the canvas renderer fallback
+  ---
+  duration_ms: 0.236908
+  type: 'test'
+  ...
+# Subtest: only reduced-quality canvas rendering is capped at 30 FPS
+ok 140 - only reduced-quality canvas rendering is capped at 30 FPS
+  ---
+  duration_ms: 0.263888
+  type: 'test'
+  ...
+# Subtest: finale policy keeps canvas and reduced profiles lightweight
+ok 141 - finale policy keeps canvas and reduced profiles lightweight
+  ---
+  duration_ms: 0.746138
+  type: 'test'
+  ...
+# Subtest: full finale batches confetti and fireworks into one retained graphic
+ok 142 - full finale batches confetti and fireworks into one retained graphic
+  ---
+  duration_ms: 0.389031
+  type: 'test'
+  ...
+# Subtest: snapshot cancellation clears transitions and snaps once
+ok 143 - snapshot cancellation clears transitions and snaps once
+  ---
+  duration_ms: 0.275395
+  type: 'test'
+  ...
+# Subtest: generic tweens expose linear and eased progress
+ok 144 - generic tweens expose linear and eased progress
+  ---
+  duration_ms: 0.146351
+  type: 'test'
+  ...
+# Subtest: new client imports shared protocol and intent modules and contains no core rules
+ok 145 - new client imports shared protocol and intent modules and contains no core rules
+  ---
+  duration_ms: 0.335097
+  type: 'test'
+  ...
+# Subtest: server has disjoint legacy and Pixi static roots
+ok 146 - server has disjoint legacy and Pixi static roots
+  ---
+  duration_ms: 0.125595
+  type: 'test'
+  ...
+# Subtest: score names, board debug overlay and finale preview stay wired
+ok 147 - score names, board debug overlay and finale preview stay wired
+  ---
+  duration_ms: 0.318182
+  type: 'test'
+  ...
+# Subtest: retina resolution never shrinks the logical board layout
+ok 148 - retina resolution never shrinks the logical board layout
+  ---
+  duration_ms: 0.379838
+  type: 'test'
+  ...
+# Subtest: drag handoff survives pending state until the authoritative ack
+ok 149 - drag handoff survives pending state until the authoritative ack
+  ---
+  duration_ms: 0.115227
+  type: 'test'
+  ...
+# Subtest: authoritative ack adds no animation after a local drag is released
+ok 150 - authoritative ack adds no animation after a local drag is released
+  ---
+  duration_ms: 0.161096
+  type: 'test'
+  ...
+# Subtest: waste drag and depth cards add no post-release animation
+ok 151 - waste drag and depth cards add no post-release animation
+  ---
+  duration_ms: 0.082151
+  type: 'test'
+  ...
+# Subtest: an unrelated ack cannot complete or replay a pending drag handoff
+ok 152 - an unrelated ack cannot complete or replay a pending drag handoff
+  ---
+  duration_ms: 0.149701
+  type: 'test'
+  ...
+# Subtest: an ack cannot reset a card while its pointer drag is still active
+ok 153 - an ack cannot reset a card while its pointer drag is still active
+  ---
+  duration_ms: 0.10141
+  type: 'test'
+  ...
+# Subtest: handoff state matching defers unrelated acks without laying out the board
+ok 154 - handoff state matching defers unrelated acks without laying out the board
+  ---
+  duration_ms: 0.17294
+  type: 'test'
+  ...
+# Subtest: a waste club two ack completes its drag handoff on top of the club ace
+ok 155 - a waste club two ack completes its drag handoff on top of the club ace
+  ---
+  duration_ms: 0.092331
+  type: 'test'
+  ...
+# Subtest: active and pending drags return before the expensive board redraw
+ok 156 - active and pending drags return before the expensive board redraw
+  ---
+  duration_ms: 0.188415
+  type: 'test'
+  ...
+# Subtest: the synthetic tap immediately following a drag is consumed once
+ok 157 - the synthetic tap immediately following a drag is consumed once
+  ---
+  duration_ms: 0.078304
+  type: 'test'
+  ...
+# Subtest: a mouse move without a pressed button identifies a lost pointer sequence
+ok 158 - a mouse move without a pressed button identifies a lost pointer sequence
+  ---
+  duration_ms: 0.082925
+  type: 'test'
+  ...
+# Subtest: a lost pointer sequence clears drag and selection and snaps to authority
+ok 159 - a lost pointer sequence clears drag and selection and snaps to authority
+  ---
+  duration_ms: 0.724865
+  type: 'test'
+  ...
+# Subtest: rapid stock and target events are gated before transient state mutation
+ok 160 - rapid stock and target events are gated before transient state mutation
+  ---
+  duration_ms: 0.233323
+  type: 'test'
+  ...
+# Subtest: a stale second mouse tap follows its physical stock position instead of the moved waste card
+ok 161 - a stale second mouse tap follows its physical stock position instead of the moved waste card
+  ---
+  duration_ms: 0.215281
+  type: 'test'
+  ...
+# Subtest: finishing a pending drag keeps its alpha under transition control
+ok 162 - finishing a pending drag keeps its alpha under transition control
+  ---
+  duration_ms: 0.188793
+  type: 'test'
+  ...
+# Subtest: interaction cleanup renders the newest authoritative state after a deferred ack
+ok 163 - interaction cleanup renders the newest authoritative state after a deferred ack
+  ---
+  duration_ms: 0.135463
+  type: 'test'
+  ...
+# Subtest: a waste drag restores full opacity without a second fade animation
+ok 164 - a waste drag restores full opacity without a second fade animation
+  ---
+  duration_ms: 0.123143
+  type: 'test'
+  ...
+# Subtest: drag handoff has no tween, opacity pulse or scale wobble
+ok 165 - drag handoff has no tween, opacity pulse or scale wobble
+  ---
+  duration_ms: 0.262955
+  type: 'test'
+  ...
+# Subtest: stock and waste retain three visible depth cards with one interactive top
+ok 166 - stock and waste retain three visible depth cards with one interactive top
+  ---
+  duration_ms: 0.224194
+  type: 'test'
+  ...
+# Subtest: motion profiles give foundation moves more weight than tableau moves
+ok 167 - motion profiles give foundation moves more weight than tableau moves
+  ---
+  duration_ms: 0.08023
+  type: 'test'
+  ...
+# Subtest: reduced motion keeps ack and flip transitions instantaneous
+ok 168 - reduced motion keeps ack and flip transitions instantaneous
+  ---
+  duration_ms: 0.109108
+  type: 'test'
+  ...
+# Subtest: observer states snap without depending on the animation ticker
+ok 169 - observer states snap without depending on the animation ticker
+  ---
+  duration_ms: 0.084351
+  type: 'test'
+  ...
+# Subtest: canvas keeps general motion disabled while allowing configured card transitions
+ok 170 - canvas keeps general motion disabled while allowing configured card transitions
+  ---
+  duration_ms: 0.156341
+  type: 'test'
+  ...
+# Subtest: only an in-place authoritative reveal uses the flip animation
+ok 171 - only an in-place authoritative reveal uses the flip animation
+  ---
+  duration_ms: 0.077636
+  type: 'test'
+  ...
+# Subtest: a moving stock card keeps its back until the midpoint flip
+ok 172 - a moving stock card keeps its back until the midpoint flip
+  ---
+  duration_ms: 0.107117
+  type: 'test'
+  ...
+# Subtest: pruned cards cancel every active tween before their display object is destroyed
+ok 173 - pruned cards cancel every active tween before their display object is destroyed
+  ---
+  duration_ms: 0.107967
+  type: 'test'
+  ...
+# Subtest: board zones omit the P1 divider and P2 outline
+ok 174 - board zones omit the P1 divider and P2 outline
+  ---
+  duration_ms: 0.214772
+  type: 'test'
+  ...
+# Subtest: felt reaches the rounded brass board edge and vintage header ornaments stay present
+ok 175 - felt reaches the rounded brass board edge and vintage header ornaments stay present
+  ---
+  duration_ms: 0.363706
+  type: 'test'
+  ...
+# Subtest: Pixi bot menu uses the human-facing difficulty profiles
+ok 176 - Pixi bot menu uses the human-facing difficulty profiles
+  ---
+  duration_ms: 0.190849
+  type: 'test'
+  ...
+# Subtest: Pixi bot menu selects split or shared for both bot match types
+ok 177 - Pixi bot menu selects split or shared for both bot match types
+  ---
+  duration_ms: 0.273935
+  type: 'test'
+  ...
+# Subtest: Pixi bot-vs-bot menu keeps the fast observer and adds a visual client-bot mode
+ok 178 - Pixi bot-vs-bot menu keeps the fast observer and adds a visual client-bot mode
+  ---
+  duration_ms: 1.216894
+  type: 'test'
+  ...
+# Subtest: menu keeps eight ordered areas and exposes leaderboard before diagnostics
+ok 179 - menu keeps eight ordered areas and exposes leaderboard before diagnostics
+  ---
+  duration_ms: 0.343397
+  type: 'test'
+  ...
+# Subtest: settings gear forces a text glyph with an embossed brass treatment
+ok 180 - settings gear forces a text glyph with an embossed brass treatment
+  ---
+  duration_ms: 0.252733
+  type: 'test'
+  ...
+# Subtest: the menu lobby is the single lobby view at launch and after leaving a match
+ok 181 - the menu lobby is the single lobby view at launch and after leaving a match
+  ---
+  duration_ms: 0.278111
+  type: 'test'
+  ...
+# Subtest: visual preview is local and cannot block a subsequent match connection
+ok 182 - visual preview is local and cannot block a subsequent match connection
+  ---
+  duration_ms: 0.244338
+  type: 'test'
+  ...
+# Subtest: settings persist the local stock and waste side without changing game state
+ok 183 - settings persist the local stock and waste side without changing game state
+  ---
+  duration_ms: 0.227208
+  type: 'test'
+  ...
+# Subtest: settings expose a persistent three-state card animation preference
+ok 184 - settings expose a persistent three-state card animation preference
+  ---
+  duration_ms: 0.242605
+  type: 'test'
+  ...
+# Subtest: production build is an installable web app scoped to the Pixi route
+ok 185 - production build is an installable web app scoped to the Pixi route
+  ---
+  duration_ms: 0.369072
+  type: 'test'
+  ...
+# Subtest: stable Pixi release metadata is consistently versioned as 0.3.9
+ok 186 - stable Pixi release metadata is consistently versioned as 0.3.9
+  ---
+  duration_ms: 0.299409
+  type: 'test'
+  ...
+# Subtest: profile credentials use authorization headers instead of lobby request bodies
+ok 187 - profile credentials use authorization headers instead of lobby request bodies
+  ---
+  duration_ms: 0.130725
+  type: 'test'
+  ...
+# Subtest: profile overlay saves a nickname through the protected session without reloading
+ok 188 - profile overlay saves a nickname through the protected session without reloading
+  ---
+  duration_ms: 0.589033
+  type: 'test'
+  ...
+# Subtest: bot match creation declares persistent match type and authenticates the human seat
+ok 189 - bot match creation declares persistent match type and authenticates the human seat
+  ---
+  duration_ms: 0.426625
+  type: 'test'
+  ...
+# Subtest: progress clock offers the approved limits and renders both server-authoritative deadlines
+ok 190 - progress clock offers the approved limits and renders both server-authoritative deadlines
+  ---
+  duration_ms: 0.405197
+  type: 'test'
+  ...
+# Subtest: ordinary lobby hosting cannot reuse the diagnostic seed field
+ok 191 - ordinary lobby hosting cannot reuse the diagnostic seed field
+  ---
+  duration_ms: 0.31868
+  type: 'test'
+  ...
+# Subtest: installed iOS app reserves the status bar and card wear stays stable
+ok 192 - installed iOS app reserves the status bar and card wear stays stable
+  ---
+  duration_ms: 0.380439
+  type: 'test'
+  ...
+# Subtest: error report contains the complete match context and recent local events
+ok 193 - error report contains the complete match context and recent local events
+  ---
+  duration_ms: 0.303723
+  type: 'test'
+  ...
+# Subtest: diagnostic copy has a synchronous textarea fallback for iOS and LAN installs
+ok 194 - diagnostic copy has a synchronous textarea fallback for iOS and LAN installs
+  ---
+  duration_ms: 0.264703
+  type: 'test'
+  ...
+# Subtest: card artwork uses local original court art with a procedural fallback
+ok 195 - card artwork uses local original court art with a procedural fallback
+  ---
+  duration_ms: 0.491015
+  type: 'test'
+  ...
+# Subtest: table materials are local assets with procedural color fallbacks
+ok 196 - table materials are local assets with procedural color fallbacks
+  ---
+  duration_ms: 0.46702
+  type: 'test'
+  ...
+# Subtest: preview contains two complete decks with a valid initial tableau shape
+ok 197 - preview contains two complete decks with a valid initial tableau shape
+  ---
+  duration_ms: 0.718379
+  type: 'test'
+  ...
+# Subtest: deal is row-wise, parallel from two stocks and completes within 1.5 seconds
+ok 198 - deal is row-wise, parallel from two stocks and completes within 1.5 seconds
+  ---
+  duration_ms: 1.364013
+  type: 'test'
+  ...
+# Subtest: delayed flights clamp to stock and exact final position
+ok 199 - delayed flights clamp to stock and exact final position
+  ---
+  duration_ms: 0.181752
+  type: 'test'
+  ...
+# Subtest: accepts a card released near a tableau pile
+ok 200 - accepts a card released near a tableau pile
+  ---
+  duration_ms: 0.783721
+  type: 'test'
+  ...
+# Subtest: chooses the closest pile when generous hit areas overlap
+ok 201 - chooses the closest pile when generous hit areas overlap
+  ---
+  duration_ms: 0.135086
+  type: 'test'
+  ...
+# Subtest: accepts a nearby foundation without swallowing distant drops
+ok 202 - accepts a nearby foundation without swallowing distant drops
+  ---
+  duration_ms: 0.168263
+  type: 'test'
+  ...
+# Subtest: layout is complete at 1024x670
+ok 203 - layout is complete at 1024x670
+  ---
+  duration_ms: 2.137126
+  type: 'test'
+  ...
+# Subtest: layout is complete at 1440x786
+ok 204 - layout is complete at 1440x786
+  ---
+  duration_ms: 0.210163
+  type: 'test'
+  ...
+# Subtest: layout is complete at 640x458
+ok 205 - layout is complete at 640x458
+  ---
+  duration_ms: 0.173635
+  type: 'test'
+  ...
+# Subtest: fourteen-card fan keeps final local card on board
+ok 206 - fourteen-card fan keeps final local card on board
+  ---
+  duration_ms: 0.2444
+  type: 'test'
+  ...
+# Subtest: fan separates open cards more than hidden cards
+ok 207 - fan separates open cards more than hidden cards
+  ---
+  duration_ms: 0.171981
+  type: 'test'
+  ...
+# Subtest: known hidden cards leave more readable space for exposed ranks
+ok 208 - known hidden cards leave more readable space for exposed ranks
+  ---
+  duration_ms: 0.262136
+  type: 'test'
+  ...
+# Subtest: local tableau starts with breathing room below the foundation zone
+ok 209 - local tableau starts with breathing room below the foundation zone
+  ---
+  duration_ms: 0.14748
+  type: 'test'
+  ...
+# Subtest: opponent stock and waste leave room for the enlarged corner hardware
+ok 210 - opponent stock and waste leave room for the enlarged corner hardware
+  ---
+  duration_ms: 0.140865
+  type: 'test'
+  ...
+# Subtest: tableau piles use foundation spacing at 1024x664
+ok 211 - tableau piles use foundation spacing at 1024x664
+  ---
+  duration_ms: 0.339266
+  type: 'test'
+  ...
+# Subtest: tableau piles use foundation spacing at 1366x820
+ok 212 - tableau piles use foundation spacing at 1366x820
+  ---
+  duration_ms: 0.310246
+  type: 'test'
+  ...
+# Subtest: right-handed layout mirrors local stock and waste and shifts the tableau left
+ok 213 - right-handed layout mirrors local stock and waste and shifts the tableau left
+  ---
+  duration_ms: 0.199889
+  type: 'test'
+  ...
+# Subtest: right-handed compact layout stays clear of the visible table frame
+ok 214 - right-handed compact layout stays clear of the visible table frame
+  ---
+  duration_ms: 0.113548
+  type: 'test'
+  ...
+# Subtest: waiting lobby blocks input while direct and active bot matches remain playable
+ok 215 - waiting lobby blocks input while direct and active bot matches remain playable
+  ---
+  duration_ms: 0.787549
+  type: 'test'
+  ...
+# Subtest: observer, overlay and finished state block input
+ok 216 - observer, overlay and finished state block input
+  ---
+  duration_ms: 0.151597
+  type: 'test'
+  ...
+# Subtest: match context resolves exact lobby match and explains the waiting roles
+ok 217 - match context resolves exact lobby match and explains the waiting roles
+  ---
+  duration_ms: 0.211663
+  type: 'test'
+  ...
+# Subtest: rapid repeat click identifies the selected tableau instead of targeting itself
+ok 218 - rapid repeat click identifies the selected tableau instead of targeting itself
+  ---
+  duration_ms: 0.157179
+  type: 'test'
+  ...
+# Subtest: P2 uses a per-match guest session when the persistent identity owns P1
+ok 219 - P2 uses a per-match guest session when the persistent identity owns P1
+  ---
+  duration_ms: 0.213233
+  type: 'test'
+  ...
+# Subtest: only duplicate sequence rejects with an expected sequence are retried
+ok 220 - only duplicate sequence rejects with an expected sequence are retried
+  ---
+  duration_ms: 0.13489
+  type: 'test'
+  ...
+# Subtest: resign finale assigns the server-authoritative decision only to lobby P1
+ok 221 - resign finale assigns the server-authoritative decision only to lobby P1
+  ---
+  duration_ms: 0.172624
+  type: 'test'
+  ...
+# Subtest: resign finale names the authoritative winner for both follow-up roles
+ok 222 - resign finale names the authoritative winner for both follow-up roles
+  ---
+  duration_ms: 0.605887
+  type: 'test'
+  ...
+# Subtest: normal hosting always generates a fresh seed while technical hosting may preserve one
+ok 223 - normal hosting always generates a fresh seed while technical hosting may preserve one
+  ---
+  duration_ms: 0.30047
+  type: 'test'
+  ...
+# Subtest: visual bot difficulty changes decisions at the same authoritative state
+ok 224 - visual bot difficulty changes decisions at the same authoritative state
+  ---
+  duration_ms: 1.951872
+  type: 'test'
+  ...
+# Subtest: visual client bot prioritizes a foundation intent and stays deterministic
+ok 225 - visual client bot prioritizes a foundation intent and stays deterministic
+  ---
+  duration_ms: 0.716571
+  type: 'test'
+  ...
+# Subtest: visual client bot waits for rendering before and after its acknowledged intent
+ok 226 - visual client bot waits for rendering before and after its acknowledged intent
+  ---
+  duration_ms: 0.444145
+  type: 'test'
+  ...
+# Subtest: stopping the visual client bot releases a pending pace wait without sending
+ok 227 - stopping the visual client bot releases a pending pace wait without sending
+  ---
+  duration_ms: 0.333116
+  type: 'test'
+  ...
+# Subtest: visual client bot skips rejected intents and continues after a recovery snapshot
+ok 228 - visual client bot skips rejected intents and continues after a recovery snapshot
+  ---
+  duration_ms: 0.440587
+  type: 'test'
+  ...
+# Subtest: clock adds no idle ticks
+ok 229 - clock adds no idle ticks
+  ---
+  duration_ms: 0.386052
+  type: 'test'
+  ...
+# Subtest: stop during normal cadence sends no action
+ok 230 - stop during normal cadence sends no action
+  ---
+  duration_ms: 0.257422
+  type: 'test'
+  ...
+1..230
+# tests 230
+# suites 0
+# pass 230
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10596.687476

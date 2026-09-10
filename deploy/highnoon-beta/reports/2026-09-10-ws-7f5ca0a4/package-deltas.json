@@ -1,0 +1,277 @@
+{
+  "node-proposal": {
+    "comparison": "ws-app (application adds ws) -> proposed base only",
+    "changes": [
+      {
+        "package": "debian:base-files",
+        "old": "12.4+deb12u14",
+        "new": "12.4+deb12u15"
+      },
+      {
+        "package": "node-pkg:solitaire-race",
+        "old": "1.1.0-alpha.27",
+        "new": null
+      },
+      {
+        "package": "node-pkg:ws",
+        "old": "8.21.3",
+        "new": null
+      }
+    ]
+  },
+  "nginx-slim-proposal": {
+    "comparison": "ws-origin (application adds ws) -> proposed base only",
+    "changes": [
+      {
+        "package": "alpine:aom-libs",
+        "old": "3.14.1-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:brotli-libs",
+        "old": "1.2.0-r1",
+        "new": null
+      },
+      {
+        "package": "alpine:c-ares",
+        "old": "1.34.8-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:ca-certificates",
+        "old": "20260611-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:curl",
+        "old": "8.22.0-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:fontconfig",
+        "old": "2.17.1-r1",
+        "new": null
+      },
+      {
+        "package": "alpine:freetype",
+        "old": "2.14.3-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:geoip",
+        "old": "1.6.12-r6",
+        "new": null
+      },
+      {
+        "package": "alpine:libavif",
+        "old": "1.4.1-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libbsd",
+        "old": "0.12.2-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libbz2",
+        "old": "1.0.8-r6",
+        "new": null
+      },
+      {
+        "package": "alpine:libcurl",
+        "old": "8.22.0-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libdav1d",
+        "old": "1.5.3-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libedit",
+        "old": "20260508.3.1-r1",
+        "new": null
+      },
+      {
+        "package": "alpine:libexpat",
+        "old": "2.8.4-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libgcc",
+        "old": "15.2.0-r5",
+        "new": null
+      },
+      {
+        "package": "alpine:libgd",
+        "old": "2.3.3-r10",
+        "new": null
+      },
+      {
+        "package": "alpine:libice",
+        "old": "1.1.2-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libidn2",
+        "old": "2.3.8-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libjpeg-turbo",
+        "old": "3.1.3-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libmd",
+        "old": "1.2.0-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libncursesw",
+        "old": "6.6_p20260516-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libpng",
+        "old": "1.6.58-r1",
+        "new": null
+      },
+      {
+        "package": "alpine:libpsl",
+        "old": "0.21.5-r3",
+        "new": null
+      },
+      {
+        "package": "alpine:libsharpyuv",
+        "old": "1.6.0-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libsm",
+        "old": "1.2.6-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libstdc++",
+        "old": "15.2.0-r5",
+        "new": null
+      },
+      {
+        "package": "alpine:libunistring",
+        "old": "1.4.2-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libuuid",
+        "old": "2.42.1-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libwebp",
+        "old": "1.6.0-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libx11",
+        "old": "1.8.13-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libxau",
+        "old": "1.0.12-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libxcb",
+        "old": "1.17.0-r2",
+        "new": null
+      },
+      {
+        "package": "alpine:libxdmcp",
+        "old": "1.1.5-r1",
+        "new": null
+      },
+      {
+        "package": "alpine:libxext",
+        "old": "1.3.7-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libxml2",
+        "old": "2.13.9-r2",
+        "new": null
+      },
+      {
+        "package": "alpine:libxpm",
+        "old": "3.5.19-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libxslt",
+        "old": "1.1.43-r3",
+        "new": null
+      },
+      {
+        "package": "alpine:libxt",
+        "old": "1.3.1-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:libyuv",
+        "old": "0.0.1928-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:ncurses-terminfo-base",
+        "old": "6.6_p20260516-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:nghttp2-libs",
+        "old": "1.69.0-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:nginx-module-acme",
+        "old": "1.30.4.0.4.1-r1",
+        "new": null
+      },
+      {
+        "package": "alpine:nginx-module-geoip",
+        "old": "1.30.4-r1",
+        "new": null
+      },
+      {
+        "package": "alpine:nginx-module-image-filter",
+        "old": "1.30.4-r1",
+        "new": null
+      },
+      {
+        "package": "alpine:nginx-module-njs",
+        "old": "1.30.4.1.0.1-r1",
+        "new": null
+      },
+      {
+        "package": "alpine:nginx-module-xslt",
+        "old": "1.30.4-r1",
+        "new": null
+      },
+      {
+        "package": "alpine:tiff",
+        "old": "4.7.1-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:xz-libs",
+        "old": "5.8.3-r0",
+        "new": null
+      },
+      {
+        "package": "alpine:zstd-libs",
+        "old": "1.5.7-r2",
+        "new": null
+      }
+    ]
+  }
+}

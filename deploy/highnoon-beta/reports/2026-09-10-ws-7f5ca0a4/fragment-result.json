@@ -1,0 +1,14 @@
+{
+  "source": "captured stdout of standalone scratch probe and Docker inspect",
+  "maxFragments": 16384,
+  "sentEmptyFrames": 16385,
+  "closeCode": 1008,
+  "healthStatus": "unreachable",
+  "expectedHealthStatus": 200,
+  "status": "FAIL",
+  "container": {
+    "exitCode": 1,
+    "oomKilled": false,
+    "running": false
+  }
+}

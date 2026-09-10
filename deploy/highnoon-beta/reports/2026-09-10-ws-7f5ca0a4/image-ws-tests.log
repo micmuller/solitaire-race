@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: ws rejects excessive empty fragments with production defaults
+ok 1 - ws rejects excessive empty fragments with production defaults
+  ---
+  duration_ms: 18.860978
+  type: 'test'
+  ...
+# Subtest: ws resets fragment budget between completed messages
+ok 2 - ws resets fragment budget between completed messages
+  ---
+  duration_ms: 29.965902
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 105.139951

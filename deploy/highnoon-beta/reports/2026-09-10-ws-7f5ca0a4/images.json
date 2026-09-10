@@ -1,0 +1,152 @@
+[
+    {
+        "Id": "sha256:6ed3fb509a34590b72f37a7c628837dfa401328deb980dca03772df62a1a0905",
+        "RepoTags": [
+            "highnoon-app:7f5ca0a4d483a4a7a461ecec4894585027d9fc80"
+        ],
+        "RepoDigests": [
+            "highnoon-app@sha256:6ed3fb509a34590b72f37a7c628837dfa401328deb980dca03772df62a1a0905"
+        ],
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-09-10T15:28:42.142927471Z",
+        "Config": {
+            "User": "1000:1000",
+            "ExposedPorts": {
+                "3011/tcp": {}
+            },
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "NODE_VERSION=22.22.3",
+                "YARN_VERSION=1.22.22",
+                "NODE_ENV=production",
+                "HOST=0.0.0.0",
+                "PORT=3011",
+                "VNEXT_PROFILE_DATABASE=/data/highnoon.sqlite"
+            ],
+            "Entrypoint": [
+                "docker-entrypoint.sh"
+            ],
+            "Cmd": [
+                "node",
+                "vnext/server/cli.js"
+            ],
+            "WorkingDir": "/app",
+            "Labels": {
+                "org.opencontainers.image.revision": "7f5ca0a4d483a4a7a461ecec4894585027d9fc80"
+            },
+            "ArgsEscaped": true
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 335215198,
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:8db1b4d0e54f2fbc2baf1563e57d88a8e72d3c79a72a38b9e4dee36e84f1d8ce",
+                "sha256:b93f886f3d3e5e54fd8bd55161ff5859b6e21931b2f807876fc7302fc270c5ac",
+                "sha256:e446c1ede31c3c25b4d5523e656d2fd7a0a2159e63f3d383a42af188939d5f9c",
+                "sha256:379ee6f6be097ebb2e26ae4fd0086695296fb9ded9a82f10ebf66848daaf7f74",
+                "sha256:6425c59b3a5bc4a35c3eb6c68e4452c7571bcd5b2a1abddd2d88f53f0c2de1a6",
+                "sha256:a085248f7cf2b79bfc41b6ca58064a619f77135c6f3954eacb08a9c5f09b7b7e",
+                "sha256:f0584f4705a93f4ac3f3e12ef18e1689001f448749ac4006b5940d3bb4375333",
+                "sha256:d3bc47124cdbc75fd724bdebad20a7f9e602aac2e113ec7ac062693797570eb2",
+                "sha256:2a60167b38d6841cb3e622da6a9f79bf77fc0bd3d96fb7034908051f72aa09d8",
+                "sha256:9ea664277730126c4cf779da44835e5fa972bc1a9c921534ce35cea9b9edf97c",
+                "sha256:d9a6c9d747346ce26cc6086e5705bea8a9b08394b0c646f9d520e618e71661c6",
+                "sha256:819830f442aec651469532158e74b8e4e985966cb25dc611f3cd69ab71d1971b",
+                "sha256:43718e264f5aff107306fa0aef5382dc6e22a8384aebb2fb39c26333ed54df4c",
+                "sha256:2a3a1e1f4d13fd817d976753cf0edbeea468322bdb0bc6f221d344f54ec6943d",
+                "sha256:8b0f1df13ffd6fb1e805162d2d12def3f842aace4c899db905f871d925307f45"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-09-10T15:28:44.512284391Z"
+        },
+        "Descriptor": {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": "sha256:6ed3fb509a34590b72f37a7c628837dfa401328deb980dca03772df62a1a0905",
+            "size": 856
+        },
+        "Identity": {
+            "Build": [
+                {
+                    "Ref": "514v6bl4wsq4endj4ooub4ziq",
+                    "CreatedAt": "2026-09-10T15:28:45.247149813Z"
+                }
+            ]
+        }
+    },
+    {
+        "Id": "sha256:659b5d950b1bdae0b03b4b29edcaf63324d7b1ede521c4beba560c15948111bc",
+        "RepoTags": [
+            "highnoon-origin:7f5ca0a4d483a4a7a461ecec4894585027d9fc80"
+        ],
+        "RepoDigests": [
+            "highnoon-origin@sha256:659b5d950b1bdae0b03b4b29edcaf63324d7b1ede521c4beba560c15948111bc"
+        ],
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-09-10T13:34:58.663765965Z",
+        "Config": {
+            "User": "101:101",
+            "ExposedPorts": {
+                "80/tcp": {}
+            },
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "NGINX_VERSION=1.30.4",
+                "PKG_RELEASE=1",
+                "DYNPKG_RELEASE=1",
+                "NJS_VERSION=1.0.1",
+                "NJS_RELEASE=1",
+                "ACME_VERSION=0.4.1"
+            ],
+            "Entrypoint": [
+                "nginx"
+            ],
+            "Cmd": [
+                "-g",
+                "daemon off;"
+            ],
+            "WorkingDir": "/",
+            "Labels": {
+                "maintainer": "NGINX Docker Maintainers <docker-maint@nginx.com>",
+                "org.opencontainers.image.revision": "7f5ca0a4d483a4a7a461ecec4894585027d9fc80"
+            },
+            "StopSignal": "SIGQUIT",
+            "ArgsEscaped": true
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 101281073,
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:34884abbe92863fce933ed7c39c0e045631af0ed86d5cc0dfbdf9fdca426ce3c",
+                "sha256:84cbdb555a82aa30be7379831c3b42f9e47ce6b5e9252366058cda8366aac407",
+                "sha256:bcfe61bf39042c8e0db3138c3734a674184cb2b1ea15ef058ca019500008666b",
+                "sha256:9cc2a427511c2b0faf863976585ec18a9328e6eb837c87a61a4f10df6355d6ce",
+                "sha256:52071f7f756a6f9465c3aed773d057e828624898ea580ad04b449c4a495ee34f",
+                "sha256:f0696cdb71fe6a6572049d909d1f88c3e0f4e7e4d4b3fc96f8955c75876fa63d",
+                "sha256:04c07f9c0de8bd4fa8167e8de635b1fdc3fe3fb0cfcda6bb2fb2977ccf0b1283",
+                "sha256:85bb3570019b196fb23076fbd5adad3920191ce2e05291b2e2f7e47217a5e916",
+                "sha256:963607311062fa12c28f333e3974b0882a5046742b7d8b8e0efc4d3421e41cdc"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-09-10T15:28:47.502591922Z"
+        },
+        "Descriptor": {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": "sha256:659b5d950b1bdae0b03b4b29edcaf63324d7b1ede521c4beba560c15948111bc",
+            "size": 856
+        },
+        "Identity": {
+            "Build": [
+                {
+                    "Ref": "827ijekcq2icuqt9mu7q46mhi",
+                    "CreatedAt": "2026-09-10T15:28:47.57923813Z"
+                }
+            ]
+        }
+    }
+]

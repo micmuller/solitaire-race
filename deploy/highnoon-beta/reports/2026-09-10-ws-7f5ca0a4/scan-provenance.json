@@ -1,0 +1,34 @@
+{
+  "ws-app": {
+    "reference": "highnoon-app:7f5ca0a4d483a4a7a461ecec4894585027d9fc80",
+    "imageId": "sha256:6ed3fb509a34590b72f37a7c628837dfa401328deb980dca03772df62a1a0905",
+    "scanConfigDigest": "sha256:4ea8fa1af76ab5741d08b2fbff9e4b992bf53c7b86134a84c7aa8b7fabfc9d83",
+    "rootfsMatches": true,
+    "platform": "linux/amd64",
+    "revision": "7f5ca0a4d483a4a7a461ecec4894585027d9fc80"
+  },
+  "ws-origin": {
+    "reference": "highnoon-origin:7f5ca0a4d483a4a7a461ecec4894585027d9fc80",
+    "imageId": "sha256:659b5d950b1bdae0b03b4b29edcaf63324d7b1ede521c4beba560c15948111bc",
+    "scanConfigDigest": "sha256:b70d613828f98d258a4c9ff31f2002f15b59ae4e7d0a9f9298c9b9401d4726e7",
+    "rootfsMatches": true,
+    "platform": "linux/amd64",
+    "revision": "7f5ca0a4d483a4a7a461ecec4894585027d9fc80"
+  },
+  "node-proposal": {
+    "reference": "node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5",
+    "imageId": "sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5",
+    "scanConfigDigest": "sha256:6e6261159fd399ebe5a3d556b7d89da9c85c873f3f270918aad6c8107da8b411",
+    "rootfsMatches": true,
+    "platform": "linux/amd64",
+    "revision": null
+  },
+  "nginx-slim-proposal": {
+    "reference": "nginx@sha256:d6d5b2985faade9971eb1bec34c3f778b800f872f236969b3fd1ba65f4692b54",
+    "imageId": "sha256:d6d5b2985faade9971eb1bec34c3f778b800f872f236969b3fd1ba65f4692b54",
+    "scanConfigDigest": "sha256:880af632baee5008359a9af777b5003c94ba7dafb2fedfe314c4b9532048f594",
+    "rootfsMatches": true,
+    "platform": "linux/amd64",
+    "revision": null
+  }
+}

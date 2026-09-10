@@ -1,0 +1,53 @@
+{
+  "ws-app": {
+    "counts": {
+      "LOW": 73,
+      "HIGH": 62,
+      "MEDIUM": 96,
+      "UNKNOWN": 6,
+      "CRITICAL": 5
+    },
+    "uniqueCVE": 121,
+    "appWsFindings": [],
+    "os": {
+      "Family": "debian",
+      "Name": "12.14"
+    }
+  },
+  "ws-origin": {
+    "counts": {
+      "HIGH": 7,
+      "MEDIUM": 1
+    },
+    "uniqueCVE": 8,
+    "appWsFindings": [],
+    "os": {
+      "Family": "alpine",
+      "Name": "3.24.1"
+    }
+  },
+  "node-proposal": {
+    "counts": {
+      "LOW": 73,
+      "HIGH": 62,
+      "MEDIUM": 95,
+      "UNKNOWN": 6,
+      "CRITICAL": 5
+    },
+    "uniqueCVE": 120,
+    "appWsFindings": [],
+    "os": {
+      "Family": "debian",
+      "Name": "12.15"
+    }
+  },
+  "nginx-slim-proposal": {
+    "counts": {},
+    "uniqueCVE": 0,
+    "appWsFindings": [],
+    "os": {
+      "Family": "alpine",
+      "Name": "3.24.1"
+    }
+  }
+}
