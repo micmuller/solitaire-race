@@ -1,0 +1,173 @@
+TAP version 13
+# Subtest: real server isolates fragments and preserves other peers
+not ok 1 - real server isolates fragments and preserves other peers
+  ---
+  duration_ms: 219.634625
+  type: 'test'
+  location: '<scratch>/vnext/test/ws-lifecycle.test.js:22:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    Server exited: 1
+    e7abbb36-1868-420f-b81a-c000f069258f" clientId="p1" peers=1
+    [vNext] SNAPSHOT_SENT matchId="m-e7abbb36-1868-420f-b81a-c000f069258f" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="5b4f072e2a6d"
+    [vNext] WS_CONNECTED matchId="m-e7abbb36-1868-420f-b81a-c000f069258f" clientId="p2" peers=2
+    [vNext] SNAPSHOT_SENT matchId="m-e7abbb36-1868-420f-b81a-c000f069258f" clientId="p2" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="5b4f072e2a6d"
+    [vNext] WS_CONNECTED matchId="m-627bf54f-88d3-4a5c-b73c-dae0348f8aaf" clientId="p1" peers=1
+    [vNext] SNAPSHOT_SENT matchId="m-627bf54f-88d3-4a5c-b73c-dae0348f8aaf" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="bdf671380fe4"
+    node:events:497
+          throw er; // Unhandled 'error' event
+          ^
+    
+    RangeError: Too many message fragments
+        at Receiver.getData (<repo>/node_modules/ws/lib/receiver.js:505:26)
+        at Receiver.startLoop (<repo>/node_modules/ws/lib/receiver.js:190:16)
+        at Receiver._write (<repo>/node_modules/ws/lib/receiver.js:117:10)
+        at writeOrBuffer (node:internal/streams/writable:572:12)
+        at _write (node:internal/streams/writable:501:10)
+        at Writable.write (node:internal/streams/writable:510:10)
+        at Socket.socketOnData (<repo>/node_modules/ws/lib/websocket.js:1374:35)
+        at Socket.emit (node:events:519:28)
+        at addChunk (node:internal/streams/readable:561:12)
+        at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    Emitted 'error' event on WebSocket instance at:
+        at Receiver.receiverOnError (<repo>/node_modules/ws/lib/websocket.js:1218:15)
+        at Receiver.emit (node:events:519:28)
+        at emitErrorNT (node:internal/streams/destroy:170:8)
+        at emitErrorCloseNT (node:internal/streams/destroy:129:3)
+        at process.processTicksAndRejections (node:internal/process/task_queues:89:21) {
+      code: 'WS_ERR_TOO_MANY_BUFFERED_PARTS',
+      [Symbol(status-code)]: 1008
+    }
+    
+    Node.js v22.22.3
+    
+    
+    1 !== null
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ~
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    Receiver.getData (<repo>/node_modules/ws/lib/receiver.js:505:26)
+    Receiver.startLoop (<repo>/node_modules/ws/lib/receiver.js:190:16)
+    Receiver._write (<repo>/node_modules/ws/lib/receiver.js:117:10)
+    writeOrBuffer (node:internal/streams/writable:572:12)
+    _write (node:internal/streams/writable:501:10)
+    Writable.write (node:internal/streams/writable:510:10)
+    Socket.socketOnData (<repo>/node_modules/ws/lib/websocket.js:1374:35)
+    Socket.emit (node:events:519:28)
+    addChunk (node:internal/streams/readable:561:12)
+    readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    Receiver.receiverOnError (<repo>/node_modules/ws/lib/websocket.js:1218:15)
+    Receiver.emit (node:events:519:28)
+    emitErrorNT (node:internal/streams/destroy:170:8)
+    emitErrorCloseNT (node:internal/streams/destroy:129:3)
+    process.processTicksAndRejections (node:internal/process/task_queues:89:21) {
+    TestContext.<anonymous> (<scratch>/vnext/test/ws-lifecycle.test.js:82:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: real server isolates invalid-utf8 and preserves other peers
+not ok 2 - real server isolates invalid-utf8 and preserves other peers
+  ---
+  duration_ms: 159.592292
+  type: 'test'
+  location: '<scratch>/vnext/test/ws-lifecycle.test.js:22:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    Server exited: 1
+    
+    [vNext] SNAPSHOT_SENT matchId="m-36253dfb-1225-403e-80cf-e1000e45c347" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="5b4f072e2a6d"
+    [vNext] WS_CONNECTED matchId="m-36253dfb-1225-403e-80cf-e1000e45c347" clientId="p2" peers=2
+    [vNext] SNAPSHOT_SENT matchId="m-36253dfb-1225-403e-80cf-e1000e45c347" clientId="p2" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="5b4f072e2a6d"
+    [vNext] WS_CONNECTED matchId="m-17728736-da32-47a3-bd09-ff90c60949f4" clientId="p1" peers=1
+    [vNext] SNAPSHOT_SENT matchId="m-17728736-da32-47a3-bd09-ff90c60949f4" clientId="p1" transport="websocket" reason="INITIAL_CONNECT" rev=0 hash="bdf671380fe4"
+    node:events:497
+          throw er; // Unhandled 'error' event
+          ^
+    
+    Error: Invalid WebSocket frame: invalid UTF-8 sequence
+        at Receiver.dataMessage (<repo>/node_modules/ws/lib/receiver.js:620:28)
+        at Receiver.getData (<repo>/node_modules/ws/lib/receiver.js:532:10)
+        at Receiver.startLoop (<repo>/node_modules/ws/lib/receiver.js:190:16)
+        at Receiver._write (<repo>/node_modules/ws/lib/receiver.js:117:10)
+        at writeOrBuffer (node:internal/streams/writable:572:12)
+        at _write (node:internal/streams/writable:501:10)
+        at Writable.write (node:internal/streams/writable:510:10)
+        at Socket.socketOnData (<repo>/node_modules/ws/lib/websocket.js:1374:35)
+        at Socket.emit (node:events:519:28)
+        at addChunk (node:internal/streams/readable:561:12)
+    Emitted 'error' event on WebSocket instance at:
+        at Receiver.receiverOnError (<repo>/node_modules/ws/lib/websocket.js:1218:15)
+        at Receiver.emit (node:events:519:28)
+        at emitErrorNT (node:internal/streams/destroy:170:8)
+        at emitErrorCloseNT (node:internal/streams/destroy:129:3)
+        at process.processTicksAndRejections (node:internal/process/task_queues:89:21) {
+      code: 'WS_ERR_INVALID_UTF8',
+      [Symbol(status-code)]: 1007
+    }
+    
+    Node.js v22.22.3
+    
+    
+    1 !== null
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ~
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    Receiver.dataMessage (<repo>/node_modules/ws/lib/receiver.js:620:28)
+    Receiver.getData (<repo>/node_modules/ws/lib/receiver.js:532:10)
+    Receiver.startLoop (<repo>/node_modules/ws/lib/receiver.js:190:16)
+    Receiver._write (<repo>/node_modules/ws/lib/receiver.js:117:10)
+    writeOrBuffer (node:internal/streams/writable:572:12)
+    _write (node:internal/streams/writable:501:10)
+    Writable.write (node:internal/streams/writable:510:10)
+    Socket.socketOnData (<repo>/node_modules/ws/lib/websocket.js:1374:35)
+    Socket.emit (node:events:519:28)
+    addChunk (node:internal/streams/readable:561:12)
+    Receiver.receiverOnError (<repo>/node_modules/ws/lib/websocket.js:1218:15)
+    Receiver.emit (node:events:519:28)
+    emitErrorNT (node:internal/streams/destroy:170:8)
+    emitErrorCloseNT (node:internal/streams/destroy:129:3)
+    process.processTicksAndRejections (node:internal/process/task_queues:89:21) {
+    TestContext.<anonymous> (<scratch>/vnext/test/ws-lifecycle.test.js:82:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: real server isolates transport-close and preserves other peers
+not ok 3 - real server isolates transport-close and preserves other peers
+  ---
+  duration_ms: 159.588791
+  type: 'test'
+  location: '<scratch>/vnext/test/ws-lifecycle.test.js:22:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    closed peer must release application message listener
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (<scratch>/vnext/test/ws-lifecycle.test.js:86:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 0
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5317.553875

@@ -842,6 +842,30 @@ function createVNextServer({
 
   wss.on('connection', (socket) => {
     const { matchId, clientId, peerKey: connectedPeerKey } = socket;
+    let detached = false;
+    function detachPeer() {
+      if (detached) return;
+      detached = true;
+      socket.off('message', onMessage);
+      const room = peers.get(matchId);
+      // A reconnect may already own this seat: never delete its replacement.
+      if (room?.get(connectedPeerKey) === socket) room.delete(connectedPeerKey);
+      if (room?.size === 0) peers.delete(matchId);
+      log('WS_DISCONNECTED', { matchId, clientId, peers: room?.size || 0 });
+      reconcileBotOrphanTimer(matchId);
+    }
+    // Register before the initial send. ws emits receiver/sender errors on the
+    // WebSocket, not just its TCP socket. Keep this listener for late errors;
+    // do not remove ws internals or install process-wide exception handlers.
+    socket.on('error', (error) => {
+      if (!detached) log('WS_ERROR', { matchId, clientId, code: error.code || 'WEBSOCKET_ERROR' });
+      detachPeer();
+      // Parser errors already initiated the protocol close (1007/1008/etc.).
+      // Preserve that handshake; terminate only an otherwise-open failed peer.
+      if (socket.readyState === WebSocket.OPEN) socket.terminate();
+    });
+    socket.once('close', detachPeer);
+    socket.on('message', onMessage);
     if (!peers.has(matchId)) peers.set(matchId, new Map());
     peers.get(matchId).set(connectedPeerKey, socket);
     reconcileBotOrphanTimer(matchId);
@@ -856,7 +880,9 @@ function createVNextServer({
       hash: shortHash(sessions.get(matchId).current.stateHash)
     });
 
-    socket.on('message', (data, isBinary) => {
+    function onMessage(data, isBinary) {
+      // Ignore queued data from a replaced peer or a removed match.
+      if (detached || peers.get(matchId)?.get(connectedPeerKey) !== socket || !sessions.has(matchId)) return;
       if (!PLAYER_IDS.includes(clientId)) {
         const { rev, stateHash } = sessions.get(matchId).current;
         socket.send(JSON.stringify({
@@ -952,15 +978,7 @@ function createVNextServer({
         stopBot(matchId, 'p1');
         stopBot(matchId, 'p2');
       }
-    });
-
-    socket.on('close', () => {
-      const room = peers.get(matchId);
-      if (room?.get(connectedPeerKey) === socket) room.delete(connectedPeerKey);
-      if (room?.size === 0) peers.delete(matchId);
-      log('WS_DISCONNECTED', { matchId, clientId, peers: room?.size || 0 });
-      reconcileBotOrphanTimer(matchId);
-    });
+    }
   });
 
   function start({ port = 3011, host = '127.0.0.1' } = {}) {
