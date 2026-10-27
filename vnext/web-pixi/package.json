@@ -13,6 +13,6 @@
     "pixi.js": "8.20.1"
   },
   "devDependencies": {
-    "vite": "8.2.2"
+    "vite": "^8.3.5"
   }
 }
